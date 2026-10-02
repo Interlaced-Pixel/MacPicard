@@ -78,6 +78,19 @@ Phase 8 adds the complete native macOS workflow:
 
 Liquid Glass follows Apple's guidance to keep the material in the control/navigation layer, use regular glass for text-heavy controls, use clear glass only over visually rich backgrounds, and group related effects with GlassEffectContainer. See Apple's [Materials](https://developer.apple.com/design/human-interface-guidelines/materials), [Liquid Glass overview](https://developer.apple.com/documentation/technologyoverviews/liquid-glass), and [glassEffect](<https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:)>).
 
+## Phase 9
+
+Phase 9 hardens the release path:
+
+- Deterministic malformed-file and script-parser fuzz corpora exercise typed error handling without process crashes.
+- Concurrent MusicBrainz requests, cancellation propagation, and release-sized track matching are covered by tests.
+- Filesystem permission failures, security-scoped bookmark persistence, and session recovery boundaries are tested.
+- English localization resources and accessibility audit criteria are documented for the native macOS UI.
+- `Scripts/package-macpicard.sh` creates a reproducible `MacPicard.app` and zip archive with generated `.icns` artwork, metadata, resource validation, and code-signature verification.
+- Distribution signing and notarization are supported through explicit `MACPICARD_CODESIGN_IDENTITY` and `MACPICARD_NOTARY_PROFILE` environment variables.
+
+Implementation status: complete for the automated hardening and packaging gate. The remaining release checklist items are macOS environment validation steps requiring VoiceOver, accessibility settings, and upgrade installation testing; see [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+
 ## Local development
 
 ```sh

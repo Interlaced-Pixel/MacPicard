@@ -1,0 +1,21 @@
+/* MacPicard English baseline localization. SwiftUI uses the source string as the stable key. */
+"MacPicard" = "MacPicard";
+"Library" = "Library";
+"Import" = "Import";
+"Look Up" = "Look Up";
+"Cover Art" = "Cover Art";
+"Script" = "Script";
+"Save" = "Save";
+"Organize" = "Organize";
+"Settings" = "Settings";
+"MusicBrainz Lookup" = "MusicBrainz Lookup";
+"Apply Match" = "Apply Match";
+"Preview" = "Preview";
+"Apply" = "Apply";
+"Close" = "Close";
+"Done" = "Done";
+"No music yet" = "No music yet";
+"Your library is empty" = "Your library is empty";
+"Metadata" = "Metadata";
+"Artwork" = "Artwork";
+"Tracks" = "Tracks";

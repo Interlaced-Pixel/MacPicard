@@ -327,6 +327,8 @@ Implementation status: complete. The executable target now provides the primary 
 
 Exit criteria: release builds contain no stubs, placeholder handlers, fake services, or unimplemented required functions.
 
+Implementation status: complete. Deterministic malformed-file and script-parser corpora, concurrent MusicBrainz requests, cancellation propagation, release-sized matching, filesystem failure handling, security-scoped bookmark persistence, localization/accessibility audit documentation, and reproducible signed app packaging are implemented. Distribution signing and notarization are credential-gated by the release script. The remaining VoiceOver, accessibility-settings, clean-account launch, and upgrade checks are documented as manual macOS release gates in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+
 ## Testing requirements
 
 ### Unit tests

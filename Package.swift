@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "MacPicard",
+    defaultLocalization: "en",
     // Liquid Glass is a native macOS 26 material. The UI intentionally uses
     // the platform's implementation instead of maintaining a second visual
     // language for older systems.

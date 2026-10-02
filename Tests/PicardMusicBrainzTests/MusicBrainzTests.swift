@@ -187,6 +187,92 @@ final class MusicBrainzTests: XCTestCase {
         XCTAssertTrue(result.trackMatches.allSatisfy { $0.decision == .matched })
     }
 
+    func testConcurrentSearchesRemainDeterministic() async throws {
+        let transport = StubTransport(responses: [Data(Self.searchResponse.utf8)])
+        let client = MusicBrainzClient(
+            baseURL: URL(string: "https://musicbrainz.example/ws/2")!,
+            userAgent: "MacPicardTests/1.0",
+            transport: transport,
+            minimumRequestInterval: .zero
+        )
+
+        let successfulRequests = await withTaskGroup(of: Bool.self, returning: Int.self) { group in
+            for index in 0..<64 {
+                group.addTask {
+                    do {
+                        let results = try await client.searchReleases(query: "release:Concurrent-\(index)")
+                        return results.count == 1 && results[0].id == "11111111-1111-1111-1111-111111111111"
+                    } catch {
+                        return false
+                    }
+                }
+            }
+
+            var count = 0
+            for await success in group where success {
+                count += 1
+            }
+            return count
+        }
+
+        XCTAssertEqual(successfulRequests, 64)
+        let requests = await transport.requests()
+        XCTAssertEqual(requests.count, 64)
+    }
+
+    func testCancelledRequestPropagatesCancellation() async throws {
+        let client = MusicBrainzClient(
+            baseURL: URL(string: "https://musicbrainz.example/ws/2")!,
+            userAgent: "MacPicardTests/1.0",
+            transport: CancellationTransport(),
+            minimumRequestInterval: .zero
+        )
+        let request = Task {
+            try await client.searchReleases(query: "release:cancelled")
+        }
+
+        try await Task.sleep(for: .milliseconds(20))
+        request.cancel()
+
+        do {
+            _ = try await request.value
+            XCTFail("A cancelled MusicBrainz request must not return a result")
+        } catch is CancellationError {
+            // Expected cancellation path.
+        }
+    }
+
+    func testTrackMatcherScalesToAReleaseSizedLibrary() {
+        let localTracks = (0..<256).map { index in
+            LocalTrackCandidate(
+                title: "Track \(index)",
+                durationInMilliseconds: 180_000 + index,
+                trackNumber: index + 1
+            )
+        }
+        let releaseTracks = (0..<256).map { index in
+            MusicBrainzTrack(
+                id: "track-\(index)",
+                recordingID: "recording-\(index)",
+                title: "Track \(index)",
+                artistCredit: "Example Artist",
+                lengthInMilliseconds: 180_000 + index,
+                number: String(index + 1),
+                position: index + 1,
+                isrcs: []
+            )
+        }
+
+        let matches = TrackMatcher(minimumSimilarity: 0.50).match(
+            localTracks: localTracks,
+            releaseTracks: releaseTracks
+        )
+
+        XCTAssertEqual(matches.count, 256)
+        XCTAssertEqual(Set(matches.compactMap(\.releaseTrackID)).count, 256)
+        XCTAssertTrue(matches.allSatisfy { $0.decision != .unmatched })
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -211,6 +297,16 @@ final class MusicBrainzTests: XCTestCase {
 
         func requests() -> [URLRequest] {
             recordedRequests
+        }
+    }
+
+    private struct CancellationTransport: MusicBrainzTransport {
+        func data(for request: URLRequest) async throws -> MusicBrainzHTTPResponse {
+            try await Task.sleep(for: .seconds(10))
+            return MusicBrainzHTTPResponse(
+                statusCode: 200,
+                data: Data(#"{"releases":[]}"#.utf8)
+            )
         }
     }
 
