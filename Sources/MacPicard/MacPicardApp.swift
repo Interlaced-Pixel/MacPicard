@@ -92,6 +92,8 @@ private struct FoundationStatusView: View {
                     .foregroundStyle(.green)
                 Label("Configuration and migration system ready", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
+                Label("Metadata and session persistence ready", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
                 Label("Keychain and security-scoped bookmark services ready", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             }

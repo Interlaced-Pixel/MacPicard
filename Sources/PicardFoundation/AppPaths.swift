@@ -6,6 +6,8 @@ public struct AppPaths: Sendable, Equatable {
     public let logsDirectory: URL
     public let configurationFile: URL
     public let bookmarksFile: URL
+    public let sessionFile: URL
+    public let recoverySessionFile: URL
 
     public init(applicationSupportDirectory: URL) {
         self.applicationSupportDirectory = applicationSupportDirectory
@@ -13,6 +15,8 @@ public struct AppPaths: Sendable, Equatable {
         self.logsDirectory = applicationSupportDirectory.appendingPathComponent("Logs", isDirectory: true)
         self.configurationFile = applicationSupportDirectory.appendingPathComponent("configuration.json")
         self.bookmarksFile = applicationSupportDirectory.appendingPathComponent("security-scoped-bookmarks.json")
+        self.sessionFile = applicationSupportDirectory.appendingPathComponent("session.json")
+        self.recoverySessionFile = applicationSupportDirectory.appendingPathComponent("session-recovery.json")
     }
 
     public static func live(appName: String = "MacPicard") throws -> AppPaths {

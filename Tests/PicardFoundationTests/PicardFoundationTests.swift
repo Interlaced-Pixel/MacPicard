@@ -93,6 +93,77 @@ final class PicardFoundationTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.configurationFile.path))
     }
 
+    func testMetadataTracksValuesDeletionsAndDiffs() throws {
+        var original = Metadata()
+        original.setValue("Example Album", for: "ALBUM")
+        original.setValues(["Artist One", "Artist Two"], for: "artist")
+
+        var current = original
+        current.setValue("Renamed Album", for: "album")
+        current.delete("artist")
+        current.setValue("2026", for: "date")
+
+        let diff = current.difference(from: original)
+        XCTAssertEqual(diff.changedKeys, ["album", "artist", "date"])
+        XCTAssertTrue(current.isDeleted("artist"))
+
+        let applied = original.applying(diff)
+        XCTAssertEqual(applied, current)
+    }
+
+    func testAudioFileStateAndSessionRecordPreserveUnsavedChanges() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let fileURL = root.appendingPathComponent("example.mp3")
+        FileManager.default.createFile(atPath: fileURL.path, contents: Data("audio".utf8))
+        let identity = try AudioFileIdentity.capture(url: fileURL)
+
+        var file = AudioFile(url: fileURL)
+        try file.beginLoading()
+
+        var loadedMetadata = Metadata()
+        loadedMetadata.setValue("Original", for: "title")
+        try file.finishLoading(metadata: loadedMetadata, identity: identity)
+
+        var changedMetadata = loadedMetadata
+        changedMetadata.setValue("Edited", for: "title")
+        try file.updateMetadata(changedMetadata)
+
+        XCTAssertEqual(file.state, .changed)
+        XCTAssertTrue(file.isModified)
+
+        let restored = AudioFile.restore(from: file.sessionRecord())
+        XCTAssertEqual(restored.metadata.firstValue(for: "title"), "Edited")
+        XCTAssertEqual(restored.originalMetadata.firstValue(for: "title"), "Original")
+        XCTAssertEqual(restored.state, .changed)
+    }
+
+    func testSessionStoreRoundTripAndRecovery() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sessionStore = SessionStore(
+            sessionURL: root.appendingPathComponent("session.json"),
+            recoveryURL: root.appendingPathComponent("session-recovery.json")
+        )
+        let document = SessionDocument(selectedFileIDs: [UUID()])
+
+        let missingDocument = try await sessionStore.load()
+        XCTAssertNil(missingDocument)
+        try await sessionStore.save(document)
+        try await sessionStore.saveRecovery(document)
+
+        let loadedDocument = try await sessionStore.load()
+        let loadedRecoveryDocument = try await sessionStore.loadRecovery()
+        XCTAssertEqual(loadedDocument, document)
+        XCTAssertEqual(loadedRecoveryDocument, document)
+
+        try await sessionStore.removeRecovery()
+        let removedRecoveryDocument = try await sessionStore.loadRecovery()
+        XCTAssertNil(removedRecoveryDocument)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("MacPicardTests")

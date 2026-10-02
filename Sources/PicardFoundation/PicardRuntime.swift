@@ -15,6 +15,7 @@ public struct RuntimeSnapshot: Sendable, Equatable {
 public actor PicardRuntime {
     public let paths: AppPaths
     public let configurationStore: ConfigurationStore
+    public let sessionStore: SessionStore
     public let keychain: KeychainStore
     public let bookmarks: SecurityScopedBookmarkStore
 
@@ -23,6 +24,10 @@ public actor PicardRuntime {
     public init(paths: AppPaths) {
         self.paths = paths
         self.configurationStore = ConfigurationStore(fileURL: paths.configurationFile)
+        self.sessionStore = SessionStore(
+            sessionURL: paths.sessionFile,
+            recoveryURL: paths.recoverySessionFile
+        )
         self.keychain = KeychainStore()
         self.bookmarks = SecurityScopedBookmarkStore(fileURL: paths.bookmarksFile)
     }

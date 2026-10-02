@@ -7,6 +7,10 @@ public enum PicardError: Error, LocalizedError, Sendable, Equatable {
     case configurationRead(path: String, reason: String)
     case configurationWrite(path: String, reason: String)
     case migrationFailed(from: Int, to: Int, reason: String)
+    case sessionRead(path: String, reason: String)
+    case sessionWrite(path: String, reason: String)
+    case sessionEncoding(String)
+    case invalidState(entity: String, state: String, operation: String)
     case keychain(operation: String, status: Int32)
     case securityScopedBookmark(operation: String, key: String)
     case fileSystem(path: String, operation: String, reason: String)
@@ -25,6 +29,14 @@ public enum PicardError: Error, LocalizedError, Sendable, Equatable {
             return "Could not write configuration at \(path): \(reason)"
         case let .migrationFailed(from, to, reason):
             return "Could not migrate configuration from schema \(from) to \(to): \(reason)"
+        case let .sessionRead(path, reason):
+            return "Could not read session at \(path): \(reason)"
+        case let .sessionWrite(path, reason):
+            return "Could not write session at \(path): \(reason)"
+        case let .sessionEncoding(message):
+            return "Session encoding failed: \(message)"
+        case let .invalidState(entity, state, operation):
+            return "Cannot \(operation) \(entity) while it is in state \(state)."
         case let .keychain(operation, status):
             return "Keychain operation \(operation) failed with status \(status)."
         case let .securityScopedBookmark(operation, key):

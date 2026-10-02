@@ -17,6 +17,9 @@ Phase 1 establishes the Swift Package Manager foundation:
 - Codable configuration with schema migration support.
 - Keychain storage.
 - Security-scoped bookmark persistence and access management.
+- Typed metadata values, metadata diffs, deleted tags, and artwork models.
+- Audio file identity and state tracking.
+- Atomic session and crash-recovery persistence.
 - Unit tests for configuration, migration, keychain, paths, and runtime startup.
 - GitHub Actions build and test workflow.
 
@@ -28,4 +31,4 @@ swift test -Xswiftc -strict-concurrency=complete
 swift run MacPicard
 ```
 
-The application currently displays the initialized Phase 1 foundation status. Audio formats, metadata models, MusicBrainz networking, and the tagging UI are implemented in later phases.
+The application currently displays the initialized foundation status. Audio formats, MusicBrainz networking, and the tagging UI are implemented in later phases.
