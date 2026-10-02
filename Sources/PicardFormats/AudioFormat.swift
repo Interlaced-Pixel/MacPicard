@@ -95,6 +95,14 @@ public struct FormatWriteResult: Sendable, Equatable {
     }
 }
 
+public struct FormatSaveOptions: Sendable, Equatable {
+    public let preserveModificationDate: Bool
+
+    public init(preserveModificationDate: Bool = true) {
+        self.preserveModificationDate = preserveModificationDate
+    }
+}
+
 public enum FormatError: Error, LocalizedError, Sendable, Equatable {
     case unsupportedFile(path: String)
     case unreadableFile(path: String, reason: String)
@@ -245,6 +253,37 @@ public actor FormatEngine {
         let format = try registry.detect(url: url)
         return try registry.handler(for: format).write(url: url, metadata: metadata, artwork: artwork)
     }
+
+    public func writeAtomically(
+        url: URL,
+        metadata: Metadata,
+        artwork: ArtworkCollection,
+        options: FormatSaveOptions = FormatSaveOptions()
+    ) throws -> FormatWriteResult {
+        let format = try registry.detect(url: url)
+        let fileManager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        let temporaryName = ".\(url.deletingPathExtension().lastPathComponent).\(UUID().uuidString).\(url.pathExtension)"
+        let temporaryURL = directory.appendingPathComponent(temporaryName)
+        let originalDate = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        var targetURL = url
+
+        do {
+            try fileManager.copyItem(at: url, to: temporaryURL)
+            let result = try registry.handler(for: format).write(url: temporaryURL, metadata: metadata, artwork: artwork)
+            _ = try fileManager.replaceItemAt(url, withItemAt: temporaryURL)
+
+            if options.preserveModificationDate, let originalDate {
+                var values = URLResourceValues()
+                values.contentModificationDate = originalDate
+                try? targetURL.setResourceValues(values)
+            }
+            return result
+        } catch {
+            try? fileManager.removeItem(at: temporaryURL)
+            throw error
+        }
+    }
 }
 
 public actor AudioFileCoordinator {
@@ -265,12 +304,17 @@ public actor AudioFileCoordinator {
     }
 
     public func save(_ file: AudioFile) async throws -> AudioFile {
+        try await save(file, options: FormatSaveOptions())
+    }
+
+    public func save(_ file: AudioFile, options: FormatSaveOptions) async throws -> AudioFile {
         var fileToSave = file
         try fileToSave.beginSaving()
-        _ = try await engine.write(
+        _ = try await engine.writeAtomically(
             url: fileToSave.url,
             metadata: fileToSave.metadata,
-            artwork: fileToSave.artwork
+            artwork: fileToSave.artwork,
+            options: options
         )
         let identity = try AudioFileIdentity.capture(url: fileToSave.url)
         try fileToSave.finishSaving(identity: identity)

@@ -27,6 +27,8 @@ Phase 1 establishes the Swift Package Manager foundation:
 - Deterministic release and track matching using album identifiers, barcodes, catalog numbers, text similarity, track counts, durations, recording IDs, and ISRCs.
 - A Swift 6 scripting parser and evaluator with nested functions, variables, escapes, conditionals, metadata mutation, multi-value operations, string/regex/date/numeric functions, and source-located errors.
 - Chromaprint `fpcalc` integration with validated JSON decoding and AcoustID lookup/submission clients with request throttling, retries, cancellation, authentication, and consent enforcement.
+- Cover Art Archive release/release-group lookup, image downloads, ImageIO inspection/resizing/conversion, local artwork discovery, classification, and content-hash deduplication.
+- Atomic tag saves with external-modification protection, timestamp preservation, script-driven file naming, collision policies, two-phase moves with rollback, autosave/recovery, profile export/import, and schema migration.
 - Unit tests for configuration, migration, keychain, paths, and runtime startup.
 - GitHub Actions build and test workflow.
 
@@ -50,6 +52,17 @@ Phase 6 adds scripts and automatic identification:
 - `PicardFingerprint` runs Chromaprint's `fpcalc` executable and maps AcoustID results to MusicBrainz recordings and releases.
 - AcoustID submissions require both a user token and explicit consent before any network request is made.
 - Fixture tests cover parser diagnostics, nested functions, metadata changes, regex/unicode handling, fingerprint decoding, lookup mapping, and submission guards.
+
+## Phase 7
+
+Phase 7 adds cover art, saving, organization, and session persistence:
+
+- `PicardCoverArt` integrates Cover Art Archive release and release-group endpoints and validates downloaded image bytes before embedding.
+- `ArtworkProcessor` uses native ImageIO/CoreGraphics APIs for inspection, resizing, output conversion, and deduplication.
+- `PicardSessions` serializes audio saves through temporary same-format files, detects external changes, preserves timestamps, and reports failures without partially updating the in-memory file.
+- Script-rendered destination paths are sanitized against absolute paths and traversal, checked for collisions, and executed through a rollback-capable move plan.
+- Session autosave selects the newest primary/recovery document, supports accept/discard recovery, and persists non-secret profiles with migration support.
+- Fixture tests cover Cover Art Archive decoding/downloads, image processing, atomic metadata saves, move execution, profiles, recovery selection, and autosave.
 
 ## Local development
 

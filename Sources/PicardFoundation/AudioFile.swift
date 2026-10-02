@@ -92,7 +92,7 @@ public struct AudioFileIdentity: Codable, Sendable, Equatable {
 
 public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
-    public let url: URL
+    public private(set) var url: URL
     public private(set) var state: AudioFileState
     public private(set) var identity: AudioFileIdentity?
     public private(set) var originalMetadata: Metadata
@@ -154,6 +154,11 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
         self.artwork = artwork
         state = metadataDiff.isEmpty && artwork == originalArtwork ? .ready : .changed
         lastError = nil
+    }
+
+    public mutating func updateURL(_ url: URL) throws {
+        try requireState([.discovered, .ready, .changed, .saved], operation: "update file location")
+        self.url = url
     }
 
     public mutating func beginSaving() throws {

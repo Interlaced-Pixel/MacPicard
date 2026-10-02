@@ -28,6 +28,14 @@ let package = Package(
             name: "PicardFingerprint",
             targets: ["PicardFingerprint"]
         ),
+        .library(
+            name: "PicardCoverArt",
+            targets: ["PicardCoverArt"]
+        ),
+        .library(
+            name: "PicardSessions",
+            targets: ["PicardSessions"]
+        ),
         .executable(
             name: "MacPicard",
             targets: ["MacPicard"]
@@ -91,6 +99,23 @@ let package = Package(
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]
         ),
+        .target(
+            name: "PicardCoverArt",
+            dependencies: ["PicardFoundation"],
+            path: "Sources/PicardCoverArt",
+            swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .target(
+            name: "PicardSessions",
+            dependencies: ["PicardFoundation", "PicardFormats", "PicardScripts"],
+            path: "Sources/PicardSessions",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
         .testTarget(
             name: "PicardFoundationTests",
             dependencies: ["PicardFoundation"],
@@ -129,6 +154,23 @@ let package = Package(
             dependencies: ["PicardFingerprint", "PicardMusicBrainz"],
             path: "Tests/PicardFingerprintTests",
             swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .testTarget(
+            name: "PicardCoverArtTests",
+            dependencies: ["PicardCoverArt", "PicardFoundation"],
+            path: "Tests/PicardCoverArtTests",
+            swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .testTarget(
+            name: "PicardSessionsTests",
+            dependencies: ["PicardSessions", "PicardFormats", "PicardFoundation"],
+            path: "Tests/PicardSessionsTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]
         )
