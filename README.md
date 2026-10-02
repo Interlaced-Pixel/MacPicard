@@ -25,6 +25,8 @@ Phase 1 establishes the Swift Package Manager foundation:
 - MusicBrainz release search and lookup with JSON models for releases, media, tracks, recordings, ISRCs, labels, and release groups.
 - Rate-limited MusicBrainz networking with a required User-Agent, optional authorization header, persistent response caching, retry/backoff handling, and cancellation propagation.
 - Deterministic release and track matching using album identifiers, barcodes, catalog numbers, text similarity, track counts, durations, recording IDs, and ISRCs.
+- A Swift 6 scripting parser and evaluator with nested functions, variables, escapes, conditionals, metadata mutation, multi-value operations, string/regex/date/numeric functions, and source-located errors.
+- Chromaprint `fpcalc` integration with validated JSON decoding and AcoustID lookup/submission clients with request throttling, retries, cancellation, authentication, and consent enforcement.
 - Unit tests for configuration, migration, keychain, paths, and runtime startup.
 - GitHub Actions build and test workflow.
 
@@ -38,6 +40,16 @@ Phase 5 adds the MusicBrainz integration and matching engine:
 - Summary-level and full-release matching with exact, matched, ambiguous, and rejected decisions.
 - Track assignment with recording-ID/ISRC exact matches, title/artist/duration scoring, uniqueness constraints, and unmatched reporting.
 - Deterministic fixture tests for request construction, cache reuse, decoding, identifiers, and matching.
+
+## Phase 6
+
+Phase 6 adds scripts and automatic identification:
+
+- `PicardScripts` parses and evaluates nested Picard-style expressions without stringly-typed shortcuts.
+- Script execution reads and mutates the existing multi-value `Metadata` model, including unset/delete semantics.
+- `PicardFingerprint` runs Chromaprint's `fpcalc` executable and maps AcoustID results to MusicBrainz recordings and releases.
+- AcoustID submissions require both a user token and explicit consent before any network request is made.
+- Fixture tests cover parser diagnostics, nested functions, metadata changes, regex/unicode handling, fingerprint decoding, lookup mapping, and submission guards.
 
 ## Local development
 

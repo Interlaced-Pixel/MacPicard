@@ -20,6 +20,14 @@ let package = Package(
             name: "PicardMusicBrainz",
             targets: ["PicardMusicBrainz"]
         ),
+        .library(
+            name: "PicardScripts",
+            targets: ["PicardScripts"]
+        ),
+        .library(
+            name: "PicardFingerprint",
+            targets: ["PicardFingerprint"]
+        ),
         .executable(
             name: "MacPicard",
             targets: ["MacPicard"]
@@ -67,6 +75,22 @@ let package = Package(
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]
         ),
+        .target(
+            name: "PicardScripts",
+            dependencies: ["PicardFoundation"],
+            path: "Sources/PicardScripts",
+            swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .target(
+            name: "PicardFingerprint",
+            dependencies: ["PicardMusicBrainz"],
+            path: "Sources/PicardFingerprint",
+            swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
         .testTarget(
             name: "PicardFoundationTests",
             dependencies: ["PicardFoundation"],
@@ -88,6 +112,22 @@ let package = Package(
             name: "PicardMusicBrainzTests",
             dependencies: ["PicardMusicBrainz", "PicardFoundation"],
             path: "Tests/PicardMusicBrainzTests",
+            swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .testTarget(
+            name: "PicardScriptsTests",
+            dependencies: ["PicardScripts", "PicardFoundation"],
+            path: "Tests/PicardScriptsTests",
+            swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .testTarget(
+            name: "PicardFingerprintTests",
+            dependencies: ["PicardFingerprint", "PicardMusicBrainz"],
+            path: "Tests/PicardFingerprintTests",
             swiftSettings: [
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]
