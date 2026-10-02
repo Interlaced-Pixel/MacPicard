@@ -12,9 +12,19 @@ let package = Package(
             name: "PicardFoundation",
             targets: ["PicardFoundation"]
         ),
+        .library(
+            name: "PicardFormats",
+            targets: ["PicardFormats"]
+        ),
         .executable(
             name: "MacPicard",
             targets: ["MacPicard"]
+        )
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/jeonghi/TagLibSwift.git",
+            revision: "a36e48f43a4cea1fd41baa0c90acdb6f35444800"
         )
     ],
     targets: [
@@ -27,9 +37,21 @@ let package = Package(
         ),
         .executableTarget(
             name: "MacPicard",
-            dependencies: ["PicardFoundation"],
+            dependencies: ["PicardFoundation", "PicardFormats"],
             path: "Sources/MacPicard",
             swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .target(
+            name: "PicardFormats",
+            dependencies: [
+                "PicardFoundation",
+                .product(name: "TagLibSwift", package: "TagLibSwift")
+            ],
+            path: "Sources/PicardFormats",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]
         ),
@@ -38,6 +60,15 @@ let package = Package(
             dependencies: ["PicardFoundation"],
             path: "Tests/PicardFoundationTests",
             swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .testTarget(
+            name: "PicardFormatsTests",
+            dependencies: ["PicardFormats"],
+            path: "Tests/PicardFormatsTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]
         )

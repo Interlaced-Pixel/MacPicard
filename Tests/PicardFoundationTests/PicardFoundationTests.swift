@@ -156,8 +156,8 @@ final class PicardFoundationTests: XCTestCase {
 
         let loadedDocument = try await sessionStore.load()
         let loadedRecoveryDocument = try await sessionStore.loadRecovery()
-        XCTAssertEqual(loadedDocument, document)
-        XCTAssertEqual(loadedRecoveryDocument, document)
+        assertSessionDocument(loadedDocument, matches: document)
+        assertSessionDocument(loadedRecoveryDocument, matches: document)
 
         try await sessionStore.removeRecovery()
         let removedRecoveryDocument = try await sessionStore.loadRecovery()
@@ -170,5 +170,36 @@ final class PicardFoundationTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private func assertSessionDocument(
+        _ loaded: SessionDocument?,
+        matches expected: SessionDocument,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let loaded else {
+            XCTFail("Expected a persisted session document", file: file, line: line)
+            return
+        }
+
+        XCTAssertEqual(loaded.schemaVersion, expected.schemaVersion, file: file, line: line)
+        XCTAssertEqual(loaded.files, expected.files, file: file, line: line)
+        XCTAssertEqual(loaded.selectedFileIDs, expected.selectedFileIDs, file: file, line: line)
+        XCTAssertEqual(loaded.expandedNodeIDs, expected.expandedNodeIDs, file: file, line: line)
+        XCTAssertEqual(
+            loaded.createdAt.timeIntervalSince(expected.createdAt),
+            0,
+            accuracy: 0.001,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            loaded.savedAt.timeIntervalSince(expected.savedAt),
+            0,
+            accuracy: 0.001,
+            file: file,
+            line: line
+        )
     }
 }

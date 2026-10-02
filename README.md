@@ -20,6 +20,8 @@ Phase 1 establishes the Swift Package Manager foundation:
 - Typed metadata values, metadata diffs, deleted tags, and artwork models.
 - Audio file identity and state tracking.
 - Atomic session and crash-recovery persistence.
+- Complete TagLib-backed handlers for MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV.
+- Header and extension format detection with read/write round-trip tests.
 - Unit tests for configuration, migration, keychain, paths, and runtime startup.
 - GitHub Actions build and test workflow.
 
