@@ -313,6 +313,8 @@ Exit criteria: a complete import-to-save workflow survives application restart a
 
 Exit criteria: all primary workflows are available without developer tools or manual file edits.
 
+Implementation status: complete. The executable target now provides the primary import, cluster, edit, identify, cover-art, script, save, organize, session-recovery, keyboard, accessibility, drag/drop, and multi-selection workflows. The visual system uses macOS 26 Liquid Glass for controls and navigation with standard materials for content.
+
 ### Phase 9: Production hardening
 
 - Add malformed-file fuzzing.

@@ -4,8 +4,11 @@ import PackageDescription
 
 let package = Package(
     name: "MacPicard",
+    // Liquid Glass is a native macOS 26 material. The UI intentionally uses
+    // the platform's implementation instead of maintaining a second visual
+    // language for older systems.
     platforms: [
-        .macOS(.v14)
+        .macOS("26.0")
     ],
     products: [
         .library(
@@ -57,9 +60,18 @@ let package = Package(
         ),
         .executableTarget(
             name: "MacPicard",
-            dependencies: ["PicardFoundation", "PicardFormats"],
+            dependencies: [
+                "PicardFoundation",
+                "PicardFormats",
+                "PicardMusicBrainz",
+                "PicardScripts",
+                "PicardFingerprint",
+                "PicardCoverArt",
+                "PicardSessions"
+            ],
             path: "Sources/MacPicard",
             swiftSettings: [
+                .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]
         ),

@@ -1,32 +1,4 @@
-import PicardFoundation
 import SwiftUI
-
-@MainActor
-final class AppModel: ObservableObject {
-    @Published private(set) var snapshot: RuntimeSnapshot?
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var isLoading = false
-
-    private var runtime: PicardRuntime?
-
-    func bootstrap() async {
-        guard snapshot == nil, !isLoading else {
-            return
-        }
-
-        isLoading = true
-        defer { isLoading = false }
-
-        do {
-            let runtime = try PicardRuntime.live()
-            let snapshot = try await runtime.start()
-            self.runtime = runtime
-            self.snapshot = snapshot
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-}
 
 @main
 struct MacPicardApp: App {
@@ -35,70 +7,135 @@ struct MacPicardApp: App {
     var body: some Scene {
         WindowGroup("MacPicard") {
             ContentView(model: model)
-                .task {
-                    await model.bootstrap()
-                }
+                .task { await model.bootstrap() }
+        }
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Select All Tracks") { model.selectAllVisible() }
+                    .keyboardShortcut("a", modifiers: [.command, .option])
+                Button("Clear Selection") { model.clearSelection() }
+                    .keyboardShortcut(.escape, modifiers: [])
+            }
+            CommandMenu("MusicBrainz") {
+                Button("Look Up Release") { Task { await model.lookup() } }
+                    .keyboardShortcut("l", modifiers: [.command, .shift])
+                Button("Apply Selected Match") { model.applySelectedRelease() }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+            }
         }
     }
 }
 
 struct ContentView: View {
     @ObservedObject var model: AppModel
+    @State private var isImporting = false
+    @State private var isChoosingDestination = false
+    @State private var isShowingLookup = false
+    @State private var isShowingScript = false
+    @State private var isShowingSettings = false
+    @State private var isDropTargeted = false
 
     var body: some View {
         Group {
             if model.isLoading {
                 ProgressView("Starting MacPicard…")
-            } else if let errorMessage = model.errorMessage {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                    Text("MacPicard could not start")
-                        .font(.headline)
-                    Text(errorMessage)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(32)
-            } else if let snapshot = model.snapshot {
-                FoundationStatusView(snapshot: snapshot)
+                    .controlSize(.large)
+            } else if let errorMessage = model.errorMessage, model.snapshot == nil {
+                StartupErrorView(message: errorMessage)
             } else {
-                ProgressView("Preparing MacPicard…")
+                mainWorkspace
             }
         }
-        .frame(minWidth: 560, minHeight: 360)
+        .frame(minWidth: 1_080, minHeight: 680)
+        .background(GlassBackdrop())
+        .fileImporter(
+            isPresented: $isImporting,
+            allowedContentTypes: [.audio, .folder],
+            allowsMultipleSelection: true,
+            onCompletion: { result in Task { await model.importResult(result) } }
+        )
+        .fileImporter(
+            isPresented: $isChoosingDestination,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false,
+            onCompletion: model.chooseDestination
+        )
+        .sheet(isPresented: $isShowingLookup) {
+            LookupView(model: model)
+                .frame(minWidth: 760, minHeight: 480)
+        }
+        .sheet(isPresented: $isShowingScript) {
+            ScriptView(model: model)
+                .frame(minWidth: 760, minHeight: 500)
+        }
+        .sheet(isPresented: $isShowingSettings) {
+            SettingsView(model: model)
+                .frame(width: 500, height: 390)
+        }
+    }
+
+    private var mainWorkspace: some View {
+        NavigationSplitView {
+            LibrarySidebar(
+                model: model,
+                isImporting: $isImporting,
+                isShowingSettings: $isShowingSettings
+            )
+        } detail: {
+            WorkspaceView(
+                model: model,
+                isImporting: $isImporting,
+                isChoosingDestination: $isChoosingDestination,
+                isShowingLookup: $isShowingLookup,
+                isShowingScript: $isShowingScript,
+                isDropTargeted: $isDropTargeted
+            )
+        }
+        .navigationSplitViewStyle(.balanced)
+        .toolbar(removing: .title)
     }
 }
 
-private struct FoundationStatusView: View {
-    let snapshot: RuntimeSnapshot
+private struct StartupErrorView: View {
+    let message: String
 
     var body: some View {
-        Form {
-            Section("Foundation") {
-                LabeledContent("Configuration schema", value: "\(snapshot.configuration.schemaVersion)")
-                LabeledContent("Operating system", value: snapshot.diagnostics.operatingSystem)
-                LabeledContent("Architecture", value: snapshot.diagnostics.architecture)
-                LabeledContent("Processors", value: "\(snapshot.diagnostics.activeProcessorCount) active")
-            }
-
-            Section("Application paths") {
-                LabeledContent("Application Support", value: snapshot.paths.applicationSupportDirectory.path)
-                LabeledContent("Configuration", value: snapshot.paths.configurationFile.path)
-            }
-
-            Section("Phase 1 status") {
-                Label("Swift 6 strict concurrency enabled", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Label("Configuration and migration system ready", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Label("Metadata and session persistence ready", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Label("Keychain and security-scoped bookmark services ready", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            }
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 38))
+                .foregroundStyle(.orange)
+            Text("MacPicard could not start")
+                .font(.title2.weight(.semibold))
+            Text(message)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 560)
         }
-        .formStyle(.grouped)
-        .padding()
+        .padding(40)
+    }
+}
+
+private struct GlassBackdrop: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color.accentColor.opacity(0.13),
+                    Color(nsColor: .windowBackgroundColor),
+                    Color(nsColor: .underPageBackgroundColor)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+            .backgroundExtensionEffect()
+
+            Circle()
+                .fill(Color.accentColor.opacity(0.06))
+                .frame(width: 500, height: 500)
+                .blur(radius: 70)
+                .offset(x: 340, y: -250)
+                .accessibilityHidden(true)
+        }
     }
 }

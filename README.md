@@ -64,6 +64,20 @@ Phase 7 adds cover art, saving, organization, and session persistence:
 - Session autosave selects the newest primary/recovery document, supports accept/discard recovery, and persists non-secret profiles with migration support.
 - Fixture tests cover Cover Art Archive decoding/downloads, image processing, atomic metadata saves, move execution, profiles, recovery selection, and autosave.
 
+## Phase 8
+
+Phase 8 adds the complete native macOS workflow:
+
+- SwiftUI file import, folder import, Finder drag-and-drop, album clustering, and multi-selection.
+- Native track hierarchy with state indicators, selection actions, keyboard commands, and VoiceOver labels.
+- Direct metadata editing for the common tag fields, multi-track edits, artwork previews, and embedded cover-art updates.
+- MusicBrainz lookup, deterministic match ranking, full release selection, metadata application, and progress/error feedback.
+- Picard script preview/application, safe script-driven file organization, destination selection, and collision policy support.
+- Atomic save actions, session restoration, recovery autosave, and security-scoped bookmark registration from the UI.
+- Native macOS 26 Liquid Glass controls and containers, using standard materials for content readability and the glass material only for controls and navigation surfaces.
+
+Liquid Glass follows Apple's guidance to keep the material in the control/navigation layer, use regular glass for text-heavy controls, use clear glass only over visually rich backgrounds, and group related effects with GlassEffectContainer. See Apple's [Materials](https://developer.apple.com/design/human-interface-guidelines/materials), [Liquid Glass overview](https://developer.apple.com/documentation/technologyoverviews/liquid-glass), and [glassEffect](<https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:)>).
+
 ## Local development
 
 ```sh
@@ -72,4 +86,4 @@ swift test -Xswiftc -strict-concurrency=complete
 swift run MacPicard
 ```
 
-The application currently displays the initialized foundation status. The native tagging workflow, scripting, cover art, and full editing UI are implemented in later phases.
+The application targets macOS 26 and requires the Xcode 26 SDK because the production UI uses native Liquid Glass APIs.
