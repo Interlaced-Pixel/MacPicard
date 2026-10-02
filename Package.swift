@@ -16,6 +16,10 @@ let package = Package(
             name: "PicardFormats",
             targets: ["PicardFormats"]
         ),
+        .library(
+            name: "PicardMusicBrainz",
+            targets: ["PicardMusicBrainz"]
+        ),
         .executable(
             name: "MacPicard",
             targets: ["MacPicard"]
@@ -55,6 +59,14 @@ let package = Package(
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]
         ),
+        .target(
+            name: "PicardMusicBrainz",
+            dependencies: ["PicardFoundation"],
+            path: "Sources/PicardMusicBrainz",
+            swiftSettings: [
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
         .testTarget(
             name: "PicardFoundationTests",
             dependencies: ["PicardFoundation"],
@@ -69,6 +81,14 @@ let package = Package(
             path: "Tests/PicardFormatsTests",
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .testTarget(
+            name: "PicardMusicBrainzTests",
+            dependencies: ["PicardMusicBrainz", "PicardFoundation"],
+            path: "Tests/PicardMusicBrainzTests",
+            swiftSettings: [
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]
         )
