@@ -138,6 +138,15 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "MacPicardTests",
+            dependencies: ["MacPicard"],
+            path: "Tests/MacPicardTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags(["-strict-concurrency=complete"])
+            ]
+        ),
+        .testTarget(
             name: "PicardFormatsTests",
             dependencies: ["PicardFormats"],
             path: "Tests/PicardFormatsTests",

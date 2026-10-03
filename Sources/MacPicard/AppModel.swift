@@ -22,12 +22,34 @@ final class AppModel: ObservableObject {
     }
 
     @Published private(set) var snapshot: RuntimeSnapshot?
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var statusMessage = "Ready"
+    @Published var errorMessage: String?
+    @Published var statusMessage = "Ready"
     @Published private(set) var isLoading = false
-    @Published private(set) var isWorking = false
-    @Published private(set) var progress: Double?
-    @Published var files: [AudioFile] = []
+    @Published var isWorking = false
+    @Published var progress: Double?
+    @Published var files: [AudioFile] = [] {
+        didSet { rebuildBrowserIndex() }
+    }
+    @Published private(set) var albumGroups: [AlbumGroup] = []
+    @Published var searchQuery = "" {
+        didSet {
+            rebuildBrowserMatches()
+            if oldValue != searchQuery { keepSelectionInSearchResults() }
+        }
+    }
+    @Published var browserFilter = BrowserFilter.all {
+        didSet {
+            rebuildBrowserMatches()
+            if oldValue != browserFilter { keepSelectionInSearchResults() }
+        }
+    }
+    @Published private(set) var matchingFileIDs = Set<UUID>()
+    @Published var albumSort = AlbumSort.title
+    @Published var expandedAlbumIDs = Set<String>()
+    @Published var workspaces: [MusicWorkspace] = []
+    @Published var activeWorkspaceID: UUID?
+    @Published var isSwitchingWorkspace = false
+    @Published var isScanningLibrary = false
     @Published var selectedFileIDs = Set<UUID>()
     @Published var selectedAlbumID: String?
     @Published var lookupResults: [MusicBrainzReleaseSummary] = []
@@ -38,19 +60,29 @@ final class AppModel: ObservableObject {
     @Published var destinationDirectory: URL?
     @Published var collisionPolicy: FileCollisionPolicy = .fail
 
-    private var runtime: PicardRuntime?
+    var runtime: PicardRuntime?
     private var audioCoordinator: AudioFileCoordinator?
     private var musicBrainzClient: MusicBrainzClient?
     private var coverArtClient: CoverArtClient?
     private var saveCoordinator: AudioSaveCoordinator?
     private var organizationCoordinator: FileOrganizationCoordinator?
-    private var sessionManager: SessionManager?
-    private var sessionCreatedAt = Date()
-    private var sessionSaveTask: Task<Void, Never>?
+    var sessionManager: SessionManager?
+    var sessionCreatedAt = Date()
+    var sessionSaveTask: Task<Void, Never>?
     private var autosaveTask: Task<Void, Never>?
     private var selectedReleaseFileIDs = Set<UUID>()
+    private var filesByID: [UUID: AudioFile] = [:]
+    var workspaceStore: WorkspaceStore?
+    let libraryScanner = LibraryScanner()
+    var workspaceAccess: ScopedURLAccess?
+    var importedAccess: [ScopedURLAccess] = []
+    var accessBookmarkKeys: [String] = []
+    var refreshTask: Task<Void, Never>?
+    var libraryScanTask: Task<Void, Never>?
+    var activeLibraryScan: Task<LibraryScanResult, Error>?
 
-    var albumGroups: [AlbumGroup] {
+    private func rebuildBrowserIndex() {
+        filesByID = Dictionary(files.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var grouped: [String: (title: String, artist: String, ids: [UUID])] = [:]
         for file in files {
             let title = file.metadata.firstValue(for: "album")?.trimmedNonEmpty ?? "Unmatched files"
@@ -58,14 +90,14 @@ final class AppModel: ObservableObject {
                 ?? file.metadata.firstValue(for: "artist"))?.trimmedNonEmpty ?? "Unknown artist"
             let key: String
             if title == "Unmatched files" {
-                key = "unmatched-\(file.id.uuidString)"
+                key = "unmatched"
             } else {
                 key = "\(artist.lowercased())\u{1F}\(title.lowercased())"
             }
             grouped[key, default: (title, artist, [])].ids.append(file.id)
         }
 
-        return grouped.map { key, value in
+        albumGroups = grouped.map { key, value in
             AlbumGroup(
                 id: key,
                 title: value.title,
@@ -77,19 +109,31 @@ final class AppModel: ObservableObject {
             if $0.title == $1.title { return $0.artist.localizedStandardCompare($1.artist) == .orderedAscending }
             return $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
+        rebuildBrowserMatches()
+    }
+
+    private func rebuildBrowserMatches() {
+        matchingFileIDs = Set(files.filter { matchesBrowser($0) }.map(\.id))
+    }
+
+    private func keepSelectionInSearchResults() {
+        let remaining = selectedFileIDs.intersection(matchingFileIDs)
+        if remaining != selectedFileIDs { selectionChanged(remaining) }
     }
 
     var visibleFiles: [AudioFile] {
-        guard let selectedAlbumID,
-              let group = albumGroups.first(where: { $0.id == selectedAlbumID }) else {
-            return files.sorted(by: isFileBefore)
+        let candidates: [AudioFile]
+        if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let group = albumGroups.first(where: { $0.id == selectedAlbumID }) {
+            candidates = group.fileIDs.compactMap { filesByID[$0] }
+        } else {
+            candidates = orderedAlbumGroups.flatMap { $0.fileIDs.compactMap { filesByID[$0] } }
         }
-        let ids = Set(group.fileIDs)
-        return files.filter { ids.contains($0.id) }.sorted(by: isFileBefore)
+        return candidates.filter { matchingFileIDs.contains($0.id) }
     }
 
     var selectedFiles: [AudioFile] {
-        files.filter { selectedFileIDs.contains($0.id) }
+        selectedFileIDs.compactMap { filesByID[$0] }.sorted(by: isFileBefore)
     }
 
     var primarySelectedFile: AudioFile? {
@@ -116,22 +160,23 @@ final class AppModel: ObservableObject {
 
     var canDownloadCoverArt: Bool {
         guard !selectedFiles.isEmpty else { return false }
-        return selectedRelease != nil
-            || primarySelectedFile?.metadata.firstValue(for: "musicbrainz_albumid") != nil
+        if selectedRelease != nil { return true }
+        let releaseIDs = Set(selectedFiles.map { $0.metadata.firstValue(for: "musicbrainz_albumid") ?? "" })
+        return releaseIDs.count == 1 && releaseIDs.first?.isEmpty == false
     }
 
     func file(id: UUID) -> AudioFile? {
-        files.first(where: { $0.id == id })
+        filesByID[id]
     }
 
     func metadataValue(_ key: String) -> String {
-        let values = selectedFiles.compactMap { $0.metadata.firstValue(for: key) }
+        let values = selectedFiles.map { $0.metadata.firstValue(for: key) ?? "" }
         guard let first = values.first else { return "" }
         return values.dropFirst().allSatisfy { $0 == first } ? first : ""
     }
 
     func metadataValueIsMixed(_ key: String) -> Bool {
-        let values = selectedFiles.compactMap { $0.metadata.firstValue(for: key) }
+        let values = selectedFiles.map { $0.metadata.firstValue(for: key) ?? "" }
         return Set(values).count > 1
     }
 
@@ -164,10 +209,7 @@ final class AppModel: ObservableObject {
             self.coverArtClient = coverArt
             self.saveCoordinator = AudioSaveCoordinator(coordinator: audio)
             self.organizationCoordinator = FileOrganizationCoordinator()
-            let sessionStore = await runtime.sessionStore
-            self.sessionManager = SessionManager(store: sessionStore)
-
-            try await restoreSession()
+            try await restoreWorkspaces()
             if snapshot.configuration.autosaveEnabled {
                 startAutosave(interval: max(15, snapshot.configuration.autosaveIntervalSeconds))
             }
@@ -198,13 +240,7 @@ final class AppModel: ObservableObject {
     }
 
     func importURLs(expanding urls: [URL]) async {
-        guard let audioCoordinator else { return }
-        let expandedURLs = Self.expand(urls: urls)
-        guard !expandedURLs.isEmpty else {
-            statusMessage = "No supported audio files were found."
-            return
-        }
-
+        guard let audioCoordinator, !isWorking, !isSwitchingWorkspace else { return }
         isWorking = true
         progress = 0
         errorMessage = nil
@@ -214,25 +250,31 @@ final class AppModel: ObservableObject {
             isWorking = false
             progress = nil
         }
-
+        let accessedRoots = urls.filter { $0.startAccessingSecurityScopedResource() }
+        defer { for url in accessedRoots { url.stopAccessingSecurityScopedResource() } }
+        let expandedURLs: [URL]
+        do {
+            expandedURLs = try await libraryScanner.expand(urls)
+            try await rememberImportAccess(urls)
+        } catch { present(error); return }
+        let knownPaths = Set(files.map { $0.url.resolvingSymlinksInPath().standardizedFileURL.path })
+        var loadedFiles: [AudioFile] = []
         for (index, url) in expandedURLs.enumerated() {
+            if knownPaths.contains(url.resolvingSymlinksInPath().standardizedFileURL.path) { continue }
             do {
                 let accessed = url.startAccessingSecurityScopedResource()
                 defer {
                     if accessed { url.stopAccessingSecurityScopedResource() }
                 }
                 let file = try await audioCoordinator.load(url: url)
-                files.append(file)
+                loadedFiles.append(file)
                 imported += 1
-                if let runtime {
-                    try? await runtime.bookmarks.save(url: url, for: file.id.uuidString, readOnly: false)
-                }
             } catch {
                 failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
             }
             progress = Double(index + 1) / Double(expandedURLs.count)
         }
-
+        files.append(contentsOf: loadedFiles)
         if selectedAlbumID == nil {
             selectedAlbumID = albumGroups.first?.id
         }
@@ -249,15 +291,16 @@ final class AppModel: ObservableObject {
     }
 
     func selectAlbum(_ group: AlbumGroup) {
+        searchQuery = ""
         selectedAlbumID = group.id
-        selectedFileIDs = Set(group.fileIDs)
+        selectedFileIDs = Set(group.fileIDs).intersection(matchingFileIDs)
         selectedRelease = nil
         selectedReleaseFileIDs.removeAll()
         scheduleSessionSave()
     }
 
     func selectAllVisible() {
-        selectedFileIDs = Set(visibleFiles.map(\.id))
+        selectionChanged(Set(visibleFiles.map(\.id)))
     }
 
     func clearSelection() {
@@ -267,12 +310,21 @@ final class AppModel: ObservableObject {
         scheduleSessionSave()
     }
 
+    func resetWorkspaceSelection() {
+        selectedFileIDs.removeAll()
+        selectedAlbumID = nil
+        selectedRelease = nil
+        selectedReleaseFileIDs.removeAll()
+        lookupResults.removeAll()
+        matchResults.removeAll()
+        searchQuery = ""
+        browserFilter = .all
+        expandedAlbumIDs.removeAll()
+        destinationDirectory = nil
+    }
+
     func selectionChanged(_ ids: Set<UUID>) {
         selectedFileIDs = ids
-        if let firstID = ids.first,
-           let group = albumGroups.first(where: { $0.fileIDs.contains(firstID) }) {
-            selectedAlbumID = group.id
-        }
         if ids != selectedReleaseFileIDs {
             selectedRelease = nil
             selectedReleaseFileIDs.removeAll()
@@ -281,27 +333,33 @@ final class AppModel: ObservableObject {
     }
 
     func setMetadata(_ key: String, value: String) {
-        guard !selectedFiles.isEmpty else { return }
+        guard !selectedFiles.isEmpty, !isWorking else { return }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetIDs = Set(selectedFiles.map(\.id))
-        for index in files.indices where targetIDs.contains(files[index].id) {
-            var metadata = files[index].metadata
+        var edited = files
+        for index in edited.indices where targetIDs.contains(edited[index].id) {
+            var metadata = edited[index].metadata
             if trimmed.isEmpty {
                 metadata.unset(key)
             } else {
                 metadata.setValue(value, for: key)
             }
             do {
-                try files[index].updateMetadata(metadata)
+                try edited[index].updateMetadata(metadata)
             } catch {
                 present(error)
             }
         }
+        files = edited
         statusMessage = "Updated \(key) for \(selectedFiles.count) \(selectedFiles.count == 1 ? "file" : "files")."
         scheduleSessionSave()
     }
 
     func lookup() async {
+        guard canLookupSelection else {
+            statusMessage = "Select tracks from one album before looking up a release."
+            return
+        }
         guard let musicBrainzClient, let primary = primarySelectedFile else {
             statusMessage = "Select an album or track before looking up releases."
             return
@@ -331,13 +389,16 @@ final class AppModel: ObservableObject {
     }
 
     func chooseMatch(_ result: ReleaseMatchResult) async {
-        guard let musicBrainzClient else { return }
+        guard let musicBrainzClient, !isWorking else { return }
         isWorking = true
         statusMessage = "Loading release details…"
         defer { isWorking = false }
         do {
-            selectedRelease = try await musicBrainzClient.lookupRelease(id: result.release.id)
-            selectedReleaseFileIDs = Set(selectedFiles.map(\.id))
+            let targets = selectedFileIDs
+            let release = try await musicBrainzClient.lookupRelease(id: result.release.id)
+            guard targets == selectedFileIDs else { return }
+            selectedRelease = release
+            selectedReleaseFileIDs = targets
             statusMessage = "Selected \(result.release.title)."
         } catch {
             present(error)
@@ -345,16 +406,18 @@ final class AppModel: ObservableObject {
     }
 
     func applySelectedRelease() {
-        guard let selectedRelease else {
+        guard let selectedRelease, !isWorking else {
             statusMessage = "Choose a MusicBrainz match first."
             return
         }
 
         let trackValues = selectedRelease.tracks
         let targets = selectedFiles
+        var edited = files
+        let indices = Dictionary(uniqueKeysWithValues: edited.enumerated().map { ($0.element.id, $0.offset) })
         for (offset, file) in targets.enumerated() {
-            guard let index = files.firstIndex(where: { $0.id == file.id }) else { continue }
-            var metadata = files[index].metadata
+            guard let index = indices[file.id] else { continue }
+            var metadata = edited[index].metadata
             metadata.setValue(selectedRelease.title, for: "album")
             metadata.setValue(selectedRelease.artistCredit, for: "albumartist")
             if let date = selectedRelease.date { metadata.setValue(date, for: "date") }
@@ -377,17 +440,18 @@ final class AppModel: ObservableObject {
                 if !track.isrcs.isEmpty { metadata.setValues(track.isrcs, for: "isrc") }
             }
             do {
-                try files[index].updateMetadata(metadata)
+                try edited[index].updateMetadata(metadata)
             } catch {
                 present(error)
             }
         }
+        files = edited
         statusMessage = "Applied MusicBrainz metadata to \(targets.count) files."
         scheduleSessionSave()
     }
 
     func downloadCoverArt() async {
-        guard let coverArtClient, !selectedFiles.isEmpty else {
+        guard let coverArtClient, !selectedFiles.isEmpty, !isWorking else {
             statusMessage = "Choose a release before downloading cover art."
             return
         }
@@ -399,6 +463,7 @@ final class AppModel: ObservableObject {
         }
         isWorking = true
         statusMessage = "Downloading cover art…"
+        let targets = selectedFileIDs
         defer { isWorking = false }
         do {
             let release = try await coverArtClient.release(identifier: releaseIdentifier)
@@ -407,12 +472,14 @@ final class AppModel: ObservableObject {
                 return
             }
             let artwork = try await coverArtClient.download(image, size: .thumbnail1200)
-            for index in files.indices where selectedFiles.contains(where: { $0.id == files[index].id }) {
-                var collection = files[index].artwork
+            var edited = files
+            for index in edited.indices where targets.contains(edited[index].id) {
+                var collection = edited[index].artwork
                 collection.remove(id: collection.first(of: .front)?.id ?? UUID())
                 collection.append(artwork)
-                try files[index].updateArtwork(collection)
+                try edited[index].updateArtwork(collection)
             }
+            files = edited
             statusMessage = "Downloaded cover art for \(selectedFiles.count) files."
             scheduleSessionSave()
         } catch {
@@ -421,7 +488,15 @@ final class AppModel: ObservableObject {
     }
 
     func saveSelected() async {
-        guard let saveCoordinator, !selectedFiles.isEmpty else {
+        await saveFiles(selectedFiles.filter(\.isModified))
+    }
+
+    func saveAllChanges() async {
+        await saveFiles(files.filter(\.isModified))
+    }
+
+    private func saveFiles(_ targets: [AudioFile]) async {
+        guard let saveCoordinator, !targets.isEmpty, !isWorking else {
             statusMessage = "Select at least one changed file to save."
             return
         }
@@ -432,26 +507,25 @@ final class AppModel: ObservableObject {
             isWorking = false
             progress = nil
         }
-        do {
-            let saved = try await saveCoordinator.saveAll(
-                selectedFiles,
-                options: AudioSaveOptions(
+        var saved: [AudioFile] = []
+        var failures: [String] = []
+        for (index, file) in targets.enumerated() {
+            do {
+                let result = try await saveCoordinator.save(file, options: AudioSaveOptions(
                     preserveModificationDate: snapshot?.configuration.preserveFileTimestamps ?? true
-                ),
-                progress: { [weak self] value in
-                    await self?.updateSaveProgress(value)
-                }
-            )
-            replaceFiles(saved)
-            statusMessage = "Saved \(saved.count) \(saved.count == 1 ? "file" : "files")."
-            await saveSession()
-        } catch {
-            present(error)
+                ))
+                saved.append(result)
+            } catch { failures.append("\(file.url.lastPathComponent): \(error.localizedDescription)") }
+            progress = Double(index + 1) / Double(targets.count)
         }
+        replaceFiles(saved)
+        statusMessage = "Saved \(saved.count) \(saved.count == 1 ? "file" : "files")."
+        errorMessage = failures.isEmpty ? nil : failures.prefix(3).joined(separator: "\n")
+        await saveSession()
     }
 
     func organizeSelected() async {
-        guard let organizationCoordinator, let destinationDirectory, !selectedFiles.isEmpty else {
+        guard let organizationCoordinator, let destinationDirectory, !selectedFiles.isEmpty, !isWorking else {
             statusMessage = "Choose a destination folder and select files to organize."
             return
         }
@@ -474,21 +548,25 @@ final class AppModel: ObservableObject {
     }
 
     func runScript(applying: Bool) {
-        guard let primary = primarySelectedFile else {
+        guard !isBusy else { return }
+        guard !selectedFiles.isEmpty else {
             scriptOutput = "Select a file first."
             return
         }
         do {
-            let evaluation = try ScriptEvaluator().evaluate(
-                scriptSource,
-                context: ScriptContext(metadata: primary.metadata)
-            )
-            scriptOutput = evaluation.output
+            let evaluator = ScriptEvaluator()
+            let targets = selectedFiles
+            var edited = files
+            let indices = Dictionary(uniqueKeysWithValues: edited.enumerated().map { ($0.element.id, $0.offset) })
+            var outputs: [String] = []
+            for file in targets {
+                let evaluation = try evaluator.evaluate(scriptSource, context: ScriptContext(metadata: file.metadata))
+                if outputs.count < 3 { outputs.append(evaluation.output) }
+                if applying, let index = indices[file.id] { try edited[index].updateMetadata(evaluation.metadata) }
+            }
+            scriptOutput = outputs.joined(separator: "\n")
             if applying {
-                let targetIDs = Set(selectedFiles.map(\.id))
-                for index in files.indices where targetIDs.contains(files[index].id) {
-                    try files[index].updateMetadata(evaluation.metadata)
-                }
+                files = edited
                 statusMessage = "Applied script output to \(selectedFiles.count) files."
                 scheduleSessionSave()
             } else {
@@ -508,7 +586,13 @@ final class AppModel: ObservableObject {
             }
             destinationDirectory = directory
             Task { @MainActor [weak self] in
-                await self?.organizeSelected()
+                guard let self else { return }
+                let accessed = directory.startAccessingSecurityScopedResource()
+                defer { if accessed { directory.stopAccessingSecurityScopedResource() } }
+                do {
+                    try await self.rememberImportAccess([directory])
+                    await self.organizeSelected()
+                } catch { self.present(error) }
             }
         } catch {
             present(error)
@@ -535,27 +619,28 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func restoreSession() async throws {
-        guard let sessionManager else { return }
-        guard let loaded = try await sessionManager.loadBestAvailable() else { return }
+    func restoreSession(_ loaded: LoadedSession?) {
+        guard let loaded else { return }
         sessionCreatedAt = loaded.document.createdAt
         files = loaded.document.files.map(AudioFile.restore(from:))
         selectedFileIDs = Set(loaded.document.selectedFileIDs.filter { id in files.contains(where: { $0.id == id }) })
-        selectedAlbumID = albumGroups.first(where: { Set($0.fileIDs).isSuperset(of: selectedFileIDs) })?.id ?? albumGroups.first?.id
+        selectedAlbumID = loaded.document.selectedAlbumKey
+        accessBookmarkKeys = loaded.document.accessBookmarkKeys
+        expandedAlbumIDs.removeAll()
         if loaded.source == .recovery {
             statusMessage = "Recovered an autosaved session."
         }
     }
 
-    private func makeSessionDocument() -> SessionDocument {
+    func makeSessionDocument() -> SessionDocument {
         SessionDocument(
             createdAt: sessionCreatedAt,
             savedAt: Date(),
             files: files.map { $0.sessionRecord() },
             selectedFileIDs: Array(selectedFileIDs),
-            expandedNodeIDs: selectedAlbumID
-                .flatMap { selectedID in albumGroups.first(where: { $0.id == selectedID })?.fileIDs.first }
-                .map { [$0] } ?? []
+            expandedNodeIDs: [],
+            selectedAlbumKey: selectedAlbumID,
+            accessBookmarkKeys: accessBookmarkKeys
         )
     }
 
@@ -575,7 +660,7 @@ final class AppModel: ObservableObject {
         try? await sessionManager.saveRecovery(makeSessionDocument())
     }
 
-    private func scheduleSessionSave() {
+    func scheduleSessionSave() {
         sessionSaveTask?.cancel()
         sessionSaveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(350))
@@ -606,36 +691,13 @@ final class AppModel: ObservableObject {
         return Int(value.split(separator: "/", maxSplits: 1).first ?? Substring(value))
     }
 
-    private func updateSaveProgress(_ value: Double) {
+    func updateSaveProgress(_ value: Double) {
         progress = value
     }
 
-    private func present(_ error: Error) {
+    func present(_ error: Error) {
         errorMessage = error.localizedDescription
         statusMessage = "Action failed."
-    }
-
-    private static func expand(urls: [URL]) -> [URL] {
-        let fileManager = FileManager.default
-        var result: [URL] = []
-        for url in urls {
-            var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
-            if isDirectory.boolValue {
-                guard let enumerator = fileManager.enumerator(
-                    at: url,
-                    includingPropertiesForKeys: [.isRegularFileKey],
-                    options: [.skipsHiddenFiles]
-                ) else { continue }
-                for case let child as URL in enumerator {
-                    if child.pathExtension.isEmpty { continue }
-                    result.append(child)
-                }
-            } else {
-                result.append(url)
-            }
-        }
-        return result.filter { FormatRegistry().detectIfSupported(url: $0) }.uniquedURLs()
     }
 
     private static func url(from provider: NSItemProvider) async -> URL? {

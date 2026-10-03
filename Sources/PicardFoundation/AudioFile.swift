@@ -157,7 +157,7 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
     }
 
     public mutating func updateURL(_ url: URL) throws {
-        try requireState([.discovered, .ready, .changed, .saved], operation: "update file location")
+        try requireState([.discovered, .ready, .changed, .saved, .removed, .failed], operation: "update file location")
         self.url = url
     }
 
@@ -183,6 +183,16 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
 
     public mutating func markRemoved() {
         state = .removed
+    }
+
+    public mutating func restoreAvailability() throws {
+        try requireState([.removed, .failed], operation: "restore file availability")
+        guard identity != nil else {
+            throw PicardError.invalidState(entity: "audio file", state: state.rawValue,
+                                           operation: "restore a file that has not been loaded")
+        }
+        state = isModified ? .changed : .ready
+        lastError = nil
     }
 
     public mutating func markUnsupported(_ reason: String) {

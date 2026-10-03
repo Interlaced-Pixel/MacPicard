@@ -293,11 +293,11 @@ public actor AudioFileCoordinator {
         self.engine = engine
     }
 
-    public func load(url: URL) async throws -> AudioFile {
+    public func load(url: URL, id: UUID = UUID()) async throws -> AudioFile {
         let result = try await engine.read(url: url)
         let identity = try AudioFileIdentity.capture(url: url)
 
-        var file = AudioFile(url: url)
+        var file = AudioFile(id: id, url: url)
         try file.beginLoading()
         try file.finishLoading(metadata: result.metadata, artwork: result.artwork, identity: identity)
         return file

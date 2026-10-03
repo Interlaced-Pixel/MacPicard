@@ -5,136 +5,8 @@ import PicardMusicBrainz
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct LibrarySidebar: View {
-    @ObservedObject var model: AppModel
-    @Binding var isImporting: Bool
-    @Binding var isShowingSettings: Bool
 
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Label("Library", systemImage: "music.note.list")
-                    .font(.headline)
-                Spacer()
-                Button {
-                    isImporting = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.glass)
-                .help("Import audio files or a folder")
-                .accessibilityLabel("Import audio")
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-
-            if model.albumGroups.isEmpty {
-                ContentUnavailableView {
-                    Label("No music yet", systemImage: "music.note")
-                } description: {
-                    Text("Import audio files or drop a folder here to begin.")
-                } actions: {
-                    Button("Import Audio") { isImporting = true }
-                        .buttonStyle(.glassProminent)
-                }
-                .padding(.horizontal, 12)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(model.albumGroups) { group in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Button {
-                                    model.selectAlbum(group)
-                                } label: {
-                                    HStack(spacing: 9) {
-                                        if let firstID = group.fileIDs.first,
-                                           let firstFile = model.file(id: firstID) {
-                                            ArtworkThumbnail(artwork: firstFile.artwork.first(of: .front))
-                                                .frame(width: 30, height: 30)
-                                                .clipShape(.rect(cornerRadius: 6))
-                                        } else {
-                                            Image(systemName: "music.note.list")
-                                                .frame(width: 30, height: 30)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(group.title)
-                                                .font(.subheadline.weight(.semibold))
-                                                .lineLimit(1)
-                                            Text(group.subtitle)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        Spacer(minLength: 4)
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        model.selectedAlbumID == group.id
-                                            ? Color.accentColor.opacity(0.10)
-                                            : Color.clear,
-                                        in: .rect(cornerRadius: 10)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Select album \(group.title)")
-
-                                ForEach(group.fileIDs, id: \.self) { id in
-                                    if let file = model.file(id: id) {
-                                        Button {
-                                            model.selectionChanged([id])
-                                        } label: {
-                                            SidebarTrackRow(
-                                                file: file,
-                                                isSelected: model.selectedFileIDs.contains(id)
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                        .contextMenu {
-                                            Button("Select Album") { model.selectAlbum(group) }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-                }
-            }
-
-            Divider()
-            HStack {
-                Label("\(model.files.count) files", systemImage: "internaldrive")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    isShowingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .buttonStyle(.glass)
-                .help("Open MacPicard settings")
-                .accessibilityLabel("Settings")
-            }
-            .padding(10)
-        }
-        .frame(minWidth: 260)
-        .background(.thinMaterial)
-        .onChange(of: model.selectedFileIDs) { _, ids in
-            model.selectionChanged(ids)
-        }
-    }
-}
-
-private struct SidebarTrackRow: View {
+struct SidebarTrackRow: View {
     let file: AudioFile
     let isSelected: Bool
 
@@ -192,6 +64,7 @@ struct WorkspaceView: View {
     @Binding var isShowingLookup: Bool
     @Binding var isShowingScript: Bool
     @Binding var isDropTargeted: Bool
+    @ObservedObject var presentation: AppPresentation
 
     var body: some View {
         VStack(spacing: 0) {
@@ -200,16 +73,21 @@ struct WorkspaceView: View {
                 isImporting: $isImporting,
                 isChoosingDestination: $isChoosingDestination,
                 isShowingLookup: $isShowingLookup,
-                isShowingScript: $isShowingScript
+                isShowingScript: $isShowingScript,
+                presentation: presentation
             )
 
             Divider()
 
             if model.files.isEmpty {
-                EmptyLibraryView { isImporting = true }
+                EmptyLibraryView(
+                    importAction: { isImporting = true },
+                    addLibraryAction: { presentation.isAddingLibrary = true }
+                )
             } else {
-                AlbumWorkspace(model: model)
+                AlbumWorkspace(model: model, presentation: presentation)
             }
+            WorkspaceStatusBar(model: model)
         }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted) { providers in
             model.importDroppedProviders(providers)
@@ -235,39 +113,52 @@ private struct ActionBar: View {
     @Binding var isChoosingDestination: Bool
     @Binding var isShowingLookup: Bool
     @Binding var isShowingScript: Bool
+    @ObservedObject var presentation: AppPresentation
+    @State private var isCompact = false
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 8) {
+                Button { presentation.showsSidebar.toggle() } label: {
+                    Image(systemName: "sidebar.left")
+                }
+                .buttonStyle(.glass)
+                .help(presentation.showsSidebar ? "Hide sidebar" : "Show sidebar")
                 GlassActionButton("Import", systemImage: "plus", prominent: true) {
                     isImporting = true
                 }
-                GlassActionButton("Look Up", systemImage: "magnifyingglass") {
+                GlassActionButton("Look Up", systemImage: "magnifyingglass", compact: isCompact) {
                     isShowingLookup = true
                     Task { await model.lookup() }
                 }
-                .disabled(model.selectedFiles.isEmpty)
-                GlassActionButton("Cover Art", systemImage: "photo.on.rectangle") {
+                .disabled(!model.canLookupSelection)
+                GlassActionButton("Cover Art", systemImage: "photo.on.rectangle", compact: isCompact) {
                     Task { await model.downloadCoverArt() }
                 }
-                .disabled(!model.canDownloadCoverArt)
-                GlassActionButton("Script", systemImage: "chevron.left.forwardslash.chevron.right") {
+                .disabled(model.isBusy || !model.canDownloadCoverArt)
+                GlassActionButton("Script", systemImage: "chevron.left.forwardslash.chevron.right", compact: isCompact) {
                     isShowingScript = true
                 }
-                .disabled(model.selectedFiles.isEmpty)
-                GlassActionButton("Save", systemImage: "square.and.arrow.down") {
+                .disabled(!model.canEditSelection)
+                GlassActionButton("Save", systemImage: "square.and.arrow.down", compact: isCompact) {
                     Task { await model.saveSelected() }
                 }
-                .disabled(!model.hasUnsavedChanges || model.selectedFiles.isEmpty)
-                GlassActionButton("Organize", systemImage: "folder.badge.gearshape") {
+                .disabled(!model.canEditSelection || model.selectedModifiedCount == 0)
+                GlassActionButton("Organize", systemImage: "folder.badge.gearshape", compact: isCompact) {
                     if model.destinationDirectory == nil {
                         isChoosingDestination = true
                     } else {
                         Task { await model.organizeSelected() }
                     }
                 }
-                .disabled(model.selectedFiles.isEmpty)
+                .disabled(!model.canEditSelection)
+
+                Button { presentation.showsInspector.toggle() } label: {
+                    Image(systemName: "sidebar.right")
+                }
+                .buttonStyle(.glass)
+                .help(presentation.showsInspector ? "Hide metadata inspector" : "Show metadata inspector")
 
                 Spacer(minLength: 8)
 
@@ -318,6 +209,44 @@ private struct ActionBar: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(.bar)
+        .onGeometryChange(for: Bool.self) { geometry in geometry.size.width < 1_000 } action: {
+            isCompact = $0
+        }
+    }
+}
+
+private struct WorkspaceStatusBar: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if model.isBusy {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: model.errorMessage == nil ? "checkmark.circle" : "exclamationmark.triangle")
+                    .foregroundStyle(model.errorMessage == nil ? Color.secondary : .orange)
+            }
+            Text(model.errorMessage ?? model.statusMessage)
+                .lineLimit(2)
+                .help(model.errorMessage ?? model.statusMessage)
+            Spacer(minLength: 8)
+            if model.isScanningLibrary {
+                Button("Cancel") { model.cancelLibraryRefresh() }
+                    .buttonStyle(.borderless)
+            }
+            if let progress = model.progress {
+                ProgressView(value: progress).frame(width: 90)
+            }
+            if let workspace = model.activeWorkspace {
+                Text(workspace.kind == .library ? "Folder library" : "Session autosaved")
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+            }
+        }
+        .font(.caption)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 }
 
@@ -325,12 +254,14 @@ private struct GlassActionButton: View {
     let title: String
     let systemImage: String
     let prominent: Bool
+    let compact: Bool
     let action: () -> Void
 
-    init(_ title: String, systemImage: String, prominent: Bool = false, action: @escaping () -> Void) {
+    init(_ title: String, systemImage: String, prominent: Bool = false, compact: Bool = false, action: @escaping () -> Void) {
         self.title = title
         self.systemImage = systemImage
         self.prominent = prominent
+        self.compact = compact
         self.action = action
     }
 
@@ -338,12 +269,12 @@ private struct GlassActionButton: View {
         Group {
             if prominent {
                 Button(action: action) {
-                    Label(title, systemImage: systemImage)
+                    buttonLabel
                 }
                 .buttonStyle(.glassProminent)
             } else {
                 Button(action: action) {
-                    Label(title, systemImage: systemImage)
+                    buttonLabel
                 }
                 .buttonStyle(.glass)
             }
@@ -351,19 +282,26 @@ private struct GlassActionButton: View {
         .help(title)
         .accessibilityLabel(title)
     }
+
+    @ViewBuilder private var buttonLabel: some View {
+        if compact { Image(systemName: systemImage) }
+        else { Label(title, systemImage: systemImage) }
+    }
 }
 
 private struct EmptyLibraryView: View {
     let importAction: () -> Void
+    let addLibraryAction: () -> Void
 
     var body: some View {
         ContentUnavailableView {
-            Label("Your library is empty", systemImage: "music.note.list")
+            Label("Make room for your music", systemImage: "music.note.list")
         } description: {
-            Text("Import audio files or drop a folder to edit metadata, identify releases, and save changes.")
+            Text("Link a music folder to manage it over time, or import files into this session for a tagging task.")
         } actions: {
-            Button("Import Audio") { importAction() }
+            Button("Add Music Library…") { addLibraryAction() }
                 .buttonStyle(.glassProminent)
+            Button("Import Audio…") { importAction() }.buttonStyle(.glass)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -371,6 +309,7 @@ private struct EmptyLibraryView: View {
 
 private struct AlbumWorkspace: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var presentation: AppPresentation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -382,8 +321,10 @@ private struct AlbumWorkspace: View {
             HSplitView {
                 TrackListView(model: model)
                     .frame(minWidth: 440, idealWidth: 560)
-                MetadataInspector(model: model)
-                    .frame(minWidth: 390, idealWidth: 460)
+                if presentation.showsInspector {
+                    MetadataInspector(model: model)
+                        .frame(minWidth: 390, idealWidth: 460)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -395,18 +336,15 @@ private struct AlbumHeader: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            ArtworkThumbnail(artwork: model.primarySelectedFile?.artwork.first(of: .front))
+            WorkspaceArtwork(model: model)
                 .frame(width: 88, height: 88)
                 .clipShape(.rect(cornerRadius: 14))
-                .glassEffect(.clear, in: .rect(cornerRadius: 14))
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(model.primarySelectedFile?.metadata.firstValue(for: "album") ?? "Unmatched files")
+                Text(model.browserTitle)
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
-                Text(model.primarySelectedFile?.metadata.firstValue(for: "albumartist")
-                    ?? model.primarySelectedFile?.metadata.firstValue(for: "artist")
-                    ?? "Unknown artist")
+                Text(model.browserSubtitle)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 HStack(spacing: 10) {
@@ -445,6 +383,49 @@ private struct AlbumHeader: View {
     }
 }
 
+private struct WorkspaceArtwork: View {
+    @ObservedObject var model: AppModel
+
+    private var covers: [Artwork] {
+        model.browserAlbumGroups.prefix(4).compactMap { group in
+            group.fileIDs.lazy.compactMap { model.file(id: $0)?.artwork.first(of: .front) }.first
+        }
+    }
+
+    var body: some View {
+        if !model.browsingAllTracks, let group = model.displayedAlbum {
+            ArtworkThumbnail(artwork: group.fileIDs.lazy.compactMap {
+                model.file(id: $0)?.artwork.first(of: .front)
+            }.first)
+        } else if !covers.isEmpty {
+            GeometryReader { geometry in
+                let artwork = covers
+                let side = (geometry.size.width - 2) / 2
+                VStack(spacing: 2) {
+                    ForEach(0..<2) { row in
+                        HStack(spacing: 2) {
+                            ForEach(0..<2) { column in
+                                ArtworkThumbnail(artwork: artwork[(row * 2 + column) % artwork.count])
+                                    .frame(width: side, height: side)
+                            }
+                        }
+                    }
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Collection artwork")
+        } else {
+            ZStack {
+                Color.accentColor.opacity(0.12)
+                Image(systemName: "music.note.list")
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundStyle(.tint)
+            }
+            .accessibilityLabel("Music collection")
+        }
+    }
+}
+
 private struct TrackListView: View {
     @ObservedObject var model: AppModel
 
@@ -454,7 +435,7 @@ private struct TrackListView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Tracks")
                         .font(.headline)
-                    Text("\(model.visibleFiles.count) in album · \(model.selectedFiles.count) selected")
+                    Text("\(model.visibleFiles.count) visible · \(model.selectedFiles.count) selected")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -471,6 +452,11 @@ private struct TrackListView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
 
+            if model.visibleFiles.isEmpty {
+                ContentUnavailableView("No matching tracks", systemImage: "magnifyingglass",
+                                       description: Text("Try another search or filter."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
             List(selection: $model.selectedFileIDs) {
                 ForEach(Array(model.visibleFiles.enumerated()), id: \.element.id) { offset, file in
                     TrackDetailRow(file: file, position: offset + 1, isSelected: model.selectedFileIDs.contains(file.id))
@@ -482,12 +468,14 @@ private struct TrackListView: View {
                                     model.selectAlbum(group)
                                 }
                             }
+                            Button("Reveal in Finder") { model.revealFiles([file]) }
                         }
                 }
             }
             .listStyle(.inset)
             .onChange(of: model.selectedFileIDs) { _, ids in
                 model.selectionChanged(ids)
+            }
             }
         }
         .background(.thinMaterial)
@@ -597,6 +585,13 @@ private struct MetadataInspector: View {
                     MetadataFieldGroup(title: "Release", fields: releaseFields, model: model)
                     MetadataFieldGroup(title: "Numbering", fields: numberingFields, model: model)
                     ArtworkInspector(model: model)
+                    if let file = model.primarySelectedFile {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("File").font(.subheadline.weight(.semibold))
+                            Text(file.url.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            Button("Reveal in Finder") { model.revealSelection() }
+                        }.padding(.top, 10)
+                    }
                 }
             }
             .padding(18)
@@ -627,6 +622,7 @@ private struct MetadataFieldGroup: View {
             }
         }
         .padding(.top, 4)
+        .disabled(!model.canEditSelection)
     }
 }
 
@@ -856,7 +852,8 @@ struct SettingsView: View {
                     Section("Files") {
                         LabeledContent("Supported formats", value: AudioFormat.allCases.map(\.displayName).joined(separator: ", "))
                         LabeledContent("Application Support", value: snapshot.paths.applicationSupportDirectory.path)
-                        LabeledContent("Session", value: snapshot.paths.sessionFile.lastPathComponent)
+                        LabeledContent("Workspace", value: model.activeWorkspace?.name ?? "None")
+                        LabeledContent("Workspace autosave", value: "On edit and on quit")
                     }
                     Section("Liquid Glass") {
                         Text("Controls use native macOS 26 Liquid Glass. Content remains on standard materials for legibility.")

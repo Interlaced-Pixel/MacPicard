@@ -4,6 +4,22 @@ Native macOS Swift 6 recreation of the core MusicBrainz Picard workflow.
 
 The first release targets MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV. The project plan is documented in [picard-swift6-plan.md](picard-swift6-plan.md).
 
+## Libraries and sessions
+
+Choose **File → Add Music Library…** (⌘O) to link a music directory. Supported audio files in its subfolders are indexed, and the active library refreshes every minute. **Library → Refresh Library** (⌘R) scans immediately. Refreshes preserve pending edits, detect external changes, and retain unavailable files until their drive reconnects. Use **Reconnect Library Folder…** after moving a collection.
+
+Choose **File → New Session…** (⌘N) for an independent tagging workspace, or **Save Session As…** (⇧⌘S) to snapshot the current files and pending edits. Switch with the sidebar workspace chooser or **File → Open Workspace**. Workspaces autosave on edits, before switching, and on quit; saving a workspace does not write tags to the music files. **Save Selected Tags** (⌘S) and **Save All Changed Tags** (⌥⌘S) write audio metadata.
+
+Albums start collapsed each time a workspace opens. Click an album to browse its tracks and select the album for batch editing; click its disclosure chevron to expand sidebar tracks. **Find Music…** (⌘F) searches title, artist, album, genre, and filename across the entire collection. Filters show unsaved changes, missing artwork, unidentified tracks, or unavailable files. Album sorting, Expand All, and Collapse All are available in the sidebar and View menu. Command-click and Shift-click support track selection.
+
+Search and filter changes deselect tracks that leave the results, and album selection respects the active filter. MusicBrainz lookup operates on one album at a time. Batch scripts evaluate each track's own metadata, preserving distinct titles and track numbers.
+
+**Library → Manage Libraries & Sessions…** provides naming, switching, automatic refresh settings, and workspace removal. Removing a workspace leaves all music untouched and retains its document in Application Support. The original single-session data migrates automatically to **My Session**. Catalogs, separate session documents, and recovery files live under `Application Support/MacPicard/Workspaces`; directory access is retained with security-scoped bookmarks.
+
+The File, Edit, View, Library, and Metadata menus share their actions and enabled states with the on-screen controls. The sidebar and metadata inspector can be hidden, and the action bar adapts to narrower windows. **Help → MacPicard Guide** explains these workflows in the app.
+
+Menu placement and persistent folder access follow Apple's [command groups](https://developer.apple.com/documentation/swiftui/commandgroupplacement) and [security-scoped URL access](https://developer.apple.com/documentation/foundation/url/startaccessingsecurityscopedresource()) APIs.
+
 ## Phase 1
 
 Phase 1 establishes the Swift Package Manager foundation:

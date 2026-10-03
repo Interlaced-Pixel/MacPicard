@@ -1,0 +1,176 @@
+import AppKit
+import PicardSessions
+import SwiftUI
+
+struct MacPicardCommands: Commands {
+    @ObservedObject var model: AppModel
+    @ObservedObject var presentation: AppPresentation
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Session…") { presentation.newSession() }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(model.isBusy)
+            Button("Add Music Library…") { presentation.isAddingLibrary = true }
+                .keyboardShortcut("o", modifiers: .command)
+                .disabled(model.isBusy)
+            Menu("Open Workspace") {
+                ForEach(model.workspaces.sorted { $0.lastOpenedAt > $1.lastOpenedAt }) { workspace in
+                    Button(workspace.name) { Task { await model.switchWorkspace(workspace.id) } }
+                        .disabled(model.isBusy || workspace.id == model.activeWorkspaceID)
+                }
+            }
+        }
+
+        CommandGroup(replacing: .importExport) {
+            Button("Import Audio Files or Folder…") { presentation.isImporting = true }
+                .keyboardShortcut("i", modifiers: .command)
+                .disabled(model.isBusy)
+        }
+
+        CommandGroup(replacing: .saveItem) {
+            Button("Save Selected Tags") { Task { await model.saveSelected() } }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(!model.canEditSelection || model.selectedModifiedCount == 0)
+            Button("Save All Changed Tags") { Task { await model.saveAllChanges() } }
+                .keyboardShortcut("s", modifiers: [.command, .option])
+                .disabled(model.isBusy || !model.hasUnsavedChanges)
+            Divider()
+            Button("Save Workspace") { Task { await model.saveSession() } }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+                .disabled(model.isBusy)
+            Button("Save Session As…") { presentation.newSession(copying: true) }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(model.isBusy)
+            Divider()
+            Button("Close Window") { NSApp.keyWindow?.performClose(nil) }
+                .keyboardShortcut("w", modifiers: .command)
+        }
+
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { presentation.isShowingSettings = true }
+                .keyboardShortcut(",", modifiers: .command)
+        }
+
+        CommandGroup(after: .pasteboard) {
+            Divider()
+            Button("Select All Visible Tracks") { model.selectAllVisible() }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(model.visibleFiles.isEmpty)
+            Button("Clear Track Selection") { model.clearSelection() }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(model.selectedFiles.isEmpty)
+            Button("Find Music…") { presentation.focusSearch() }
+                .keyboardShortcut("f", modifiers: .command)
+        }
+
+        CommandGroup(after: .sidebar) {
+            Button(presentation.showsSidebar ? "Hide Sidebar" : "Show Sidebar") {
+                presentation.showsSidebar.toggle()
+            }.keyboardShortcut("s", modifiers: [.command, .control, .option])
+            Button(presentation.showsInspector ? "Hide Metadata Inspector" : "Show Metadata Inspector") {
+                presentation.showsInspector.toggle()
+            }.keyboardShortcut("i", modifiers: [.command, .option])
+            Divider()
+            Button("Show All Tracks") { model.searchQuery = ""; model.browseAllTracks() }
+                .keyboardShortcut("1", modifiers: .command)
+            Button("Expand All Albums") { model.expandAllAlbums() }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            Button("Collapse All Albums") { model.collapseAllAlbums() }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+            Menu("Filter Tracks") {
+                Picker("Filter", selection: $model.browserFilter) {
+                    ForEach(BrowserFilter.allCases) { filter in Text(filter.rawValue).tag(filter) }
+                }
+            }
+            Menu("Sort Albums") {
+                Picker("Sort", selection: $model.albumSort) {
+                    ForEach(AlbumSort.allCases) { sort in Text(sort.rawValue).tag(sort) }
+                }
+            }
+        }
+
+        CommandMenu("Library") {
+            Button("Manage Libraries & Sessions…") { presentation.isManagingWorkspaces = true }
+                .keyboardShortcut("l", modifiers: [.command, .option])
+            Button("Refresh Library") { Task { await model.refreshLibrary() } }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(model.isBusy || model.activeWorkspace?.kind != .library)
+            Button("Cancel Library Refresh") { model.cancelLibraryRefresh() }
+                .disabled(!model.isScanningLibrary)
+            Toggle("Refresh Automatically", isOn: Binding(
+                get: { model.activeWorkspace?.automaticallyRefreshes ?? false },
+                set: { value in Task { await model.setAutomaticRefresh(value) } }
+            )).disabled(model.isBusy || model.activeWorkspace?.kind != .library)
+            Button("Reconnect Library Folder…") { presentation.isRelinkingLibrary = true }
+                .disabled(model.isBusy || model.activeWorkspace?.kind != .library)
+            Divider()
+            Button("Reveal Library Folder in Finder") { model.revealLibrary() }
+                .disabled(model.activeWorkspace?.directory == nil)
+            Button("Reveal Selected Files in Finder") { model.revealSelection() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(model.selectedFiles.isEmpty)
+        }
+
+        CommandMenu("Metadata") {
+            Button("Look Up on MusicBrainz…") {
+                presentation.isShowingLookup = true
+                Task { await model.lookup() }
+            }.keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(!model.canLookupSelection)
+            Button("Apply Selected Match") { model.applySelectedRelease() }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+                .disabled(model.isBusy || model.selectedRelease == nil)
+            Button("Download Cover Art") { Task { await model.downloadCoverArt() } }
+                .disabled(model.isBusy || !model.canDownloadCoverArt)
+            Divider()
+            Button("Script Editor…") { presentation.isShowingScript = true }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(!model.canEditSelection)
+            Button("Organize Selected Files…") {
+                presentation.isChoosingDestination = true
+            }.keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(!model.canEditSelection)
+        }
+
+        CommandGroup(replacing: .help) {
+            Button("MacPicard Guide") { presentation.isShowingGuide = true }
+        }
+    }
+}
+
+struct QuickStartView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Get things done with MacPicard").font(.title2.weight(.semibold))
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+            guide("Keep a music library", symbol: "externaldrive",
+                  text: "Choose File → Add Music Library and select your music folder. MacPicard includes supported audio files in every subfolder and refreshes the library every minute while it is open. Use Library → Refresh Library to scan immediately.")
+            guide("Keep separate sessions", symbol: "rectangle.stack",
+                  text: "Create a named session for a particular tagging task. Import files or folders, then return through the workspace chooser or File → Open Workspace. Pending edits are saved in the workspace; Save Tags writes them to the audio files.")
+            guide("Navigate a large collection", symbol: "magnifyingglass",
+                  text: "Albums start collapsed. Click an album to open all its tracks; click its chevron to expand the sidebar. Press ⌘F to search title, artist, album, genre, or filename across the collection. Filters highlight unsaved edits, missing artwork, unidentified tracks, and unavailable files.")
+            guide("Edit and identify music", symbol: "slider.horizontal.3",
+                  text: "Select tracks with Command-click or Shift-click. The inspector shows Multiple values when tags differ; typing a value applies it to the selection. Use Metadata → Look Up on MusicBrainz, choose a release, then Apply Match. Save Selected Tags with ⌘S, or Save All Changed Tags with ⌥⌘S.")
+            guide("Organize files", symbol: "folder.badge.gearshape",
+                  text: "Use the Script Editor to preview a naming path, then Organize Selected Files to choose a destination. Reveal files in Finder with ⇧⌘R. Unavailable files remain in the library so they can be found again when the drive reconnects.")
+        }
+        .padding(24)
+        .frame(width: 650)
+    }
+
+    private func guide(_ title: String, symbol: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: symbol).font(.title3).foregroundStyle(.tint).frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline)
+                Text(text).font(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+}

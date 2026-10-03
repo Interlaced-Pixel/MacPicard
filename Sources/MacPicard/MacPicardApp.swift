@@ -3,6 +3,8 @@ import SwiftUI
 
 @MainActor
 final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
+    weak var model: AppModel?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             self?.fitWindowsToVisibleScreen()
@@ -11,6 +13,24 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model else { return .terminateNow }
+        Task { @MainActor in
+            do {
+                try await model.flushSession()
+                sender.reply(toApplicationShouldTerminate: true)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "The workspace could not be saved."
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: "Keep Open")
+                alert.addButton(withTitle: "Quit Without Saving")
+                sender.reply(toApplicationShouldTerminate: alert.runModal() == .alertSecondButtonReturn)
+            }
+        }
+        return .terminateLater
     }
 
     private func fitWindowsToVisibleScreen() {
@@ -46,37 +66,22 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
 struct MacPicardApp: App {
     @NSApplicationDelegateAdaptor(MacPicardAppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
+    @StateObject private var presentation = AppPresentation()
 
     var body: some Scene {
-        WindowGroup("MacPicard") {
-            ContentView(model: model)
+        Window("MacPicard", id: "workspace") {
+            ContentView(model: model, presentation: presentation)
+                .onAppear { appDelegate.model = model }
                 .task { await model.bootstrap() }
         }
         .defaultSize(width: 1_360, height: 860)
-        .commands {
-            CommandGroup(after: .newItem) {
-                Button("Select All Tracks") { model.selectAllVisible() }
-                    .keyboardShortcut("a", modifiers: [.command, .option])
-                Button("Clear Selection") { model.clearSelection() }
-                    .keyboardShortcut(.escape, modifiers: [])
-            }
-            CommandMenu("MusicBrainz") {
-                Button("Look Up Release") { Task { await model.lookup() } }
-                    .keyboardShortcut("l", modifiers: [.command, .shift])
-                Button("Apply Selected Match") { model.applySelectedRelease() }
-                    .keyboardShortcut("m", modifiers: [.command, .shift])
-            }
-        }
+        .commands { MacPicardCommands(model: model, presentation: presentation) }
     }
 }
 
 struct ContentView: View {
     @ObservedObject var model: AppModel
-    @State private var isImporting = false
-    @State private var isChoosingDestination = false
-    @State private var isShowingLookup = false
-    @State private var isShowingScript = false
-    @State private var isShowingSettings = false
+    @ObservedObject var presentation: AppPresentation
     @State private var isDropTargeted = false
 
     var body: some View {
@@ -93,47 +98,65 @@ struct ContentView: View {
         .frame(minWidth: 1_180, minHeight: 760)
         .background(GlassBackdrop())
         .fileImporter(
-            isPresented: $isImporting,
+            isPresented: $presentation.isImporting,
             allowedContentTypes: [.audio, .folder],
             allowsMultipleSelection: true,
             onCompletion: { result in Task { await model.importResult(result) } }
         )
         .fileImporter(
-            isPresented: $isChoosingDestination,
+            isPresented: $presentation.isChoosingDestination,
             allowedContentTypes: [.folder],
             allowsMultipleSelection: false,
             onCompletion: model.chooseDestination
         )
-        .sheet(isPresented: $isShowingLookup) {
+        .fileImporter(isPresented: $presentation.isAddingLibrary,
+                      allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
+            if case let .success(urls) = result, let url = urls.first {
+                Task { await model.addLibrary(directory: url) }
+            } else if case let .failure(error) = result { model.present(error) }
+        }
+        .fileImporter(isPresented: $presentation.isRelinkingLibrary,
+                      allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
+            if case let .success(urls) = result, let url = urls.first {
+                Task { await model.relinkLibrary(directory: url) }
+            } else if case let .failure(error) = result { model.present(error) }
+        }
+        .sheet(isPresented: $presentation.isShowingLookup) {
             LookupView(model: model)
                 .frame(minWidth: 760, minHeight: 480)
         }
-        .sheet(isPresented: $isShowingScript) {
+        .sheet(isPresented: $presentation.isShowingScript) {
             ScriptView(model: model)
                 .frame(minWidth: 760, minHeight: 500)
         }
-        .sheet(isPresented: $isShowingSettings) {
+        .sheet(isPresented: $presentation.isShowingSettings) {
             SettingsView(model: model)
                 .frame(width: 500, height: 390)
         }
+        .sheet(isPresented: $presentation.isNamingSession) {
+            NewSessionView(model: model, copying: presentation.copiesCurrentSession)
+        }
+        .sheet(isPresented: $presentation.isManagingWorkspaces) {
+            WorkspaceManagerView(model: model, presentation: presentation)
+        }
+        .sheet(isPresented: $presentation.isShowingGuide) { QuickStartView() }
     }
 
     private var mainWorkspace: some View {
         HSplitView {
-            LibrarySidebar(
-                model: model,
-                isImporting: $isImporting,
-                isShowingSettings: $isShowingSettings
-            )
-            .frame(minWidth: 250, idealWidth: 300, maxWidth: 360)
+            if presentation.showsSidebar {
+                LibrarySidebar(model: model, presentation: presentation)
+                    .frame(minWidth: 250, idealWidth: 300, maxWidth: 360)
+            }
 
             WorkspaceView(
                 model: model,
-                isImporting: $isImporting,
-                isChoosingDestination: $isChoosingDestination,
-                isShowingLookup: $isShowingLookup,
-                isShowingScript: $isShowingScript,
-                isDropTargeted: $isDropTargeted
+                isImporting: $presentation.isImporting,
+                isChoosingDestination: $presentation.isChoosingDestination,
+                isShowingLookup: $presentation.isShowingLookup,
+                isShowingScript: $presentation.isShowingScript,
+                isDropTargeted: $isDropTargeted,
+                presentation: presentation
             )
             .frame(minWidth: 900, maxWidth: .infinity, maxHeight: .infinity)
         }

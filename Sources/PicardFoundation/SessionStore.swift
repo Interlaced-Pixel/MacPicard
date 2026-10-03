@@ -9,6 +9,8 @@ public struct SessionDocument: Codable, Sendable, Equatable {
     public var files: [AudioFileSessionRecord]
     public var selectedFileIDs: [UUID]
     public var expandedNodeIDs: [UUID]
+    public var selectedAlbumKey: String?
+    public var accessBookmarkKeys: [String]
 
     public init(
         schemaVersion: Int = SessionDocument.currentSchemaVersion,
@@ -16,7 +18,9 @@ public struct SessionDocument: Codable, Sendable, Equatable {
         savedAt: Date = Date(),
         files: [AudioFileSessionRecord] = [],
         selectedFileIDs: [UUID] = [],
-        expandedNodeIDs: [UUID] = []
+        expandedNodeIDs: [UUID] = [],
+        selectedAlbumKey: String? = nil,
+        accessBookmarkKeys: [String] = []
     ) {
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
@@ -24,6 +28,8 @@ public struct SessionDocument: Codable, Sendable, Equatable {
         self.files = files
         self.selectedFileIDs = selectedFileIDs
         self.expandedNodeIDs = expandedNodeIDs
+        self.selectedAlbumKey = selectedAlbumKey
+        self.accessBookmarkKeys = accessBookmarkKeys
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -33,6 +39,8 @@ public struct SessionDocument: Codable, Sendable, Equatable {
         case files
         case selectedFileIDs
         case expandedNodeIDs
+        case selectedAlbumKey
+        case accessBookmarkKeys
     }
 
     public init(from decoder: Decoder) throws {
@@ -44,7 +52,9 @@ public struct SessionDocument: Codable, Sendable, Equatable {
             savedAt: try container.decodeIfPresent(Date.self, forKey: .savedAt) ?? Date(),
             files: try container.decodeIfPresent([AudioFileSessionRecord].self, forKey: .files) ?? [],
             selectedFileIDs: try container.decodeIfPresent([UUID].self, forKey: .selectedFileIDs) ?? [],
-            expandedNodeIDs: try container.decodeIfPresent([UUID].self, forKey: .expandedNodeIDs) ?? []
+            expandedNodeIDs: try container.decodeIfPresent([UUID].self, forKey: .expandedNodeIDs) ?? [],
+            selectedAlbumKey: try container.decodeIfPresent(String.self, forKey: .selectedAlbumKey),
+            accessBookmarkKeys: try container.decodeIfPresent([String].self, forKey: .accessBookmarkKeys) ?? []
         )
     }
 }
