@@ -48,6 +48,7 @@ final class AppModel: ObservableObject {
     private var sessionCreatedAt = Date()
     private var sessionSaveTask: Task<Void, Never>?
     private var autosaveTask: Task<Void, Never>?
+    private var selectedReleaseFileIDs = Set<UUID>()
 
     var albumGroups: [AlbumGroup] {
         var grouped: [String: (title: String, artist: String, ids: [UUID])] = [:]
@@ -83,10 +84,7 @@ final class AppModel: ObservableObject {
     }
 
     var selectedFiles: [AudioFile] {
-        if !selectedFileIDs.isEmpty {
-            return files.filter { selectedFileIDs.contains($0.id) }
-        }
-        return visibleFiles
+        files.filter { selectedFileIDs.contains($0.id) }
     }
 
     var primarySelectedFile: AudioFile? {
@@ -95,6 +93,26 @@ final class AppModel: ObservableObject {
 
     var hasUnsavedChanges: Bool {
         files.contains(where: \.isModified)
+    }
+
+    var selectedModifiedCount: Int {
+        selectedFiles.count(where: \.isModified)
+    }
+
+    var selectedFormatSummary: String {
+        let formats = Set(
+            selectedFiles.compactMap { file in
+                FormatRegistry.format(forExtension: file.url.pathExtension)?.displayName
+            }
+        )
+        if formats.isEmpty { return "No format selected" }
+        return formats.sorted().joined(separator: " · ")
+    }
+
+    var canDownloadCoverArt: Bool {
+        guard !selectedFiles.isEmpty else { return false }
+        return selectedRelease != nil
+            || primarySelectedFile?.metadata.firstValue(for: "musicbrainz_albumid") != nil
     }
 
     func file(id: UUID) -> AudioFile? {
@@ -221,6 +239,8 @@ final class AppModel: ObservableObject {
     func selectAlbum(_ group: AlbumGroup) {
         selectedAlbumID = group.id
         selectedFileIDs = Set(group.fileIDs)
+        selectedRelease = nil
+        selectedReleaseFileIDs.removeAll()
         scheduleSessionSave()
     }
 
@@ -230,6 +250,22 @@ final class AppModel: ObservableObject {
 
     func clearSelection() {
         selectedFileIDs.removeAll()
+        selectedRelease = nil
+        selectedReleaseFileIDs.removeAll()
+        scheduleSessionSave()
+    }
+
+    func selectionChanged(_ ids: Set<UUID>) {
+        selectedFileIDs = ids
+        if let firstID = ids.first,
+           let group = albumGroups.first(where: { $0.fileIDs.contains(firstID) }) {
+            selectedAlbumID = group.id
+        }
+        if ids != selectedReleaseFileIDs {
+            selectedRelease = nil
+            selectedReleaseFileIDs.removeAll()
+        }
+        scheduleSessionSave()
     }
 
     func setMetadata(_ key: String, value: String) {
@@ -289,6 +325,7 @@ final class AppModel: ObservableObject {
         defer { isWorking = false }
         do {
             selectedRelease = try await musicBrainzClient.lookupRelease(id: result.release.id)
+            selectedReleaseFileIDs = Set(selectedFiles.map(\.id))
             statusMessage = "Selected \(result.release.title)."
         } catch {
             present(error)
@@ -338,15 +375,21 @@ final class AppModel: ObservableObject {
     }
 
     func downloadCoverArt() async {
-        guard let coverArtClient, let selectedRelease else {
+        guard let coverArtClient, !selectedFiles.isEmpty else {
             statusMessage = "Choose a release before downloading cover art."
+            return
+        }
+        let releaseIdentifier = selectedRelease?.id
+            ?? primarySelectedFile?.metadata.firstValue(for: "musicbrainz_albumid")
+        guard let releaseIdentifier, !releaseIdentifier.isEmpty else {
+            statusMessage = "Choose a MusicBrainz release before downloading cover art."
             return
         }
         isWorking = true
         statusMessage = "Downloading cover art…"
         defer { isWorking = false }
         do {
-            let release = try await coverArtClient.release(identifier: selectedRelease.id)
+            let release = try await coverArtClient.release(identifier: releaseIdentifier)
             guard let image = release.images.first(where: { $0.types.contains(.front) }) ?? release.images.first else {
                 statusMessage = "No cover art is available for this release."
                 return
@@ -382,7 +425,10 @@ final class AppModel: ObservableObject {
                 selectedFiles,
                 options: AudioSaveOptions(
                     preserveModificationDate: snapshot?.configuration.preserveFileTimestamps ?? true
-                )
+                ),
+                progress: { [weak self] value in
+                    await self?.updateSaveProgress(value)
+                }
             )
             replaceFiles(saved)
             statusMessage = "Saved \(saved.count) \(saved.count == 1 ? "file" : "files")."
@@ -529,6 +575,10 @@ final class AppModel: ObservableObject {
     private func replaceFiles(_ replacements: [AudioFile]) {
         let replacementByID = Dictionary(uniqueKeysWithValues: replacements.map { ($0.id, $0) })
         files = files.map { replacementByID[$0.id] ?? $0 }
+    }
+
+    private func updateSaveProgress(_ value: Double) {
+        progress = value
     }
 
     private func present(_ error: Error) {

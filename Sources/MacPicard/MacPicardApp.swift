@@ -1,7 +1,16 @@
+import AppKit
 import SwiftUI
+
+@MainActor
+final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+}
 
 @main
 struct MacPicardApp: App {
+    @NSApplicationDelegateAdaptor(MacPicardAppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {

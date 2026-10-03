@@ -99,13 +99,7 @@ struct LibrarySidebar: View {
         .frame(minWidth: 260)
         .background(.thinMaterial)
         .onChange(of: model.selectedFileIDs) { _, ids in
-            guard let firstID = ids.first,
-                  let group = model.albumGroups.first(where: { $0.fileIDs.contains(firstID) }) else {
-                return
-            }
-            if model.selectedAlbumID != group.id {
-                model.selectedAlbumID = group.id
-            }
+            model.selectionChanged(ids)
         }
     }
 }
@@ -217,10 +211,11 @@ private struct ActionBar: View {
                 GlassActionButton("Cover Art", systemImage: "photo.on.rectangle") {
                     Task { await model.downloadCoverArt() }
                 }
-                .disabled(model.selectedRelease == nil)
+                .disabled(!model.canDownloadCoverArt)
                 GlassActionButton("Script", systemImage: "chevron.left.forwardslash.chevron.right") {
                     isShowingScript = true
                 }
+                .disabled(model.selectedFiles.isEmpty)
                 GlassActionButton("Save", systemImage: "square.and.arrow.down") {
                     Task { await model.saveSelected() }
                 }
@@ -235,6 +230,34 @@ private struct ActionBar: View {
                 .disabled(model.selectedFiles.isEmpty)
 
                 Spacer(minLength: 8)
+
+                if !model.selectedFiles.isEmpty {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text("\(model.selectedFiles.count) selected")
+                            .font(.caption.weight(.medium))
+                        Text(model.selectedFormatSummary)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        if model.selectedModifiedCount > 0 {
+                            Text("\(model.selectedModifiedCount) pending save")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Selection")
+                    .accessibilityValue("\(model.selectedFiles.count) selected, \(model.selectedFormatSummary)")
+
+                    Button {
+                        model.clearSelection()
+                    } label: {
+                        Image(systemName: "xmark.circle")
+                    }
+                    .buttonStyle(.glass)
+                    .help("Clear selection")
+                    .accessibilityLabel("Clear selection")
+                }
 
                 if let progress = model.progress {
                     ProgressView(value: progress)
@@ -380,23 +403,30 @@ private struct TrackListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Tracks")
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tracks")
+                        .font(.headline)
+                    Text("\(model.visibleFiles.count) in album · \(model.selectedFiles.count) selected")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
-                Text("\(model.selectedFileIDs.count) selected")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Button("Select All") { model.selectAllVisible() }
+                        .buttonStyle(.glass)
+                        .disabled(model.visibleFiles.isEmpty)
+                    Button("Clear") { model.clearSelection() }
+                        .buttonStyle(.glass)
+                        .disabled(model.selectedFiles.isEmpty)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
 
-            List {
+            List(selection: $model.selectedFileIDs) {
                 ForEach(Array(model.visibleFiles.enumerated()), id: \.element.id) { offset, file in
                     TrackDetailRow(file: file, position: offset + 1, isSelected: model.selectedFileIDs.contains(file.id))
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            model.selectedFileIDs = [file.id]
-                        }
+                        .tag(file.id)
                         .contextMenu {
                             Button("Select Track") { model.selectedFileIDs = [file.id] }
                             Button("Select Album") {
@@ -408,6 +438,9 @@ private struct TrackListView: View {
                 }
             }
             .listStyle(.inset)
+            .onChange(of: model.selectedFileIDs) { _, ids in
+                model.selectionChanged(ids)
+            }
         }
         .background(.thinMaterial)
     }
@@ -474,7 +507,7 @@ private struct MetadataInspector: View {
                     Text("Select a track or album to edit metadata.")
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Changes apply to all selected tracks.")
+                    Text("Editing \(model.selectedFiles.count) selected \(model.selectedFiles.count == 1 ? "track" : "tracks") · \(model.selectedFormatSummary)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(fields, id: \.1) { field in
@@ -519,7 +552,10 @@ private struct ArtworkInspector: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if let artwork = model.primarySelectedFile?.artwork.first(of: .front) {
                         Text("Front cover")
-                        Text("\(artwork.width ?? 0) × \(artwork.height ?? 0)")
+                        if let width = artwork.width, let height = artwork.height {
+                            Text("\(width) × \(height)")
+                        }
+                        Text(sourceLabel(artwork.source))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -533,6 +569,15 @@ private struct ArtworkInspector: View {
             }
         }
         .padding(.top, 8)
+    }
+
+    private func sourceLabel(_ source: ArtworkSource) -> String {
+        switch source {
+        case .embedded: return "Embedded"
+        case .localFile: return "Local file"
+        case .remote: return "Remote"
+        case .generated: return "Generated"
+        }
     }
 }
 
@@ -580,7 +625,11 @@ struct LookupView: View {
                 ProgressView("Searching MusicBrainz…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.matchResults.isEmpty {
-                ContentUnavailableView("No matches", systemImage: "magnifyingglass", description: Text("Look up an album from the main toolbar."))
+                ContentUnavailableView(
+                    "No matches",
+                    systemImage: "magnifyingglass",
+                    description: Text(model.statusMessage)
+                )
             } else {
                 List(model.matchResults) { result in
                     Button {
@@ -654,14 +703,23 @@ struct ScriptView: View {
                 .accessibilityLabel("Picard script source")
             Divider()
             HStack {
-                Text(model.scriptOutput.isEmpty ? "Output will appear here." : model.scriptOutput)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.scriptOutput.isEmpty ? "Preview output" : model.scriptOutput)
+                    if !model.selectedFiles.isEmpty {
+                        Text("Applies to \(model.selectedFiles.count) selected \(model.selectedFiles.count == 1 ? "track" : "tracks")")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                 Spacer()
                 Button("Preview") { model.runScript(applying: false) }
+                    .disabled(model.selectedFiles.isEmpty)
                 Button("Apply") { model.runScript(applying: true) }
                     .buttonStyle(.glassProminent)
+                    .disabled(model.selectedFiles.isEmpty)
             }
             .padding(14)
         }

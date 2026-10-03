@@ -20,9 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ ! -x "$PRODUCT_PATH" ]]; then
-    swift build --package-path "$PROJECT_ROOT" --configuration "$CONFIGURATION" --product MacPicard
-fi
+swift build --package-path "$PROJECT_ROOT" --configuration "$CONFIGURATION" --product MacPicard
 
 if [[ ! -x "$PRODUCT_PATH" ]]; then
     print -u2 "MacPicard executable was not produced at $PRODUCT_PATH"

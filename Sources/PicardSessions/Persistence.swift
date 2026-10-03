@@ -66,12 +66,17 @@ public actor AudioSaveCoordinator {
         }
     }
 
-    public func saveAll(_ files: [AudioFile], options: AudioSaveOptions = AudioSaveOptions()) async throws -> [AudioFile] {
+    public func saveAll(
+        _ files: [AudioFile],
+        options: AudioSaveOptions = AudioSaveOptions(),
+        progress: (@Sendable (Double) async -> Void)? = nil
+    ) async throws -> [AudioFile] {
         var saved: [AudioFile] = []
         saved.reserveCapacity(files.count)
-        for file in files {
+        for (index, file) in files.enumerated() {
             try Task.checkCancellation()
             saved.append(try await save(file, options: options))
+            await progress?(Double(index + 1) / Double(files.count))
         }
         return saved
     }
