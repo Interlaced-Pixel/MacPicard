@@ -39,44 +39,74 @@ struct LibrarySidebar: View {
                 }
                 .padding(.horizontal, 12)
             } else {
-                List(selection: $model.selectedFileIDs) {
-                    ForEach(model.albumGroups) { group in
-                        Section {
-                            ForEach(group.fileIDs, id: \.self) { id in
-                                if let file = model.file(id: id) {
-                                    SidebarTrackRow(file: file)
-                                        .tag(id)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(model.albumGroups) { group in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Button {
+                                    model.selectAlbum(group)
+                                } label: {
+                                    HStack(spacing: 9) {
+                                        if let firstID = group.fileIDs.first,
+                                           let firstFile = model.file(id: firstID) {
+                                            ArtworkThumbnail(artwork: firstFile.artwork.first(of: .front))
+                                                .frame(width: 30, height: 30)
+                                                .clipShape(.rect(cornerRadius: 6))
+                                        } else {
+                                            Image(systemName: "music.note.list")
+                                                .frame(width: 30, height: 30)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(group.title)
+                                                .font(.subheadline.weight(.semibold))
+                                                .lineLimit(1)
+                                            Text(group.subtitle)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                        Spacer(minLength: 4)
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        model.selectedAlbumID == group.id
+                                            ? Color.accentColor.opacity(0.10)
+                                            : Color.clear,
+                                        in: .rect(cornerRadius: 10)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Select album \(group.title)")
+
+                                ForEach(group.fileIDs, id: \.self) { id in
+                                    if let file = model.file(id: id) {
+                                        Button {
+                                            model.selectionChanged([id])
+                                        } label: {
+                                            SidebarTrackRow(
+                                                file: file,
+                                                isSelected: model.selectedFileIDs.contains(id)
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
                                         .contextMenu {
                                             Button("Select Album") { model.selectAlbum(group) }
                                         }
-                                }
-                            }
-                        } header: {
-                            Button {
-                                model.selectAlbum(group)
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(group.title)
-                                            .font(.subheadline.weight(.semibold))
-                                            .lineLimit(1)
-                                        Text(group.subtitle)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
                                     }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.tertiary)
                                 }
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Select album \(group.title)")
                         }
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
                 }
-                .listStyle(.sidebar)
             }
 
             Divider()
@@ -106,6 +136,7 @@ struct LibrarySidebar: View {
 
 private struct SidebarTrackRow: View {
     let file: AudioFile
+    let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 9) {
@@ -124,6 +155,14 @@ private struct SidebarTrackRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(file.metadata.firstValue(for: "title") ?? file.url.lastPathComponent)
         .accessibilityValue(file.state.rawValue)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .padding(.leading, 26)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.16) : Color.clear,
+            in: .rect(cornerRadius: 8)
+        )
     }
 
     private var stateSymbol: String {
@@ -198,8 +237,9 @@ private struct ActionBar: View {
     @Binding var isShowingScript: Bool
 
     var body: some View {
-        GlassEffectContainer(spacing: 10) {
-            HStack(spacing: 8) {
+        ScrollView(.horizontal, showsIndicators: false) {
+            GlassEffectContainer(spacing: 10) {
+                HStack(spacing: 8) {
                 GlassActionButton("Import", systemImage: "plus", prominent: true) {
                     isImporting = true
                 }
@@ -269,10 +309,12 @@ private struct ActionBar: View {
                         .controlSize(.small)
                         .accessibilityLabel("Working")
                 }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
         }
+        .scrollClipDisabled()
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(.bar)
@@ -339,10 +381,11 @@ private struct AlbumWorkspace: View {
 
             HSplitView {
                 TrackListView(model: model)
-                    .frame(minWidth: 380)
+                    .frame(minWidth: 440, idealWidth: 560)
                 MetadataInspector(model: model)
-                    .frame(minWidth: 340, idealWidth: 380)
+                    .frame(minWidth: 390, idealWidth: 460)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -383,14 +426,19 @@ private struct AlbumHeader: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.trailing)
                     .lineLimit(2)
+                    .frame(width: 300, alignment: .trailing)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let errorMessage = model.errorMessage {
                     Text(errorMessage)
                         .font(.caption2)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.trailing)
                         .lineLimit(2)
+                        .frame(width: 300, alignment: .trailing)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .layoutPriority(1)
         }
         .padding(12)
         .background(.regularMaterial, in: .rect(cornerRadius: 18))
@@ -456,46 +504,81 @@ private struct TrackDetailRow: View {
             Text(file.metadata.firstValue(for: "tracknumber") ?? String(format: "%02d", position))
                 .font(.body.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .frame(width: 34, alignment: .trailing)
+                .frame(width: 46, alignment: .trailing)
             VStack(alignment: .leading, spacing: 3) {
-                Text(file.metadata.firstValue(for: "title") ?? file.url.deletingPathExtension().lastPathComponent)
-                    .fontWeight(isSelected ? .semibold : .regular)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(file.metadata.firstValue(for: "title") ?? file.url.deletingPathExtension().lastPathComponent)
+                        .fontWeight(isSelected ? .semibold : .regular)
+                        .lineLimit(1)
+                    if file.isModified {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .accessibilityLabel("Unsaved changes")
+                    }
+                }
                 Text(file.metadata.firstValue(for: "artist") ?? file.url.lastPathComponent)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer()
-            if file.isModified {
-                Image(systemName: "pencil.circle.fill")
-                    .foregroundStyle(.orange)
-                    .accessibilityLabel("Unsaved changes")
-            }
-            Text(file.state.rawValue.capitalized)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            TrackStateBadge(state: file.state)
         }
-        .padding(.vertical, 5)
-        .listRowBackground(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 4)
+        .listRowBackground(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(file.metadata.firstValue(for: "title") ?? file.url.lastPathComponent)
         .accessibilityValue(file.state.rawValue)
     }
 }
 
+private struct TrackStateBadge: View {
+    let state: AudioFileState
+
+    var body: some View {
+        Text(label)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.12), in: .capsule)
+            .accessibilityLabel("Track state")
+            .accessibilityValue(label)
+    }
+
+    private var label: String {
+        state.rawValue.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression).capitalized
+    }
+
+    private var tint: Color {
+        switch state {
+        case .changed: return .orange
+        case .saved: return .green
+        case .failed, .unsupported: return .red
+        case .saving, .loading: return .blue
+        default: return .secondary
+        }
+    }
+}
+
 private struct MetadataInspector: View {
     @ObservedObject var model: AppModel
-    private let fields = [
+    private let identityFields = [
         ("Title", "title"),
         ("Artist", "artist"),
         ("Album", "album"),
-        ("Album Artist", "albumartist"),
+        ("Album Artist", "albumartist")
+    ]
+    private let releaseFields = [
         ("Date", "date"),
         ("Genre", "genre"),
-        ("Track Number", "tracknumber"),
-        ("Disc Number", "discnumber"),
         ("Barcode", "barcode")
+    ]
+    private let numberingFields = [
+        ("Track Number", "tracknumber"),
+        ("Disc Number", "discnumber")
     ]
 
     var body: some View {
@@ -510,15 +593,9 @@ private struct MetadataInspector: View {
                     Text("Editing \(model.selectedFiles.count) selected \(model.selectedFiles.count == 1 ? "track" : "tracks") · \(model.selectedFormatSummary)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    ForEach(fields, id: \.1) { field in
-                        MetadataField(
-                            label: field.0,
-                            value: Binding(
-                                get: { model.metadataValue(field.1) },
-                                set: { model.setMetadata(field.1, value: $0) }
-                            )
-                        )
-                    }
+                    MetadataFieldGroup(title: "Identity", fields: identityFields, model: model)
+                    MetadataFieldGroup(title: "Release", fields: releaseFields, model: model)
+                    MetadataFieldGroup(title: "Numbering", fields: numberingFields, model: model)
                     ArtworkInspector(model: model)
                 }
             }
@@ -528,14 +605,45 @@ private struct MetadataInspector: View {
     }
 }
 
+private struct MetadataFieldGroup: View {
+    let title: String
+    let fields: [(String, String)]
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            ForEach(fields, id: \.1) { field in
+                MetadataField(
+                    label: field.0,
+                    isMixed: model.metadataValueIsMixed(field.1),
+                    value: Binding(
+                        get: { model.metadataValue(field.1) },
+                        set: { model.setMetadata(field.1, value: $0) }
+                    )
+                )
+            }
+        }
+        .padding(.top, 4)
+    }
+}
+
 private struct MetadataField: View {
     let label: String
+    let isMixed: Bool
     @Binding var value: String
 
     var body: some View {
-        TextField(label, text: $value)
-            .textFieldStyle(.roundedBorder)
-            .accessibilityLabel(label)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            TextField(isMixed ? "Multiple values" : "Enter \(label.lowercased())", text: $value)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel(label)
+        }
     }
 }
 

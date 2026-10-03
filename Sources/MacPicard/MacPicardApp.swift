@@ -3,8 +3,42 @@ import SwiftUI
 
 @MainActor
 final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            self?.fitWindowsToVisibleScreen()
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    private func fitWindowsToVisibleScreen() {
+        for window in NSApplication.shared.windows where window.title == "MacPicard" {
+            guard let screen = window.screen ?? NSScreen.main else { continue }
+
+            let visibleFrame = screen.visibleFrame.insetBy(dx: 24, dy: 24)
+            let width = min(max(window.frame.width, 1_180), visibleFrame.width)
+            let height = min(max(window.frame.height, 760), visibleFrame.height)
+            let originX = min(
+                max(window.frame.minX, visibleFrame.minX),
+                visibleFrame.maxX - width
+            )
+            let originY = min(
+                max(window.frame.minY, visibleFrame.minY),
+                visibleFrame.maxY - height
+            )
+
+            let fittedFrame = NSRect(
+                x: originX,
+                y: originY,
+                width: width,
+                height: height
+            )
+            if window.frame != fittedFrame {
+                window.setFrame(fittedFrame, display: true, animate: false)
+            }
+        }
     }
 }
 
@@ -18,6 +52,7 @@ struct MacPicardApp: App {
             ContentView(model: model)
                 .task { await model.bootstrap() }
         }
+        .defaultSize(width: 1_360, height: 860)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Select All Tracks") { model.selectAllVisible() }
@@ -55,7 +90,7 @@ struct ContentView: View {
                 mainWorkspace
             }
         }
-        .frame(minWidth: 1_080, minHeight: 680)
+        .frame(minWidth: 1_180, minHeight: 760)
         .background(GlassBackdrop())
         .fileImporter(
             isPresented: $isImporting,
@@ -84,13 +119,14 @@ struct ContentView: View {
     }
 
     private var mainWorkspace: some View {
-        NavigationSplitView {
+        HSplitView {
             LibrarySidebar(
                 model: model,
                 isImporting: $isImporting,
                 isShowingSettings: $isShowingSettings
             )
-        } detail: {
+            .frame(minWidth: 250, idealWidth: 300, maxWidth: 360)
+
             WorkspaceView(
                 model: model,
                 isImporting: $isImporting,
@@ -99,9 +135,8 @@ struct ContentView: View {
                 isShowingScript: $isShowingScript,
                 isDropTargeted: $isDropTargeted
             )
+            .frame(minWidth: 900, maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationSplitViewStyle(.balanced)
-        .toolbar(removing: .title)
     }
 }
 

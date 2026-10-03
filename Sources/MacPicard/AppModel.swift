@@ -66,7 +66,12 @@ final class AppModel: ObservableObject {
         }
 
         return grouped.map { key, value in
-            AlbumGroup(id: key, title: value.title, artist: value.artist, fileIDs: value.ids)
+            AlbumGroup(
+                id: key,
+                title: value.title,
+                artist: value.artist,
+                fileIDs: value.ids.compactMap { file(id: $0) }.sorted(by: isFileBefore).map(\.id)
+            )
         }
         .sorted {
             if $0.title == $1.title { return $0.artist.localizedStandardCompare($1.artist) == .orderedAscending }
@@ -77,10 +82,10 @@ final class AppModel: ObservableObject {
     var visibleFiles: [AudioFile] {
         guard let selectedAlbumID,
               let group = albumGroups.first(where: { $0.id == selectedAlbumID }) else {
-            return files
+            return files.sorted(by: isFileBefore)
         }
         let ids = Set(group.fileIDs)
-        return files.filter { ids.contains($0.id) }
+        return files.filter { ids.contains($0.id) }.sorted(by: isFileBefore)
     }
 
     var selectedFiles: [AudioFile] {
@@ -120,7 +125,14 @@ final class AppModel: ObservableObject {
     }
 
     func metadataValue(_ key: String) -> String {
-        primarySelectedFile?.metadata.firstValue(for: key) ?? ""
+        let values = selectedFiles.compactMap { $0.metadata.firstValue(for: key) }
+        guard let first = values.first else { return "" }
+        return values.dropFirst().allSatisfy { $0 == first } ? first : ""
+    }
+
+    func metadataValueIsMixed(_ key: String) -> Bool {
+        let values = selectedFiles.compactMap { $0.metadata.firstValue(for: key) }
+        return Set(values).count > 1
     }
 
     func bootstrap() async {
@@ -575,6 +587,23 @@ final class AppModel: ObservableObject {
     private func replaceFiles(_ replacements: [AudioFile]) {
         let replacementByID = Dictionary(uniqueKeysWithValues: replacements.map { ($0.id, $0) })
         files = files.map { replacementByID[$0.id] ?? $0 }
+    }
+
+    private func isFileBefore(_ lhs: AudioFile, _ rhs: AudioFile) -> Bool {
+        let leftDisc = numericTag("discnumber", in: lhs) ?? 1
+        let rightDisc = numericTag("discnumber", in: rhs) ?? 1
+        if leftDisc != rightDisc { return leftDisc < rightDisc }
+
+        let leftTrack = numericTag("tracknumber", in: lhs) ?? Int.max
+        let rightTrack = numericTag("tracknumber", in: rhs) ?? Int.max
+        if leftTrack != rightTrack { return leftTrack < rightTrack }
+
+        return lhs.url.lastPathComponent.localizedStandardCompare(rhs.url.lastPathComponent) == .orderedAscending
+    }
+
+    private func numericTag(_ key: String, in file: AudioFile) -> Int? {
+        guard let value = file.metadata.firstValue(for: key) else { return nil }
+        return Int(value.split(separator: "/", maxSplits: 1).first ?? Substring(value))
     }
 
     private func updateSaveProgress(_ value: Double) {
