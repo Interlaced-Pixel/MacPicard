@@ -1,10 +1,40 @@
 import Foundation
 import PicardFoundation
 import PicardSessions
+import PicardMusicBrainz
 import XCTest
 @testable import MacPicard
 
 final class BrowserTests: XCTestCase {
+    @MainActor
+    func testReleaseMetadataUsesMatchedSongNotSelectionOffsetAndCorrectMBIDs() async throws {
+        let data = Data(#"{"id":"11111111-1111-1111-1111-111111111111","title":"Album","artist-credit":[{"name":"Alice"}],"media":[{"position":1,"tracks":[{"id":"track-one","number":"1","position":1,"title":"First Song","artist-credit":[{"name":"Alice"}],"recording":{"id":"recording-one"}},{"id":"track-two","number":"2","position":2,"title":"Second Song","artist-credit":[{"name":"Alice"}],"recording":{"id":"recording-two","isrcs":["USAAA1234567"]}}]}]}"#.utf8)
+        let client = MusicBrainzClient(userAgent: "Tests/1.0", transport: ReleaseTransport(data: data), minimumRequestInterval: .zero)
+        let model = AppModel(musicBrainzClient: client)
+        let file = try audioFile(title: "Second Song", artist: "Alice", album: "Album", track: "2/2")
+        model.files = [file]
+        model.selectionChanged([file.id])
+        let release = try await client.lookupRelease(id: "11111111-1111-1111-1111-111111111111")
+        let match = try XCTUnwrap(ReleaseMatcher().rank(local: LocalAlbumCandidate(metadata: file.metadata), candidates: [release.summary]).first)
+        model.errorMessage = "Previous API failure"
+        await model.chooseMatch(match)
+        XCTAssertNil(model.errorMessage, "Successful retries must clear the old error banner")
+        model.applySelectedRelease()
+        let metadata = try XCTUnwrap(model.files.first?.metadata)
+        XCTAssertEqual(metadata.firstValue(for: "title"), "Second Song")
+        XCTAssertEqual(metadata.firstValue(for: "musicbrainz_trackid"), "recording-two")
+        XCTAssertEqual(metadata.firstValue(for: "musicbrainz_releasetrackid"), "track-two")
+        XCTAssertNil(metadata.firstValue(for: "musicbrainz_recordingid"))
+        XCTAssertEqual(LocalTrackCandidate(metadata: metadata).recordingID, "recording-two")
+    }
+
+    private struct ReleaseTransport: MusicBrainzTransport {
+        let data: Data
+        func data(for request: URLRequest) async throws -> MusicBrainzHTTPResponse {
+            MusicBrainzHTTPResponse(statusCode: 200, data: data)
+        }
+    }
+
     @MainActor
     func testCollapsedAlbumsAndGlobalSearchAndFilters() throws {
         let model = AppModel()

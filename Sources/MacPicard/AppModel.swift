@@ -82,6 +82,11 @@ final class AppModel: ObservableObject {
     var libraryScanTask: Task<Void, Never>?
     var activeLibraryScan: Task<LibraryScanResult, Error>?
 
+    init(musicBrainzClient: MusicBrainzClient? = nil, coverArtClient: CoverArtClient? = nil) {
+        self.musicBrainzClient = musicBrainzClient
+        self.coverArtClient = coverArtClient
+    }
+
     private func rebuildBrowserIndex() {
         filesByID = Dictionary(files.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var grouped: [String: (title: String, artist: String, ids: [UUID])] = [:]
@@ -393,6 +398,9 @@ final class AppModel: ObservableObject {
     func chooseMatch(_ result: ReleaseMatchResult) async {
         guard let musicBrainzClient, !isWorking else { return }
         isWorking = true
+        errorMessage = nil
+        selectedRelease = nil
+        selectedReleaseFileIDs = []
         statusMessage = "Loading release details…"
         defer { isWorking = false }
         do {
@@ -415,9 +423,17 @@ final class AppModel: ObservableObject {
 
         let trackValues = selectedRelease.tracks
         let targets = selectedFiles
+        let matches = TrackMatcher().match(
+            localTracks: targets.map { LocalTrackCandidate(metadata: $0.metadata, id: $0.id) },
+            releaseTracks: trackValues
+        )
+        let matchedIDs = Dictionary(uniqueKeysWithValues: matches.compactMap { match in
+            match.releaseTrackID.map { (match.localTrackID, $0) }
+        })
+        let tracksByID = Dictionary(uniqueKeysWithValues: trackValues.map { ($0.id, $0) })
         var edited = files
         let indices = Dictionary(uniqueKeysWithValues: edited.enumerated().map { ($0.element.id, $0.offset) })
-        for (offset, file) in targets.enumerated() {
+        for file in targets {
             guard let index = indices[file.id] else { continue }
             var metadata = edited[index].metadata
             metadata.setValue(selectedRelease.title, for: "album")
@@ -430,14 +446,14 @@ final class AppModel: ObservableObject {
             metadata.setValue(selectedRelease.id, for: "musicbrainz_albumid")
             if let label = selectedRelease.labelNames.first { metadata.setValue(label, for: "label") }
             if let catalog = selectedRelease.catalogNumbers.first { metadata.setValue(catalog, for: "catalognumber") }
-            if offset < trackValues.count {
-                let track = trackValues[offset]
+            if let matchedID = matchedIDs[file.id], let track = tracksByID[matchedID] {
                 metadata.setValue(track.title, for: "title")
                 metadata.setValue(track.artistCredit, for: "artist")
                 metadata.setValue(track.number, for: "tracknumber")
-                metadata.setValue(track.id, for: "musicbrainz_trackid")
+                metadata.setValue(track.id, for: "musicbrainz_releasetrackid")
                 if let recordingID = track.recordingID {
-                    metadata.setValue(recordingID, for: "musicbrainz_recordingid")
+                    metadata.setValue(recordingID, for: "musicbrainz_trackid")
+                    metadata.unset("musicbrainz_recordingid")
                 }
                 if !track.isrcs.isEmpty { metadata.setValues(track.isrcs, for: "isrc") }
             }

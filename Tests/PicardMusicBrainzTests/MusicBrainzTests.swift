@@ -56,6 +56,102 @@ final class MusicBrainzTests: XCTestCase {
         XCTAssertEqual(release.tracks.count, 2)
         XCTAssertEqual(release.tracks[0].recordingID, "33333333-3333-3333-3333-333333333333")
         XCTAssertEqual(release.tracks[0].isrcs, ["USAAA1234567"])
+        let requests = await transport.requests()
+        let items = URLComponents(url: try XCTUnwrap(requests.first?.url), resolvingAgainstBaseURL: false)?.queryItems
+        XCTAssertEqual(items?.first(where: { $0.name == "inc" })?.value, "artist-credits genres isrcs labels media recordings release-groups tags")
+        XCTAssertEqual(items?.first(where: { $0.name == "fmt" })?.value, "json")
+        XCTAssertFalse(requests[0].url!.absoluteString.contains(","))
+    }
+
+    func testIncludesDependenciesAndEmptyIncludesAreEncodedCorrectly() async throws {
+        let transport = StubTransport(responses: [Data(Self.releaseResponse.utf8)])
+        let client = MusicBrainzClient(userAgent: "Tests/1.0", transport: transport, minimumRequestInterval: .zero)
+        _ = try await client.lookupRelease(id: " 11111111-1111-1111-1111-111111111111 ", includes: [.isrcs])
+        _ = try await client.lookupRelease(id: "11111111-1111-1111-1111-111111111111", includes: [])
+        let requests = await transport.requests()
+        let first = URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)?.queryItems
+        let second = URLComponents(url: requests[1].url!, resolvingAgainstBaseURL: false)?.queryItems
+        XCTAssertEqual(first?.first(where: { $0.name == "inc" })?.value, "isrcs recordings")
+        XCTAssertNil(second?.first(where: { $0.name == "inc" }))
+    }
+
+    func testInvalidIdentifiersAndBlankQueriesNeverReachTransport() async throws {
+        let transport = StubTransport(responses: [Data(Self.releaseResponse.utf8)])
+        let client = MusicBrainzClient(userAgent: "Tests/1.0", transport: transport, minimumRequestInterval: .zero)
+        for identifier in ["", "release/not-a-uuid", "../artist", "123"] {
+            do { _ = try await client.lookupRelease(id: identifier); XCTFail("Expected invalid ID") }
+            catch is MusicBrainzError { }
+        }
+        do { _ = try await client.searchReleases(query: "  "); XCTFail("Expected blank query rejection") }
+        catch is MusicBrainzError { }
+        let requests = await transport.requests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testMetadataSearchEscapesLuceneReservedCharacters() async throws {
+        let transport = StubTransport(responses: [Data(Self.searchResponse.utf8)])
+        let client = MusicBrainzClient(userAgent: "Tests/1.0", transport: transport, minimumRequestInterval: .zero)
+        _ = try await client.searchReleases(for: LocalAlbumCandidate(albumTitle: "The \"Album\" (Deluxe)", albumArtist: "AC/DC", barcode: "  "))
+        let requests = await transport.requests()
+        let items = URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)?.queryItems
+        XCTAssertEqual(items?.first(where: { $0.name == "query" })?.value, #"release:"The \"Album\" \(Deluxe\)" AND artist:"AC\/DC""#)
+    }
+
+    func testPermanentErrorsAreNotRetriedAndMalformedJSONIsNotCached() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transport = ContractTransport(responses: [
+            MusicBrainzHTTPResponse(statusCode: 400, data: Data(#"{"error":"invalid inc","help":"help URL"}"#.utf8)),
+            MusicBrainzHTTPResponse(statusCode: 200, data: Data("not JSON".utf8)),
+            MusicBrainzHTTPResponse(statusCode: 200, data: Data(Self.searchResponse.utf8))
+        ])
+        let client = MusicBrainzClient(userAgent: "Tests/1.0", transport: transport, cache: MusicBrainzResponseCache(directory: root), minimumRequestInterval: .zero)
+        do { _ = try await client.searchReleases(query: "a"); XCTFail("Expected HTTP 400") }
+        catch let error as MusicBrainzError { XCTAssertEqual(error, .httpStatus(400, "invalid inc")) }
+        do { _ = try await client.searchReleases(query: "a"); XCTFail("Expected decode failure") }
+        catch let error as MusicBrainzError { guard case .decoding = error else { return XCTFail("Expected decoding error") } }
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+        let releases = try await client.searchReleases(query: "a")
+        XCTAssertEqual(releases.count, 1)
+        let count = await transport.requestCount()
+        XCTAssertEqual(count, 3)
+    }
+
+    func testRateLimitIsSharedAcrossClientInstances() async throws {
+        let transport = ContractTransport(responses: [MusicBrainzHTTPResponse(statusCode: 200, data: Data(Self.searchResponse.utf8))])
+        let limiter = APIRequestRateLimiter()
+        let clients = (0..<2).map { _ in MusicBrainzClient(userAgent: "Tests/1.0", transport: transport, minimumRequestInterval: .milliseconds(30), rateLimiter: limiter) }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for index in 0..<6 { group.addTask { _ = try await clients[index % 2].searchReleases(query: "query \(index)") } }
+            try await group.waitForAll()
+        }
+        let times = await transport.times()
+        for pair in zip(times, times.dropFirst()) { XCTAssertGreaterThanOrEqual(pair.0.duration(to: pair.1), .milliseconds(25)) }
+    }
+
+    func testLiveReleaseSearchAndDetailLookup() async throws {
+        guard ProcessInfo.processInfo.environment["MACPICARD_LIVE_API_TESTS"] == "1" else { throw XCTSkip("Opt-in live API verification") }
+        let client = MusicBrainzClient(userAgent: AppConfiguration.defaultUserAgent)
+        let results = try await client.searchReleases(for: LocalAlbumCandidate(albumTitle: "Lukas Graham", albumArtist: "Lukas Graham", barcode: "093624920496"))
+        XCTAssertFalse(results.isEmpty)
+        let release = try await client.lookupRelease(id: "5e0abf8a-c77a-4826-b435-b3c23b22c0b1")
+        XCTAssertEqual(release.title, "Lukas Graham")
+        XCTAssertEqual(release.tracks.count, 11)
+        XCTAssertEqual(release.tracks.first?.title, "7 Years")
+        XCTAssertFalse(release.tracks.first?.isrcs.isEmpty ?? true)
+    }
+
+    private actor ContractTransport: MusicBrainzTransport {
+        let responses: [MusicBrainzHTTPResponse]
+        var recordedTimes: [ContinuousClock.Instant] = []
+        init(responses: [MusicBrainzHTTPResponse]) { self.responses = responses }
+        func data(for request: URLRequest) async throws -> MusicBrainzHTTPResponse {
+            let index = min(recordedTimes.count, responses.count - 1)
+            recordedTimes.append(.now)
+            return responses[index]
+        }
+        func requestCount() -> Int { recordedTimes.count }
+        func times() -> [ContinuousClock.Instant] { recordedTimes }
     }
 
     func testReleaseMatcherPrioritizesExactIdentifiersAndReportsAmbiguity() throws {

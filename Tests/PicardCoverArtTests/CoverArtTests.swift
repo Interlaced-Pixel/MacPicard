@@ -4,6 +4,55 @@ import XCTest
 import PicardFoundation
 
 final class CoverArtTests: XCTestCase {
+    func testTemporaryServerFailureRetriesButPermanentErrorsDoNot() async throws {
+        let json = Data(#"{"images":[]}"#.utf8)
+        let transport = HTTPSequenceTransport(responses: [
+            CoverArtHTTPResponse(statusCode: 500, headers: ["Retry-After": "0.001"], data: Data()),
+            CoverArtHTTPResponse(statusCode: 200, data: json)
+        ])
+        let client = CoverArtClient(userAgent: "Tests/1.0", transport: transport, minimumRequestInterval: .zero, rateLimiter: APIRequestRateLimiter())
+        let release = try await client.release(identifier: Self.releaseID)
+        XCTAssertTrue(release.images.isEmpty)
+        let attempts = await transport.requests()
+        XCTAssertEqual(attempts.count, 2)
+
+        let permanent = HTTPSequenceTransport(responses: [CoverArtHTTPResponse(statusCode: 404, data: Data())])
+        let missing = CoverArtClient(userAgent: "Tests/1.0", transport: permanent, minimumRequestInterval: .zero, rateLimiter: APIRequestRateLimiter())
+        do { _ = try await missing.release(identifier: Self.releaseID); XCTFail("Expected HTTP 404") }
+        catch let error as CoverArtError { guard case .httpStatus(404, _) = error else { return XCTFail("Expected HTTP 404") } }
+        let permanentAttempts = await permanent.requests()
+        XCTAssertEqual(permanentAttempts.count, 1)
+    }
+
+    func testStringImageIdentifiersAndReleaseGroupEndpoint() async throws {
+        let transport = StubTransport(responses: [Data(#"{"images":[{"id":"19383654919","types":["Front"],"image":"https://coverartarchive.org/release/album/front.jpg"}]}"#.utf8)])
+        let client = CoverArtClient(userAgent: "Tests/1.0", transport: transport, minimumRequestInterval: .zero)
+        let release = try await client.releaseGroup(identifier: Self.releaseID.uppercased())
+        XCTAssertEqual(release.images.first?.id, "19383654919")
+        let requests = await transport.requests()
+        XCTAssertEqual(requests.first?.url?.path, "/release-group/\(Self.releaseID)")
+        do { _ = try await client.release(identifier: "../invalid"); XCTFail("Expected invalid MBID") }
+        catch let error as CoverArtError { XCTAssertEqual(error, .invalidIdentifier) }
+        let afterInvalid = await transport.requests()
+        XCTAssertEqual(afterInvalid.count, 1)
+    }
+
+    func testMalformedImagesAreNotCachedAndCanBeRetriedExplicitly() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = StubTransport(responses: [Data("not an image".utf8), try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))])
+        let client = CoverArtClient(userAgent: "Tests/1.0", transport: transport, cacheDirectory: directory, minimumRequestInterval: .zero)
+        let image = CoverArtImage(id: "1", types: [.front], imageURL: URL(string: "https://images.example/front.png")!)
+        do { _ = try await client.download(image); XCTFail("Expected invalid image") }
+        catch let error as CoverArtError { guard case .invalidImage = error else { return XCTFail("Expected invalid image") } }
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+        let artwork = try await client.download(image)
+        XCTAssertEqual(artwork.width, 1)
+        let requests = await transport.requests()
+        XCTAssertEqual(requests.count, 2)
+    }
+
     func testLegacyArchiveImageAndThumbnailURLsUseHTTPS() async throws {
         let imageData = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
         let transport = StubTransport(responses: [
@@ -12,7 +61,7 @@ final class CoverArtTests: XCTestCase {
         ])
         let client = CoverArtClient(userAgent: "MacPicardTests/1.0", transport: transport, minimumRequestInterval: .zero)
 
-        let release = try await client.release(identifier: "album")
+        let release = try await client.release(identifier: Self.releaseID)
         let image = try XCTUnwrap(release.images.first)
         XCTAssertEqual(image.imageURL.absoluteString, "https://coverartarchive.org/release/album/19383654919.jpg")
         for size in CoverArtImageSize.allCases {
@@ -33,11 +82,11 @@ final class CoverArtTests: XCTestCase {
         let response = Data(#"{"images":[{"id":1,"types":["Front"],"image":"http://coverartarchive.org/release/album/front.jpg"}]}"#.utf8)
         let firstTransport = StubTransport(responses: [response])
         let first = CoverArtClient(userAgent: "MacPicardTests/1.0", transport: firstTransport, cacheDirectory: directory, minimumRequestInterval: .zero)
-        _ = try await first.release(identifier: "album")
+        _ = try await first.release(identifier: Self.releaseID)
 
         let secondTransport = StubTransport(responses: [Data()])
         let restored = CoverArtClient(userAgent: "MacPicardTests/1.0", transport: secondTransport, cacheDirectory: directory, minimumRequestInterval: .zero)
-        let release = try await restored.release(identifier: "album")
+        let release = try await restored.release(identifier: Self.releaseID)
         XCTAssertEqual(release.images.first?.imageURL.scheme, "https")
         let requests = await secondTransport.requests()
         XCTAssertTrue(requests.isEmpty, "The old cached JSON should work without deleting the cache.")
@@ -129,6 +178,16 @@ final class CoverArtTests: XCTestCase {
         XCTAssertEqual(url.scheme, "https")
     }
 
+    func testLiveLukasGrahamReleaseGroupLookup() async throws {
+        guard ProcessInfo.processInfo.environment["MACPICARD_LIVE_COVER_ART_TEST"] == "1" else {
+            throw XCTSkip("Set MACPICARD_LIVE_COVER_ART_TEST=1 to check the real archive.")
+        }
+        let client = CoverArtClient(userAgent: AppConfiguration.defaultUserAgent)
+        let group = try await client.releaseGroup(identifier: "0198c1e1-d8eb-4cd2-a7c6-65127ef77142")
+        XCTAssertFalse(group.images.isEmpty)
+        XCTAssertTrue(group.images.allSatisfy { $0.imageURL.scheme == "https" })
+    }
+
     func testCoverArtClientDecodesReleaseImagesAndDownloadsArtwork() async throws {
         let imageData = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
         let transport = StubTransport(responses: [
@@ -142,7 +201,7 @@ final class CoverArtTests: XCTestCase {
             minimumRequestInterval: .zero
         )
 
-        let release = try await client.release(identifier: "release-1")
+        let release = try await client.release(identifier: Self.releaseID)
         let artwork = try await client.download(release.images[0], size: .original)
 
         XCTAssertEqual(release.images[0].primaryType, .front)
@@ -152,6 +211,8 @@ final class CoverArtTests: XCTestCase {
         XCTAssertEqual(artwork.mimeType, "image/png")
         let requests = await transport.requests()
         XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests[0].value(forHTTPHeaderField: "Accept"), "application/json")
+        XCTAssertEqual(requests[1].value(forHTTPHeaderField: "Accept"), "image/*")
     }
 
     func testArtworkProcessorResizesAndDeduplicates() throws {
@@ -198,5 +259,17 @@ final class CoverArtTests: XCTestCase {
         func requests() -> [URLRequest] { recordedRequests }
     }
 
+    private actor HTTPSequenceTransport: CoverArtTransport {
+        private let responses: [CoverArtHTTPResponse]
+        private var recordedRequests: [URLRequest] = []
+        init(responses: [CoverArtHTTPResponse]) { self.responses = responses }
+        func data(for request: URLRequest) async throws -> CoverArtHTTPResponse {
+            recordedRequests.append(request)
+            return responses[min(recordedRequests.count - 1, responses.count - 1)]
+        }
+        func requests() -> [URLRequest] { recordedRequests }
+    }
+
     private static let onePixelPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    private static let releaseID = "5e0abf8a-c77a-4826-b435-b3c23b22c0b1"
 }

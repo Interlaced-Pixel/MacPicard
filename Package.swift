@@ -106,7 +106,7 @@ let package = Package(
         ),
         .target(
             name: "PicardFingerprint",
-            dependencies: ["PicardMusicBrainz"],
+            dependencies: ["PicardMusicBrainz", "PicardFoundation"],
             path: "Sources/PicardFingerprint",
             swiftSettings: [
                 .unsafeFlags(["-strict-concurrency=complete"])

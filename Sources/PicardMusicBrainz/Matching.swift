@@ -39,7 +39,7 @@ public struct LocalTrackCandidate: Codable, Sendable, Equatable, Identifiable {
             durationInMilliseconds: durationInMilliseconds ?? Self.integerValue(metadata.firstValue(for: "~length")),
             trackNumber: Self.numberValue(metadata.firstValue(for: "tracknumber")),
             discNumber: Self.numberValue(metadata.firstValue(for: "discnumber")),
-            recordingID: metadata.firstValue(for: "musicbrainz_recordingid"),
+            recordingID: metadata.firstValue(for: "musicbrainz_recordingid") ?? metadata.firstValue(for: "musicbrainz_trackid"),
             isrcs: metadata.values(for: "isrc")
         )
     }

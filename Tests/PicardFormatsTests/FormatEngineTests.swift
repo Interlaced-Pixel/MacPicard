@@ -70,6 +70,8 @@ final class FormatEngineTests: XCTestCase {
 
             var metadata = readResult.metadata
             metadata.setValue("Jane Doe", for: "composer")
+            metadata.setValue("87e36ab4-6914-44ab-b740-7abb37678040", for: "musicbrainz_trackid")
+            metadata.setValue("0c30e8e9-8368-4f2f-ab95-d6f9549eb54f", for: "musicbrainz_releasetrackid")
             let artwork = ArtworkCollection(images: [
                 Artwork(
                     mimeType: "image/png",
@@ -85,6 +87,8 @@ final class FormatEngineTests: XCTestCase {
 
             let reopened = try await engine.read(url: url)
             XCTAssertEqual(reopened.metadata.firstValue(for: "composer"), "Jane Doe")
+            XCTAssertEqual(reopened.metadata.firstValue(for: "musicbrainz_trackid"), "87e36ab4-6914-44ab-b740-7abb37678040", fixture.extensionName)
+            XCTAssertEqual(reopened.metadata.firstValue(for: "musicbrainz_releasetrackid"), "0c30e8e9-8368-4f2f-ab95-d6f9549eb54f", fixture.extensionName)
             XCTAssertEqual(reopened.artwork.images.count, 1, fixture.extensionName)
             XCTAssertEqual(reopened.artwork.images[0].data, Self.pngData)
         }
@@ -92,6 +96,7 @@ final class FormatEngineTests: XCTestCase {
         if executedFixtures == 0 {
             throw XCTSkip("No supported FFmpeg encoders were available for format fixtures")
         }
+        XCTAssertEqual(executedFixtures, fixtures.count, "Every supported format must round-trip both MusicBrainz identifiers.")
     }
 
     func testAudioFileCoordinatorPreservesDomainState() async throws {
@@ -126,8 +131,8 @@ final class FormatEngineTests: XCTestCase {
         process.executableURL = URL(fileURLWithPath: ffmpeg)
         process.arguments = [
             "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "1",
-            "-c:a", codec,
+            "-f", "lavfi", "-i", "anullsrc=r=44100:cl=\(codec == "vorbis" ? "stereo" : "mono")", "-t", "1",
+            "-c:a", codec, "-strict", "-2",
             "-metadata", "title=Original Title",
             "-metadata", "artist=Original Artist",
             "-metadata", "album=Original Album",

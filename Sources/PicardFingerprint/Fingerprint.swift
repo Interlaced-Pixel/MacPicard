@@ -1,5 +1,6 @@
 import Foundation
 import PicardMusicBrainz
+import PicardFoundation
 
 public struct AudioFingerprint: Codable, Sendable, Equatable {
     public let fingerprint: String
@@ -19,6 +20,7 @@ public enum FingerprintError: Error, LocalizedError, Sendable, Equatable {
     case processFailed(Int32, String)
     case invalidOutput(String)
     case network(String)
+    case httpStatus(Int, String)
     case invalidResponse(String)
     case authenticationRequired
     case consentRequired
@@ -30,6 +32,7 @@ public enum FingerprintError: Error, LocalizedError, Sendable, Equatable {
         case let .processFailed(status, message): return "Chromaprint failed with status \(status): \(message)"
         case let .invalidOutput(message): return "Chromaprint returned invalid output: \(message)"
         case let .network(message): return "AcoustID request failed: \(message)"
+        case let .httpStatus(status, message): return "AcoustID returned HTTP \(status): \(message)"
         case let .invalidResponse(message): return "AcoustID returned an invalid response: \(message)"
         case .authenticationRequired: return "AcoustID submission requires a user authentication token."
         case .consentRequired: return "AcoustID submission requires explicit user consent."
@@ -171,7 +174,10 @@ public struct URLSessionAcoustIDTransport: AcoustIDTransport, Sendable {
 
     public func data(for request: URLRequest) async throws -> AcoustIDHTTPResponse {
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let url = request.url, APIRequestPolicy.isSecure(url) else {
+                throw FingerprintError.invalidInput("A secure HTTPS endpoint is required.")
+            }
+            let (data, response) = try await URLSession.shared.data(for: request, delegate: SecureAPIRequestDelegate.shared)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw FingerprintError.invalidResponse("The server returned a non-HTTP response.")
             }
@@ -185,6 +191,7 @@ public struct URLSessionAcoustIDTransport: AcoustIDTransport, Sendable {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
             throw FingerprintError.network(error.localizedDescription)
         }
     }
@@ -243,31 +250,39 @@ public actor AcoustIDClient {
     private let baseURL: URL
     private let transport: any AcoustIDTransport
     private let minimumRequestInterval: Duration
-    private var lastRequest: ContinuousClock.Instant?
+    private let rateLimiter: APIRequestRateLimiter
+    private static let allowedMetadata: Set<String> = ["recordings", "recordingids", "releases", "releaseids", "releasegroups", "releasegroupids", "tracks", "compress", "usermeta", "sources", "isrcs"]
 
     public init(
         apiKey: String,
         userAgent: String,
         baseURL: URL = AcoustIDClient.defaultBaseURL,
         transport: any AcoustIDTransport = URLSessionAcoustIDTransport(),
-        minimumRequestInterval: Duration = .seconds(1)
+        minimumRequestInterval: Duration = .seconds(1),
+        rateLimiter: APIRequestRateLimiter = .shared
     ) {
         self.apiKey = apiKey
         self.userAgent = userAgent
         self.baseURL = baseURL
         self.transport = transport
         self.minimumRequestInterval = minimumRequestInterval
+        self.rateLimiter = rateLimiter
     }
 
     public func lookup(_ fingerprint: AudioFingerprint, meta: [String] = ["recordings", "releases"]) async throws -> [AcoustIDMatch] {
-        guard !apiKey.isEmpty else { throw FingerprintError.invalidInput("The AcoustID client key is empty.") }
-        let url = try makeURL(path: "lookup", queryItems: [
+        try validate(fingerprint: fingerprint.fingerprint, duration: fingerprint.durationInSeconds)
+        guard meta.allSatisfy({ Self.allowedMetadata.contains($0) }) else {
+            throw FingerprintError.invalidInput("An unsupported AcoustID metadata option was requested.")
+        }
+        let url = try makeURL(path: "lookup", queryItems: [])
+        let body = APIRequestPolicy.formEncoded([
+            URLQueryItem(name: "format", value: "json"),
             URLQueryItem(name: "client", value: apiKey),
             URLQueryItem(name: "duration", value: String(Int(fingerprint.durationInSeconds.rounded()))),
             URLQueryItem(name: "fingerprint", value: fingerprint.fingerprint),
-            URLQueryItem(name: "meta", value: meta.joined(separator: ","))
+            URLQueryItem(name: "meta", value: Array(Set(meta)).sorted().joined(separator: " "))
         ])
-        let response: AcoustIDResponse = try await request(url: url, method: "GET", body: nil)
+        let response: AcoustIDResponse = try await request(url: url, method: "POST", body: body, canRetry: true)
         return response.results.map(Self.makeMatch)
     }
 
@@ -278,26 +293,29 @@ public actor AcoustIDClient {
     ) async throws {
         guard consentGiven else { throw FingerprintError.consentRequired }
         guard let userToken, !userToken.isEmpty else { throw FingerprintError.authenticationRequired }
+        try validate(fingerprint: submission.fingerprint, duration: submission.durationInSeconds)
+        guard UUID(uuidString: submission.recordingID) != nil else {
+            throw FingerprintError.invalidInput("Submission requires a MusicBrainz recording UUID.")
+        }
 
         let url = try makeURL(path: "submit", queryItems: [])
         let body = [
+            URLQueryItem(name: "format", value: "json"),
             URLQueryItem(name: "client", value: apiKey),
             URLQueryItem(name: "user", value: userToken),
-            URLQueryItem(name: "duration", value: String(Int(submission.durationInSeconds.rounded()))),
-            URLQueryItem(name: "fingerprint", value: submission.fingerprint),
-            URLQueryItem(name: "mbid", value: submission.recordingID)
+            URLQueryItem(name: "duration.0", value: String(Int(submission.durationInSeconds.rounded()))),
+            URLQueryItem(name: "fingerprint.0", value: submission.fingerprint),
+            URLQueryItem(name: "mbid.0", value: submission.recordingID)
         ]
-        let encoded = body.map { item in
-            let value = item.value ?? ""
-            return "\(Self.formEncode(item.name))=\(Self.formEncode(value))"
-        }.joined(separator: "&")
-        _ = try await request(url: url, method: "POST", body: Data(encoded.utf8)) as AcoustIDResponse
+        // Submissions have no idempotency key. Never duplicate a possibly accepted write.
+        _ = try await request(url: url, method: "POST", body: APIRequestPolicy.formEncoded(body), canRetry: false) as AcoustIDResponse
     }
 
-    private func request<Response: Decodable>(url: URL, method: String, body: Data?) async throws -> Response {
-        for attempt in 0..<3 {
+    private func request<Response: Decodable>(url: URL, method: String, body: Data?, canRetry: Bool) async throws -> Response {
+        let attempts = canRetry ? 3 : 1
+        for attempt in 0..<attempts {
             try Task.checkCancellation()
-            try await waitForRateLimit()
+            try await rateLimiter.wait(for: url.host!.lowercased(), interval: minimumRequestInterval)
             var request = URLRequest(url: url)
             request.httpMethod = method
             request.timeoutInterval = 30
@@ -308,12 +326,12 @@ public actor AcoustIDClient {
 
             do {
                 let response = try await transport.data(for: request)
-                if [429, 502, 503, 504].contains(response.statusCode), attempt < 2 {
-                    try await Task.sleep(for: retryDelay(response: response, attempt: attempt))
-                    continue
+                if APIRequestPolicy.retryableStatusCodes.contains(response.statusCode) {
+                    await rateLimiter.deferRequests(for: url.host!.lowercased(), delay: APIRequestPolicy.retryDelay(headers: response.headers, attempt: attempt))
+                    if attempt < attempts - 1 { continue }
                 }
                 guard (200..<300).contains(response.statusCode) else {
-                    throw FingerprintError.network("HTTP \(response.statusCode): \(Self.bodySummary(response.data))")
+                    throw FingerprintError.httpStatus(response.statusCode, APIRequestPolicy.errorSummary(response.data))
                 }
                 do {
                     let decoded = try JSONDecoder().decode(Response.self, from: response.data)
@@ -329,12 +347,12 @@ public actor AcoustIDClient {
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as FingerprintError {
-                if attempt == 2 { throw error }
+                if attempt == attempts - 1 { throw error }
                 if case .network = error { continue }
                 throw error
             } catch {
-                if Task.isCancelled { throw CancellationError() }
-                if attempt == 2 { throw FingerprintError.network(error.localizedDescription) }
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
+                if attempt == attempts - 1 { throw FingerprintError.network(error.localizedDescription) }
             }
         }
         throw FingerprintError.network("The request failed without a response.")
@@ -345,28 +363,20 @@ public actor AcoustIDClient {
             throw FingerprintError.invalidResponse("Could not construct AcoustID URL.")
         }
         components.queryItems = queryItems
-        guard let url = components.url else {
+        guard let url = components.url, APIRequestPolicy.isSecure(url) else {
             throw FingerprintError.invalidResponse("Could not encode AcoustID query parameters.")
         }
         return url
     }
 
-    private func waitForRateLimit() async throws {
-        let now = ContinuousClock.now
-        if let lastRequest {
-            let elapsed = lastRequest.duration(to: now)
-            if elapsed < minimumRequestInterval {
-                try await Task.sleep(for: minimumRequestInterval - elapsed)
-            }
+    private func validate(fingerprint: String, duration: Double) throws {
+        guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FingerprintError.invalidInput("The AcoustID client key is empty.")
         }
-        lastRequest = ContinuousClock.now
-    }
-
-    private func retryDelay(response: AcoustIDHTTPResponse, attempt: Int) -> Duration {
-        if let value = response.headers["retry-after"], let seconds = Double(value) {
-            return .milliseconds(Int64(min(max(seconds * 1_000, 250), 10_000)))
+        guard !fingerprint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              duration.isFinite, duration.rounded() >= 1, duration < Double(Int32.max) else {
+            throw FingerprintError.invalidInput("A fingerprint and positive finite duration are required.")
         }
-        return .milliseconds(Int64(500 * (attempt + 1)))
     }
 
     private static func makeMatch(_ result: AcoustIDResult) -> AcoustIDMatch {
@@ -384,14 +394,4 @@ public actor AcoustIDClient {
         )
     }
 
-    private static func formEncode(_ value: String) -> String {
-        var allowed = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: "+&=")
-        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
-    }
-
-    private static func bodySummary(_ data: Data) -> String {
-        let value = String(decoding: data.prefix(512), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? "empty response" : value
-    }
 }

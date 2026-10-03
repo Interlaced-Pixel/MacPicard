@@ -120,6 +120,8 @@ Implementation status: complete for the automated hardening and packaging gate. 
 
 ## Local development
 
+API contracts, security rules, and live integration-test instructions are documented in [docs/API_AUDIT.md](docs/API_AUDIT.md).
+
 ```sh
 swift build -Xswiftc -strict-concurrency=complete
 swift test -Xswiftc -strict-concurrency=complete

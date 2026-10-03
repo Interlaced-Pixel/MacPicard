@@ -117,6 +117,7 @@ public struct URLSessionCoverArtTransport: CoverArtTransport, Sendable {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
             throw CoverArtError.network(error.localizedDescription)
         }
     }
@@ -127,12 +128,28 @@ private struct CoverArtAPIResponse: Decodable {
 }
 
 private struct CoverArtAPIImage: Decodable {
-    let id: Int?
+    let id: String?
     let types: [String]?
     let comment: String?
     let approved: Bool?
     let image: URL
     let thumbnails: [String: URL]?
+
+    enum CodingKeys: String, CodingKey { case id, types, comment, approved, image, thumbnails }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let string = try? container.decode(String.self, forKey: .id) {
+            id = string
+        } else {
+            id = try container.decodeIfPresent(Int64.self, forKey: .id).map(String.init)
+        }
+        types = try container.decodeIfPresent([String].self, forKey: .types)
+        comment = try container.decodeIfPresent(String.self, forKey: .comment)
+        approved = try container.decodeIfPresent(Bool.self, forKey: .approved)
+        image = try container.decode(URL.self, forKey: .image)
+        thumbnails = try container.decodeIfPresent([String: URL].self, forKey: .thumbnails)
+    }
 
     func model() throws -> CoverArtImage {
         let mappedTypes = (types ?? []).compactMap { ArtworkType(rawValue: $0.lowercased()) }
@@ -146,7 +163,7 @@ private struct CoverArtAPIImage: Decodable {
             }
         }
         return CoverArtImage(
-            id: String(id ?? abs(image.absoluteString.hashValue)),
+            id: id ?? SHA256.hash(data: Data(image.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined(),
             types: mappedTypes,
             comment: comment ?? "",
             approved: approved ?? false,
@@ -163,7 +180,7 @@ public actor CoverArtClient {
     private let userAgent: String
     private let transport: any CoverArtTransport
     private let minimumRequestInterval: Duration
-    private var lastRequest: ContinuousClock.Instant?
+    private let rateLimiter: APIRequestRateLimiter
     private let cacheDirectory: URL?
 
     public init(
@@ -171,13 +188,15 @@ public actor CoverArtClient {
         userAgent: String,
         transport: any CoverArtTransport = URLSessionCoverArtTransport(),
         cacheDirectory: URL? = nil,
-        minimumRequestInterval: Duration = .seconds(1)
+        minimumRequestInterval: Duration = .seconds(1),
+        rateLimiter: APIRequestRateLimiter = .shared
     ) {
         self.baseURL = baseURL
         self.userAgent = userAgent
         self.transport = transport
         self.cacheDirectory = cacheDirectory
         self.minimumRequestInterval = minimumRequestInterval
+        self.rateLimiter = rateLimiter
     }
 
     public func release(identifier: String) async throws -> CoverArtRelease {
@@ -190,7 +209,7 @@ public actor CoverArtClient {
 
     public func download(_ image: CoverArtImage, size: CoverArtImageSize = .original) async throws -> Artwork {
         let url = try CoverArtURLPolicy.secureURL(image.url(for: size))
-        let data = try await fetchData(url: url)
+        let data = try await fetchData(url: url, accept: "image/*", validatesImage: true)
         let info = try ArtworkProcessor.inspect(data)
         return Artwork(
             type: image.primaryType,
@@ -210,38 +229,45 @@ public actor CoverArtClient {
             let response = try JSONDecoder().decode(CoverArtAPIResponse.self, from: data)
             return CoverArtRelease(identifier: path.split(separator: "/").last.map(String.init) ?? path, images: try response.images.map { try $0.model() })
         } catch let error as CoverArtError {
+            removeCachedResponse(for: url)
             throw error
         } catch {
+            removeCachedResponse(for: url)
             throw CoverArtError.decoding(error.localizedDescription)
         }
     }
 
-    private func fetchData(url: URL) async throws -> Data {
+    private func fetchData(url: URL, accept: String = "application/json", validatesImage: Bool = false) async throws -> Data {
+        try Task.checkCancellation()
         let url = try CoverArtURLPolicy.secureURL(url)
         let key = cacheKey(for: url)
         if let cacheDirectory,
            let data = try? Data(contentsOf: cacheDirectory.appendingPathComponent(key)) {
-            return data
+            if !validatesImage || (try? ArtworkProcessor.inspect(data)) != nil {
+                return data
+            }
+            removeCachedResponse(for: url)
         }
 
         for attempt in 0..<3 {
             try Task.checkCancellation()
-            try await waitForRateLimit()
+            try await rateLimiter.wait(for: url.host!.lowercased(), interval: minimumRequestInterval)
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.timeoutInterval = 30
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue(accept, forHTTPHeaderField: "Accept")
             request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
             do {
                 let response = try await transport.data(for: request)
-                if [429, 502, 503, 504].contains(response.statusCode), attempt < 2 {
-                    try await Task.sleep(for: retryDelay(response: response, attempt: attempt))
-                    continue
+                if APIRequestPolicy.retryableStatusCodes.contains(response.statusCode) {
+                    await rateLimiter.deferRequests(for: url.host!.lowercased(), delay: APIRequestPolicy.retryDelay(headers: response.headers, attempt: attempt))
+                    if attempt < 2 { continue }
                 }
                 guard (200..<300).contains(response.statusCode) else {
-                    throw CoverArtError.httpStatus(response.statusCode, Self.bodySummary(response.data))
+                    throw CoverArtError.httpStatus(response.statusCode, APIRequestPolicy.errorSummary(response.data))
                 }
+                if validatesImage { _ = try ArtworkProcessor.inspect(response.data) }
                 if let cacheDirectory {
                     try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
                     try? response.data.write(to: cacheDirectory.appendingPathComponent(key), options: [.atomic])
@@ -252,7 +278,7 @@ public actor CoverArtClient {
             } catch let error as CoverArtError {
                 if attempt == 2 || !Self.isRetryable(error) { throw error }
             } catch {
-                if Task.isCancelled { throw CancellationError() }
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
                 if attempt == 2 { throw CoverArtError.network(error.localizedDescription) }
             }
         }
@@ -261,8 +287,8 @@ public actor CoverArtClient {
 
     private func validatedIdentifier(_ identifier: String) throws -> String {
         let value = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, !value.contains("/") else { throw CoverArtError.invalidIdentifier }
-        return value
+        guard let identifier = UUID(uuidString: value) else { throw CoverArtError.invalidIdentifier }
+        return identifier.uuidString.lowercased()
     }
 
     private func makeURL(path: String) throws -> URL {
@@ -272,34 +298,18 @@ public actor CoverArtClient {
         return url
     }
 
-    private func waitForRateLimit() async throws {
-        let now = ContinuousClock.now
-        if let lastRequest {
-            let elapsed = lastRequest.duration(to: now)
-            if elapsed < minimumRequestInterval { try await Task.sleep(for: minimumRequestInterval - elapsed) }
-        }
-        lastRequest = ContinuousClock.now
-    }
-
-    private func retryDelay(response: CoverArtHTTPResponse, attempt: Int) -> Duration {
-        if let value = response.headers["retry-after"], let seconds = Double(value) {
-            return .milliseconds(Int64(min(max(seconds * 1_000, 250), 10_000)))
-        }
-        return .milliseconds(Int64(500 * (attempt + 1)))
+    private func removeCachedResponse(for url: URL) {
+        guard let cacheDirectory else { return }
+        try? FileManager.default.removeItem(at: cacheDirectory.appendingPathComponent(cacheKey(for: url)))
     }
 
     private func cacheKey(for url: URL) -> String {
         SHA256.hash(data: Data(url.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func bodySummary(_ data: Data) -> String {
-        let value = String(decoding: data.prefix(512), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? "empty response" : value
-    }
-
     private static func isRetryable(_ error: CoverArtError) -> Bool {
         if case .network = error { return true }
-        if case let .httpStatus(status, _) = error { return [429, 502, 503, 504].contains(status) }
+        if case let .httpStatus(status, _) = error { return APIRequestPolicy.retryableStatusCodes.contains(status) }
         return false
     }
 }

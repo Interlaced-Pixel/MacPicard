@@ -2,6 +2,7 @@ import Foundation
 
 public struct AppConfiguration: Codable, Sendable, Equatable {
     public static let currentSchemaVersion = 1
+    public static let defaultUserAgent = "MacPicard/0.1.0 (https://github.com/Interlaced-Pixel)"
 
     public var schemaVersion: Int
     public var preferredReleaseCountry: String
@@ -14,7 +15,7 @@ public struct AppConfiguration: Codable, Sendable, Equatable {
     public init(
         schemaVersion: Int = AppConfiguration.currentSchemaVersion,
         preferredReleaseCountry: String = "US",
-        requestUserAgent: String = "MacPicard/0.1.0",
+        requestUserAgent: String = AppConfiguration.defaultUserAgent,
         preserveFileTimestamps: Bool = true,
         automaticCoverArt: Bool = true,
         autosaveEnabled: Bool = true,
@@ -22,7 +23,8 @@ public struct AppConfiguration: Codable, Sendable, Equatable {
     ) {
         self.schemaVersion = schemaVersion
         self.preferredReleaseCountry = preferredReleaseCountry
-        self.requestUserAgent = requestUserAgent
+        let agent = requestUserAgent.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.requestUserAgent = agent.isEmpty || agent == "MacPicard/0.1.0" ? Self.defaultUserAgent : agent
         self.preserveFileTimestamps = preserveFileTimestamps
         self.automaticCoverArt = automaticCoverArt
         self.autosaveEnabled = autosaveEnabled
@@ -47,7 +49,7 @@ public struct AppConfiguration: Codable, Sendable, Equatable {
             preferredReleaseCountry: try container.decodeIfPresent(String.self, forKey: .preferredReleaseCountry)
                 ?? "US",
             requestUserAgent: try container.decodeIfPresent(String.self, forKey: .requestUserAgent)
-                ?? "MacPicard/0.1.0",
+                ?? AppConfiguration.defaultUserAgent,
             preserveFileTimestamps: try container.decodeIfPresent(Bool.self, forKey: .preserveFileTimestamps)
                 ?? true,
             automaticCoverArt: try container.decodeIfPresent(Bool.self, forKey: .automaticCoverArt)
