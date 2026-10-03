@@ -111,6 +111,18 @@ struct MacPicardCommands: Commands {
             )).disabled(model.isBusy || model.activeWorkspace?.kind != .library)
             Button("Reconnect Library Folder…") { presentation.isRelinkingLibrary = true }
                 .disabled(model.isBusy || model.activeWorkspace?.kind != .library)
+            Button("Restore Removed Library Items") { Task { await model.restoreExcludedLibraryItems() } }
+                .disabled(model.isBusy || model.activeWorkspace?.excludedRelativePaths.isEmpty != false)
+            Divider()
+            Button(model.removalActionTitle, role: .destructive) {
+                presentation.requestRemoval(model.selectedFileIDs, workspaceID: model.activeWorkspaceID)
+            }.keyboardShortcut(.delete, modifiers: .command)
+                .disabled(model.isBusy || model.selectedFiles.isEmpty)
+            Button("Move Library Files to Trash…", role: .destructive) {
+                presentation.requestRemoval(model.selectedFileIDs, workspaceID: model.activeWorkspaceID, trash: true)
+            }.disabled(!model.canTrash(model.selectedFileIDs))
+            Button("Remove Current Workspace…") { presentation.isManagingWorkspaces = true }
+                .disabled(model.isBusy || model.activeWorkspace == nil)
             Divider()
             Button("Reveal Library Folder in Finder") { model.revealLibrary() }
                 .disabled(model.activeWorkspace?.directory == nil)
@@ -182,7 +194,7 @@ struct QuickStartView: View {
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
             guide("Keep a music library", symbol: "externaldrive",
-                  text: "Choose File → Add Music Library and select your music folder. MacPicard includes supported audio files in every subfolder and refreshes the library every minute while it is open. Use Library → Refresh Library to scan immediately.")
+                  text: "Choose File → Add Music Library and select a folder. Imports copy audio into Artist / Album folders, leaving originals untouched. Existing library files are indexed in place. Right-click tracks or albums to remove them from the library or move its copies to Trash after confirmation. Remove a library in Library → Manage Libraries & Sessions; this never deletes its audio.")
             guide("Keep separate sessions", symbol: "rectangle.stack",
                   text: "Create a named session for a particular tagging task. Import files or folders, then return through the workspace chooser or File → Open Workspace. Pending edits are saved in the workspace; Save Tags writes them to the audio files.")
             guide("Navigate a large collection", symbol: "magnifyingglass",

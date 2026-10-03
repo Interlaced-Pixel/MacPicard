@@ -19,6 +19,19 @@ final class AppPresentation: ObservableObject {
     @Published var searchFocusRequest = 0
     @Published var isShowingGuide = false
     @Published var showsPlaybackQueue = false
+    @Published var isConfirmingTrackRemoval = false
+    @Published var trackRemovalRequest: TrackRemovalRequest?
+
+    struct TrackRemovalRequest {
+        let workspaceID: UUID?
+        let fileIDs: Set<UUID>
+        let trash: Bool
+    }
+
+    func requestRemoval(_ ids: Set<UUID>, workspaceID: UUID?, trash: Bool = false) {
+        trackRemovalRequest = TrackRemovalRequest(workspaceID: workspaceID, fileIDs: ids, trash: trash)
+        isConfirmingTrackRemoval = true
+    }
 
     func newSession(copying: Bool = false) {
         copiesCurrentSession = copying
@@ -428,9 +441,8 @@ struct WorkspaceManagerView: View {
                             }.buttonStyle(.glassProminent)
                                 .disabled(workspace.id == model.activeWorkspaceID)
                             Button("Remove…", role: .destructive) { confirmsRemoval = true }
-                                .disabled(workspace.id == model.activeWorkspaceID)
                         }
-                        Text("Removing a workspace leaves all audio files untouched. Open another workspace to remove the current one.")
+                        Text("Removing a workspace leaves all audio files untouched. If it is open, MacPicard switches to another workspace.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -447,6 +459,11 @@ struct WorkspaceManagerView: View {
         .disabled(model.isBusy)
         .onAppear { selectedID = model.activeWorkspaceID; name = selected?.name ?? "" }
         .onChange(of: selectedID) { _, _ in name = selected?.name ?? "" }
+        .onChange(of: model.workspaces.map(\.id)) { _, ids in
+            if let selectedID, !ids.contains(selectedID) {
+                self.selectedID = model.activeWorkspaceID
+            }
+        }
         .confirmationDialog("Remove \(selected?.name ?? "workspace")?", isPresented: $confirmsRemoval) {
             Button("Remove Workspace", role: .destructive) {
                 if let selected { Task { await model.removeWorkspace(selected) } }

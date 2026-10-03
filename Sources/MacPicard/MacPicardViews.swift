@@ -97,7 +97,7 @@ struct WorkspaceView: View {
         }
         .overlay(alignment: .top) {
             if isDropTargeted {
-                Text("Drop audio files or folders to import")
+                Text(model.activeWorkspace?.kind == .library ? "Drop to copy and organize in this library" : "Drop audio files or folders to import")
                     .font(.headline)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
@@ -130,6 +130,10 @@ private struct ActionBar: View {
                 GlassActionButton("Import", systemImage: "plus", prominent: true) {
                     isImporting = true
                 }
+                .disabled(model.isBusy)
+                .help(model.activeWorkspace?.kind == .library
+                      ? "Copy audio into the library and organize by artist and album; keep originals."
+                      : "Import audio references into this session without moving files.")
                 GlassActionButton("Look Up", systemImage: "magnifyingglass", compact: isCompact) {
                     isShowingLookup = true
                     Task { await model.lookup() }

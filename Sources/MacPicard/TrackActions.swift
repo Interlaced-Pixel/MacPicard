@@ -103,6 +103,8 @@ struct TrackContextMenu: View {
             Button(targets.count > 1 ? "Copy File Paths" : "Copy File Path", systemImage: "doc.on.doc") {
                 model.copyFilePaths(ids)
             }
+            Divider()
+            LibraryRemovalActions(model: model, presentation: presentation, ids: ids)
         }
     }
 }
@@ -131,6 +133,25 @@ struct AlbumContextMenu: View {
         Divider()
         Button("Reveal Album Files in Finder", systemImage: "folder") { model.revealFiles(targets) }
         Button("Copy File Paths", systemImage: "doc.on.doc") { model.copyFilePaths(ids) }
+        Divider()
+        LibraryRemovalActions(model: model, presentation: presentation, ids: ids)
+    }
+}
+
+private struct LibraryRemovalActions: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var presentation: AppPresentation
+    let ids: Set<UUID>
+
+    var body: some View {
+        Button(model.removalActionTitle, systemImage: "minus.circle", role: .destructive) {
+            presentation.requestRemoval(ids, workspaceID: model.activeWorkspaceID)
+        }.disabled(model.isBusy || ids.isEmpty)
+        if model.activeWorkspace?.kind == .library {
+            Button("Move Library Files to Trash…", systemImage: "trash", role: .destructive) {
+                presentation.requestRemoval(ids, workspaceID: model.activeWorkspaceID, trash: true)
+            }.disabled(!model.canTrash(ids))
+        }
     }
 }
 

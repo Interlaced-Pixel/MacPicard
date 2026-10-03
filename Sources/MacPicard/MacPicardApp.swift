@@ -141,6 +141,21 @@ struct ContentView: View {
             WorkspaceManagerView(model: model, presentation: presentation)
         }
         .sheet(isPresented: $presentation.isShowingGuide) { QuickStartView() }
+        .alert(
+            presentation.trackRemovalRequest?.trash == true ? "Move library files to Trash?" : "Remove selected items?",
+            isPresented: $presentation.isConfirmingTrackRemoval,
+            presenting: presentation.trackRemovalRequest
+        ) { request in
+            Button(request.trash ? "Move to Trash" : "Remove Items", role: .destructive) {
+                guard request.workspaceID == model.activeWorkspaceID else { return }
+                Task { await model.removeFiles(request.fileIDs, movingToTrash: request.trash, confirmed: true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { request in
+            Text(request.trash
+                 ? "\(request.fileIDs.count) library files will be moved to the recoverable Trash. External originals stay untouched. Pending edits on these items will be discarded."
+                 : "\(request.fileIDs.count) items will be removed from this workspace; all audio files stay on disk. Removed library items stay hidden during refresh until re-imported or restored. Pending edits on these items will be discarded.")
+        }
     }
 
     private var mainWorkspace: some View {

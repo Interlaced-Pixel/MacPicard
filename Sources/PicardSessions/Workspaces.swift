@@ -15,6 +15,7 @@ public struct MusicWorkspace: Codable, Identifiable, Sendable, Equatable {
     public var lastOpenedAt: Date
     public var lastScannedAt: Date?
     public var automaticallyRefreshes: Bool
+    public var excludedRelativePaths: Set<String> = []
 
     public init(id: UUID = UUID(), name: String, kind: WorkspaceKind, directory: URL? = nil) {
         self.id = id
@@ -23,6 +24,22 @@ public struct MusicWorkspace: Codable, Identifiable, Sendable, Equatable {
         self.directory = directory
         self.lastOpenedAt = Date()
         self.automaticallyRefreshes = kind == .library
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, kind, directory, lastOpenedAt, lastScannedAt, automaticallyRefreshes, excludedRelativePaths
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        kind = try values.decode(WorkspaceKind.self, forKey: .kind)
+        directory = try values.decodeIfPresent(URL.self, forKey: .directory)
+        lastOpenedAt = try values.decode(Date.self, forKey: .lastOpenedAt)
+        lastScannedAt = try values.decodeIfPresent(Date.self, forKey: .lastScannedAt)
+        automaticallyRefreshes = try values.decodeIfPresent(Bool.self, forKey: .automaticallyRefreshes) ?? (kind == .library)
+        excludedRelativePaths = try values.decodeIfPresent(Set<String>.self, forKey: .excludedRelativePaths) ?? []
     }
 }
 
@@ -152,12 +169,15 @@ public actor LibraryScanner {
     public func scan(
         directory: URL,
         existing: [AudioFile],
+        excludingRelativePaths: Set<String> = [],
         progress: (@Sendable (Double) async -> Void)? = nil
     ) async throws -> LibraryScanResult {
         guard try directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
             throw SaveError.session("A library root must be a directory.")
         }
-        let urls = try Self.audioURLs(in: [directory])
+        let urls = try Self.audioURLs(in: [directory]).filter {
+            !excludingRelativePaths.contains(LibraryPaths.relativePath(of: $0, in: directory) ?? "")
+        }
         var byPath: [String: AudioFile] = [:]
         for file in existing { byPath[file.url.resolvingSymlinksInPath().standardizedFileURL.path] = file }
         var scanned: [AudioFile] = []
@@ -201,6 +221,7 @@ public actor LibraryScanner {
         }
         var missing = 0
         for var file in existing where !seen.contains(file.url.resolvingSymlinksInPath().standardizedFileURL.path) {
+            if excludingRelativePaths.contains(LibraryPaths.relativePath(of: file.url, in: directory) ?? "") { continue }
             // Imported files outside the library root remain members of the workspace.
             let root = directory.resolvingSymlinksInPath().standardizedFileURL.path + "/"
             if file.url.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(root) {

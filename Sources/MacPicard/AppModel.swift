@@ -75,6 +75,7 @@ final class AppModel: ObservableObject {
     var workspaceStore: WorkspaceStore?
     let playback = PlaybackController()
     let libraryScanner = LibraryScanner()
+    let libraryImporter = LibraryImporter()
     var workspaceAccess: ScopedURLAccess?
     var importedAccess: [ScopedURLAccess] = []
     var accessBookmarkKeys: [String] = []
@@ -82,9 +83,10 @@ final class AppModel: ObservableObject {
     var libraryScanTask: Task<Void, Never>?
     var activeLibraryScan: Task<LibraryScanResult, Error>?
 
-    init(musicBrainzClient: MusicBrainzClient? = nil, coverArtClient: CoverArtClient? = nil) {
+    init(musicBrainzClient: MusicBrainzClient? = nil, coverArtClient: CoverArtClient? = nil, audioCoordinator: AudioFileCoordinator? = nil) {
         self.musicBrainzClient = musicBrainzClient
         self.coverArtClient = coverArtClient
+        self.audioCoordinator = audioCoordinator
     }
 
     private func rebuildBrowserIndex() {
@@ -247,11 +249,21 @@ final class AppModel: ObservableObject {
     }
 
     func importURLs(expanding urls: [URL]) async {
-        guard let audioCoordinator, !isWorking, !isSwitchingWorkspace else { return }
+        guard let audioCoordinator, !isBusy else { return }
+        let isLibrary = activeWorkspace?.kind == .library
+        let libraryRoot = libraryDirectory
+        if isLibrary && libraryRoot == nil {
+            errorMessage = "Reconnect the library folder before importing files."
+            return
+        }
         isWorking = true
         progress = 0
         errorMessage = nil
         var imported = 0
+        var copied = 0
+        var alreadyPresent = 0
+        var cancelled = false
+        var restoredPaths = Set<String>()
         var failures: [String] = []
         defer {
             isWorking = false
@@ -262,35 +274,63 @@ final class AppModel: ObservableObject {
         let expandedURLs: [URL]
         do {
             expandedURLs = try await libraryScanner.expand(urls)
-            try await rememberImportAccess(urls)
+            if !isLibrary { try await rememberImportAccess(urls) }
         } catch { present(error); return }
-        let knownPaths = Set(files.map { $0.url.resolvingSymlinksInPath().standardizedFileURL.path })
+        var knownPaths = Set(files.map { $0.url.resolvingSymlinksInPath().standardizedFileURL.path })
         var loadedFiles: [AudioFile] = []
         for (index, url) in expandedURLs.enumerated() {
-            if knownPaths.contains(url.resolvingSymlinksInPath().standardizedFileURL.path) { continue }
             do {
+                try Task.checkCancellation()
                 let accessed = url.startAccessingSecurityScopedResource()
                 defer {
                     if accessed { url.stopAccessingSecurityScopedResource() }
                 }
-                let file = try await audioCoordinator.load(url: url)
-                loadedFiles.append(file)
-                imported += 1
+                let file: AudioFile
+                if let libraryRoot {
+                    statusMessage = "Copying and organizing \(url.lastPathComponent)…"
+                    let result = try await libraryImporter.importFile(at: url, into: libraryRoot, existing: files + loadedFiles)
+                    file = result.file
+                    if result.copied { copied += 1 } else { alreadyPresent += 1 }
+                    if let path = LibraryPaths.relativePath(of: file.url, in: libraryRoot) { restoredPaths.insert(path) }
+                } else {
+                    if knownPaths.contains(url.resolvingSymlinksInPath().standardizedFileURL.path) { continue }
+                    statusMessage = "Importing \(url.lastPathComponent)…"
+                    file = try await audioCoordinator.load(url: url)
+                }
+                if let existingIndex = files.firstIndex(where: { $0.id == file.id }) {
+                    if files[existingIndex].url != file.url { imported += 1 }
+                    files[existingIndex] = file
+                } else if knownPaths.insert(file.url.resolvingSymlinksInPath().standardizedFileURL.path).inserted {
+                    loadedFiles.append(file)
+                    imported += 1
+                }
+            } catch is CancellationError {
+                cancelled = true
+                break
             } catch {
                 failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
             }
             progress = Double(index + 1) / Double(expandedURLs.count)
         }
         files.append(contentsOf: loadedFiles)
+        if var workspace = activeWorkspace, isLibrary, !restoredPaths.isDisjoint(with: workspace.excludedRelativePaths) {
+            workspace.excludedRelativePaths.subtract(restoredPaths)
+            do {
+                if let workspaceStore { workspaces = try await workspaceStore.update(workspace).workspaces }
+            } catch { failures.append("Could not restore library items: \(error.localizedDescription)") }
+        }
         if selectedAlbumID == nil {
             selectedAlbumID = albumGroups.first?.id
         }
         if selectedFileIDs.isEmpty {
             selectedFileIDs = Set(visibleFiles.prefix(1).map(\.id))
         }
-        statusMessage = failures.isEmpty
-            ? "Imported \(imported) \(imported == 1 ? "file" : "files")."
-            : "Imported \(imported); skipped \(failures.count)."
+        statusMessage = isLibrary
+            ? "Copied \(copied) \(copied == 1 ? "file" : "files") into \(activeWorkspace?.name ?? "the library")."
+            : "Imported \(imported) \(imported == 1 ? "file" : "files")."
+        if alreadyPresent > 0 { statusMessage += " \(alreadyPresent) already in the library." }
+        if !failures.isEmpty { statusMessage += " \(failures.count) failed." }
+        if cancelled { statusMessage = "Import cancelled. " + statusMessage }
         if !failures.isEmpty {
             errorMessage = failures.prefix(3).joined(separator: "\n")
         }
@@ -645,7 +685,11 @@ final class AppModel: ObservableObject {
     func restoreSession(_ loaded: LoadedSession?) {
         guard let loaded else { return }
         sessionCreatedAt = loaded.document.createdAt
-        files = loaded.document.files.map(AudioFile.restore(from:))
+        files = loaded.document.files.map(AudioFile.restore(from:)).filter { file in
+            guard let directory = libraryDirectory,
+                  let path = LibraryPaths.relativePath(of: file.url, in: directory) else { return true }
+            return activeWorkspace?.excludedRelativePaths.contains(path) != true
+        }
         selectedFileIDs = Set(loaded.document.selectedFileIDs.filter { id in files.contains(where: { $0.id == id }) })
         selectedAlbumID = loaded.document.selectedAlbumKey
         accessBookmarkKeys = loaded.document.accessBookmarkKeys

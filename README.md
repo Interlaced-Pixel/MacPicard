@@ -8,6 +8,8 @@ The first release targets MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV. The
 
 Choose **File → Add Music Library…** (⌘O) to link a music directory. Supported audio files in its subfolders are indexed, and the active library refreshes every minute. **Library → Refresh Library** (⌘R) scans immediately. Refreshes preserve pending edits, detect external changes, and retain unavailable files until their drive reconnects. Use **Reconnect Library Folder…** after moving a collection.
 
+Importing or dropping external music into a **Music Library** copies it into that library folder, organized as `Album Artist/Album/01 - Title.ext` (with a disc prefix for multi-disc albums). Original files and embedded metadata stay untouched. Missing tags fall back to artist/album placeholders and the source filename. Identical files at the organized destination are reused; different files with the same name receive a numbered suffix, never an overwrite. Files already inside the library are indexed in place. A **Session** continues to reference originals without copying them.
+
 Choose **File → New Session…** (⌘N) for an independent tagging workspace, or **Save Session As…** (⇧⌘S) to snapshot the current files and pending edits. Switch with the sidebar workspace chooser or **File → Open Workspace**. Workspaces autosave on edits, before switching, and on quit; saving a workspace does not write tags to the music files. **Save Selected Tags** (⌘S) and **Save All Changed Tags** (⌥⌘S) write audio metadata.
 
 Albums start collapsed each time a workspace opens. Click an album to browse its tracks and select the album for batch editing; click its disclosure chevron to expand sidebar tracks. **Find Music…** (⌘F) searches title, artist, album, genre, and filename across the entire collection. Filters show unsaved changes, missing artwork, unidentified tracks, or unavailable files. Album sorting, Expand All, and Collapse All are available in the sidebar and View menu. Command-click and Shift-click support track selection.
@@ -15,6 +17,8 @@ Albums start collapsed each time a workspace opens. Click an album to browse its
 Search and filter changes deselect tracks that leave the results, and album selection respects the active filter. MusicBrainz lookup operates on one album at a time. Batch scripts evaluate each track's own metadata, preserving distinct titles and track numbers.
 
 **Library → Manage Libraries & Sessions…** provides naming, switching, automatic refresh settings, and workspace removal. Removing a workspace leaves all music untouched and retains its document in Application Support. The original single-session data migrates automatically to **My Session**. Catalogs, separate session documents, and recovery files live under `Application Support/MacPicard/Workspaces`; directory access is retained with security-scoped bookmarks.
+
+Right-click tracks or albums to **Remove from Library…** / **Remove from Session…**, keeping their files on disk. Removed library paths remain excluded from automatic refresh; explicitly re-import them or choose **Library → Restore Removed Library Items** to show them again. **Move Library Files to Trash…** is a separate confirmed action available only for files inside the current library, never linked originals outside it. Finder can recover trashed files; restore them before re-importing or restoring removed library items. Removing the current library switches to another workspace (or creates an empty session if it was the last one). Removal confirmations warn that pending edits on the removed tracks will be discarded; removing a whole workspace retains its saved edits.
 
 The File, Edit, View, Library, and Metadata menus share their actions and enabled states with the on-screen controls. The sidebar and metadata inspector can be hidden, and the action bar adapts to narrower windows. **Help → MacPicard Guide** explains these workflows in the app.
 
@@ -28,7 +32,7 @@ The native player uses Apple's [AVPlayer](https://developer.apple.com/documentat
 
 The **Playback** menu provides Play Selected Track (⌘Return), pause/resume (⌘P), previous/next (⌃⌘← / ⌃⌘→), stop (⌘.), and Show Queue (⇧⌘P). Playback is intentionally transient and never starts automatically after relaunch.
 
-Track and album context menus also provide metadata editing, MusicBrainz lookup, cover-art download, script editing, changed-tag saving, organization, selection, Finder reveal, and copying file paths. Batch actions use the current selection only if the clicked track belongs to it; otherwise they target that track. No context action deletes audio files.
+Track and album context menus also provide metadata editing, MusicBrainz lookup, cover-art download, script editing, changed-tag saving, organization, selection, Finder reveal, copying file paths, and the removal actions described above. Batch actions use the current selection only if the clicked track belongs to it; otherwise they target that track. Permanent deletion is not offered.
 
 ## Phase 1
 

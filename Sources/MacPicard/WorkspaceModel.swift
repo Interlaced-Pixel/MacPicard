@@ -38,6 +38,11 @@ extension AppModel {
         workspaces.first { $0.id == activeWorkspaceID }
     }
 
+    var libraryDirectory: URL? {
+        guard activeWorkspace?.kind == .library else { return nil }
+        return workspaceAccess?.url ?? activeWorkspace?.directory
+    }
+
     var orderedAlbumGroups: [AlbumGroup] {
         guard albumSort == .artist else { return albumGroups }
         return albumGroups.sorted {
@@ -266,8 +271,24 @@ extension AppModel {
     }
 
     func removeWorkspace(_ workspace: MusicWorkspace) async {
-        guard let workspaceStore, !isBusy, workspace.id != activeWorkspaceID else { return }
-        do { workspaces = try await workspaceStore.remove(workspace.id).workspaces }
+        guard let workspaceStore, !isBusy else { return }
+        isSwitchingWorkspace = true
+        defer { isSwitchingWorkspace = false }
+        do {
+            try await flushSession()
+            if workspace.id == activeWorkspaceID {
+                let nextID: UUID
+                if let next = workspaces.first(where: { $0.id != workspace.id }) { nextID = next.id }
+                else {
+                    let next = MusicWorkspace(name: "My Session", kind: .session)
+                    _ = try await workspaceStore.create(next, document: SessionDocument())
+                    nextID = next.id
+                }
+                try await loadWorkspace(nextID)
+            }
+            workspaces = try await workspaceStore.remove(workspace.id).workspaces
+            statusMessage = "Removed \(workspace.name). Its audio files and saved workspace were kept."
+        }
         catch { present(error) }
     }
 
@@ -296,7 +317,7 @@ extension AppModel {
             let existing = files
             let scanner = libraryScanner
             let scan = Task { [weak self] in
-                try await scanner.scan(directory: directory, existing: existing) { [weak self] value in
+                try await scanner.scan(directory: directory, existing: existing, excludingRelativePaths: workspace.excludedRelativePaths) { [weak self] value in
                     await self?.updateSaveProgress(value)
                 }
             }
