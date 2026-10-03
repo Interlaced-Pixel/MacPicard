@@ -3,6 +3,29 @@ import XCTest
 @testable import PicardFoundation
 
 final class FoundationHardeningTests: XCTestCase {
+    func testIdentityMatchesJSONTimestampPrecisionButRejectsRealChanges() throws {
+        let precise = Date(timeIntervalSinceReferenceDate: 813_152_099.1234567)
+        let identity = AudioFileIdentity(resourceIdentifier: "inode", byteCount: 123,
+                                         modificationDate: precise, prefixHash: "hash")
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let restored = try decoder.decode(AudioFileIdentity.self, from: encoder.encode(identity))
+        XCTAssertTrue(identity.matches(restored))
+        XCTAssertFalse(identity.matches(nil))
+        XCTAssertFalse(identity.matches(AudioFileIdentity(resourceIdentifier: "inode", byteCount: 124,
+                                                          modificationDate: precise, prefixHash: "hash")))
+        XCTAssertFalse(identity.matches(AudioFileIdentity(resourceIdentifier: "inode", byteCount: 123,
+                                                          modificationDate: precise, prefixHash: "changed")))
+        XCTAssertFalse(identity.matches(AudioFileIdentity(resourceIdentifier: "replaced", byteCount: 123,
+                                                          modificationDate: precise, prefixHash: "hash")))
+        XCTAssertFalse(identity.matches(AudioFileIdentity(resourceIdentifier: "inode", byteCount: 123,
+                                                          modificationDate: precise.addingTimeInterval(0.001), prefixHash: "hash")))
+        let data = try encoder.encode(SessionDocument(createdAt: precise, savedAt: precise))
+        XCTAssertEqual(try SessionMigrator.migrate(data), data, "Current sessions must not be reserialized during migration")
+    }
+
     func testPrepareRejectsAnApplicationSupportPathOccupiedByAFile() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("MacPicard-path-\(UUID().uuidString)")

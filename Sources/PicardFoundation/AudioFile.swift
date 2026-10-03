@@ -31,6 +31,21 @@ public struct AudioFileIdentity: Codable, Sendable, Equatable {
         self.prefixHash = prefixHash
     }
 
+    /// JSON dates cross two floating-point epochs. Allow only that representation
+    /// error, not filesystem-scale timestamp changes; all other identity fields
+    /// must still match exactly. Equatable retains its exact value semantics.
+    public func matches(_ other: AudioFileIdentity?) -> Bool {
+        guard let other, resourceIdentifier == other.resourceIdentifier,
+              byteCount == other.byteCount, prefixHash == other.prefixHash else { return false }
+        switch (modificationDate, other.modificationDate) {
+        case (nil, nil): return true
+        case let (actual?, expected?):
+            let precision = 2 * max(actual.timeIntervalSince1970.ulp, expected.timeIntervalSince1970.ulp)
+            return abs(actual.timeIntervalSince(expected)) <= precision
+        default: return false
+        }
+    }
+
     public static func capture(url: URL, prefixByteCount: Int = 8_192) throws -> AudioFileIdentity {
         let resourceValues: URLResourceValues
 

@@ -178,8 +178,8 @@ public actor LibraryScanner {
                         try previous.restoreAvailability()
                     }
                     scanned.append(previous)
-                    if identity != previous.identity { conflicts.append(url.lastPathComponent) }
-                } else if let previous, identity == previous.identity, previous.state != .removed,
+                    if !identity.matches(previous.identity) { conflicts.append(url.lastPathComponent) }
+                } else if let previous, identity.matches(previous.identity), previous.state != .removed,
                           previous.state != .failed {
                     scanned.append(previous)
                 } else {

@@ -12,7 +12,9 @@ final class WorkspaceTests: XCTestCase {
         let first = MusicWorkspace(name: "Tagging", kind: .session)
         let second = MusicWorkspace(name: "Music", kind: .library, directory: root)
         let file = AudioFile(url: root.appendingPathComponent("test.flac"))
-        let document = SessionDocument(files: [file.sessionRecord()], selectedFileIDs: [file.id],
+        let document = SessionDocument(createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+                                       savedAt: Date(timeIntervalSince1970: 1_700_000_001),
+                                       files: [file.sessionRecord()], selectedFileIDs: [file.id],
                                        selectedAlbumKey: "album", accessBookmarkKeys: ["folder-access"])
         _ = try await store.create(first, document: document)
         _ = try await store.create(second, document: SessionDocument())

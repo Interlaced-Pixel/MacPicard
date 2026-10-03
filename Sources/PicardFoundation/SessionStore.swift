@@ -78,6 +78,10 @@ public enum SessionMigrator {
             throw PicardError.invalidConfiguration("Unsupported session schema version \(sourceVersion).")
         }
 
+        // Do not round-trip current JSON through NSNumber: it can lose the last
+        // bit of a timestamp, and current documents need no transformation.
+        if sourceVersion == SessionDocument.currentSchemaVersion { return data }
+
         var version = sourceVersion
         while version < SessionDocument.currentSchemaVersion {
             switch version {

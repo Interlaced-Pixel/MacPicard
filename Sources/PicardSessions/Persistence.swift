@@ -49,7 +49,7 @@ public actor AudioSaveCoordinator {
     public func save(_ file: AudioFile, options: AudioSaveOptions = AudioSaveOptions()) async throws -> AudioFile {
         if options.rejectExternalChanges, let expectedIdentity = file.identity {
             let actualIdentity = try AudioFileIdentity.capture(url: file.url)
-            guard actualIdentity == expectedIdentity else {
+            guard actualIdentity.matches(expectedIdentity) else {
                 throw SaveError.externalModification(path: file.url.path)
             }
         }
