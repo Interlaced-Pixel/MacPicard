@@ -20,6 +20,16 @@ The File, Edit, View, Library, and Metadata menus share their actions and enable
 
 Menu placement and persistent folder access follow Apple's [command groups](https://developer.apple.com/documentation/swiftui/commandgroupplacement) and [security-scoped URL access](https://developer.apple.com/documentation/foundation/url/startaccessingsecurityscopedresource()) APIs.
 
+## Playback and right-click actions
+
+Right-click a song in either the track list or an expanded sidebar album to **Play**, **Play Next**, **Add to Queue**, or **Play Album**. Play starts with the exact song clicked and continues through its album in numeric track order, without changing the metadata-editing selection. Double-clicking a main-list track also plays it. Right-click album rows for album playback and batch actions.
+
+The native player uses Apple's [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer) and supports the same MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV formats on macOS 26. Its bottom bar provides pause/resume, previous/next, stop, seeking, volume/mute, and a queue that can play or remove individual entries. Adding to an empty queue does not autoplay. Playback errors appear in the player with a retry action; missing files do not affect pending tag edits. Switching workspaces or quitting clears playback, and saving or organizing the playing file stops it before file operations.
+
+The **Playback** menu provides Play Selected Track (⌘Return), pause/resume (⌘P), previous/next (⌃⌘← / ⌃⌘→), stop (⌘.), and Show Queue (⇧⌘P). Playback is intentionally transient and never starts automatically after relaunch.
+
+Track and album context menus also provide metadata editing, MusicBrainz lookup, cover-art download, script editing, changed-tag saving, organization, selection, Finder reveal, and copying file paths. Batch actions use the current selection only if the clicked track belongs to it; otherwise they target that track. No context action deletes audio files.
+
 ## Phase 1
 
 Phase 1 establishes the Swift Package Manager foundation:

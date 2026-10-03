@@ -17,6 +17,7 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
+        model.playback.stop(clearQueue: true)
         Task { @MainActor in
             do {
                 try await model.flushSession()

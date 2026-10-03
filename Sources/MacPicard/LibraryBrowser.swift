@@ -18,6 +18,7 @@ final class AppPresentation: ObservableObject {
     @Published var showsInspector = true
     @Published var searchFocusRequest = 0
     @Published var isShowingGuide = false
+    @Published var showsPlaybackQueue = false
 
     func newSession(copying: Bool = false) {
         copiesCurrentSession = copying
@@ -76,7 +77,7 @@ struct LibrarySidebar: View {
                     .padding(.top, 8)
 
                     ForEach(model.browserAlbumGroups) { group in
-                        AlbumBrowserRow(model: model, group: group)
+                        AlbumBrowserRow(model: model, presentation: presentation, group: group)
                     }
 
                     if model.browserAlbumGroups.isEmpty {
@@ -258,6 +259,7 @@ struct LibrarySidebar: View {
 
 private struct AlbumBrowserRow: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var presentation: AppPresentation
     let group: AppModel.AlbumGroup
 
     private var isExpanded: Bool { model.expandedAlbumIDs.contains(group.id) }
@@ -305,18 +307,18 @@ private struct AlbumBrowserRow: View {
             .background(model.selectedAlbumID == group.id ? Color.accentColor.opacity(0.12) : .clear,
                         in: .rect(cornerRadius: 10))
             .contextMenu {
-                Button("Open Album") { model.selectAlbum(group) }
-                Button(isExpanded ? "Collapse Tracks" : "Expand Tracks") { model.toggleAlbumExpansion(group.id) }
+                AlbumContextMenu(model: model, presentation: presentation, group: group)
             }
 
             if isExpanded {
                 ForEach(group.fileIDs, id: \.self) { id in
                     if let file = model.file(id: id), model.matchingFileIDs.contains(id) {
                         Button { model.selectSidebarTrack(id, album: group) } label: {
-                            SidebarTrackRow(file: file, isSelected: model.selectedFileIDs.contains(id))
+                            SidebarTrackRow(file: file, isSelected: model.selectedFileIDs.contains(id), playback: model.playback)
                         }
                         .buttonStyle(.plain)
                         .help(file.url.lastPathComponent)
+                        .contextMenu { TrackContextMenu(model: model, presentation: presentation, fileID: id) }
                     }
                 }
             }

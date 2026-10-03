@@ -5,6 +5,13 @@ import SwiftUI
 struct MacPicardCommands: Commands {
     @ObservedObject var model: AppModel
     @ObservedObject var presentation: AppPresentation
+    @ObservedObject var playback: PlaybackController
+
+    init(model: AppModel, presentation: AppPresentation) {
+        self.model = model
+        self.presentation = presentation
+        playback = model.playback
+    }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -112,6 +119,31 @@ struct MacPicardCommands: Commands {
                 .disabled(model.selectedFiles.isEmpty)
         }
 
+        CommandMenu("Playback") {
+            Button("Play Selected Track") {
+                if let file = model.primarySelectedFile { model.playTrack(file.id) }
+            }.keyboardShortcut(.return, modifiers: .command)
+                .disabled(model.primarySelectedFile.map { !model.canPlay($0) } ?? true)
+            Button(playback.transportIsActive ? "Pause" : "Play / Resume") { playback.togglePlayPause() }
+                .keyboardShortcut("p", modifiers: .command)
+                .disabled(playback.currentTrack == nil)
+            Button("Previous Track") { playback.previous() }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .control])
+                .disabled(!playback.canGoPrevious)
+            Button("Next Track") { playback.next() }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
+                .disabled(!playback.canGoNext)
+            Button("Stop") { playback.stop() }
+                .keyboardShortcut(".", modifiers: .command)
+                .disabled(playback.currentTrack == nil)
+            Divider()
+            Button("Show Playback Queue") { presentation.showsPlaybackQueue = true }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(playback.queue.isEmpty)
+            Button("Clear Playback Queue") { playback.stop(clearQueue: true) }
+                .disabled(playback.queue.isEmpty)
+        }
+
         CommandMenu("Metadata") {
             Button("Look Up on MusicBrainz…") {
                 presentation.isShowingLookup = true
@@ -157,6 +189,8 @@ struct QuickStartView: View {
                   text: "Albums start collapsed. Click an album to open all its tracks; click its chevron to expand the sidebar. Press ⌘F to search title, artist, album, genre, or filename across the collection. Filters highlight unsaved edits, missing artwork, unidentified tracks, and unavailable files.")
             guide("Edit and identify music", symbol: "slider.horizontal.3",
                   text: "Select tracks with Command-click or Shift-click. The inspector shows Multiple values when tags differ; typing a value applies it to the selection. Use Metadata → Look Up on MusicBrainz, choose a release, then Apply Match. Save Selected Tags with ⌘S, or Save All Changed Tags with ⌥⌘S.")
+            guide("Listen while you work", symbol: "play.circle",
+                  text: "Right-click a song to Play, Play Next, or Add to Queue. Right-click an album to play it in track order. The player provides pause, seeking, volume, and queue controls. Double-click a track to play it; ⌘P toggles playback. Playback stops when you switch workspaces or quit.")
             guide("Organize files", symbol: "folder.badge.gearshape",
                   text: "Use the Script Editor to preview a naming path, then Organize Selected Files to choose a destination. Reveal files in Finder with ⇧⌘R. Unavailable files remain in the library so they can be found again when the drive reconnects.")
         }

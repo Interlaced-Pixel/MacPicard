@@ -170,6 +170,7 @@ extension AppModel {
         // Validate once before replacing the active workspace, then reuse that document.
         let loaded = try await manager.loadBestAvailable()
         let catalog = try await workspaceStore.activate(id)
+        playback.stop(clearQueue: true)
         workspaceAccess = nil
         importedAccess.removeAll()
         accessBookmarkKeys.removeAll()

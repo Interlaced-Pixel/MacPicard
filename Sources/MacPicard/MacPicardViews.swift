@@ -9,11 +9,12 @@ import UniformTypeIdentifiers
 struct SidebarTrackRow: View {
     let file: AudioFile
     let isSelected: Bool
+    @ObservedObject var playback: PlaybackController
 
     var body: some View {
         HStack(spacing: 9) {
-            Image(systemName: stateSymbol)
-                .foregroundStyle(stateColor)
+            Image(systemName: playback.currentTrack?.fileID == file.id && playback.state != .idle ? playback.indicatorSymbol : stateSymbol)
+                .foregroundStyle(playback.currentTrack?.fileID == file.id ? Color.accentColor : stateColor)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.metadata.firstValue(for: "title") ?? file.url.deletingPathExtension().lastPathComponent)
@@ -87,6 +88,7 @@ struct WorkspaceView: View {
             } else {
                 AlbumWorkspace(model: model, presentation: presentation)
             }
+            PlaybackBar(playback: model.playback, presentation: presentation)
             WorkspaceStatusBar(model: model)
         }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted) { providers in
@@ -319,7 +321,7 @@ private struct AlbumWorkspace: View {
                 .padding(.bottom, 12)
 
             HSplitView {
-                TrackListView(model: model)
+                TrackListView(model: model, presentation: presentation)
                     .frame(minWidth: 440, idealWidth: 560)
                 if presentation.showsInspector {
                     MetadataInspector(model: model)
@@ -428,6 +430,7 @@ private struct WorkspaceArtwork: View {
 
 private struct TrackListView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var presentation: AppPresentation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -459,17 +462,12 @@ private struct TrackListView: View {
             } else {
             List(selection: $model.selectedFileIDs) {
                 ForEach(Array(model.visibleFiles.enumerated()), id: \.element.id) { offset, file in
-                    TrackDetailRow(file: file, position: offset + 1, isSelected: model.selectedFileIDs.contains(file.id))
+                    TrackDetailRow(file: file, position: offset + 1, isSelected: model.selectedFileIDs.contains(file.id), playback: model.playback)
                         .tag(file.id)
                         .contextMenu {
-                            Button("Select Track") { model.selectedFileIDs = [file.id] }
-                            Button("Select Album") {
-                                if let group = model.albumGroups.first(where: { $0.fileIDs.contains(file.id) }) {
-                                    model.selectAlbum(group)
-                                }
-                            }
-                            Button("Reveal in Finder") { model.revealFiles([file]) }
+                            TrackContextMenu(model: model, presentation: presentation, fileID: file.id)
                         }
+                        .onTapGesture(count: 2) { model.playTrack(file.id) }
                 }
             }
             .listStyle(.inset)
@@ -486,6 +484,7 @@ private struct TrackDetailRow: View {
     let file: AudioFile
     let position: Int
     let isSelected: Bool
+    @ObservedObject var playback: PlaybackController
 
     var body: some View {
         HStack(spacing: 12) {
@@ -495,6 +494,12 @@ private struct TrackDetailRow: View {
                 .frame(width: 46, alignment: .trailing)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
+                    if playback.currentTrack?.fileID == file.id && playback.state != .idle {
+                        Image(systemName: playback.indicatorSymbol)
+                            .foregroundStyle(.tint)
+                            .font(.caption)
+                            .accessibilityLabel(playback.statusDescription)
+                    }
                     Text(file.metadata.firstValue(for: "title") ?? file.url.deletingPathExtension().lastPathComponent)
                         .fontWeight(isSelected ? .semibold : .regular)
                         .lineLimit(1)

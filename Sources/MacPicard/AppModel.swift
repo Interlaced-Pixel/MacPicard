@@ -73,6 +73,7 @@ final class AppModel: ObservableObject {
     private var selectedReleaseFileIDs = Set<UUID>()
     private var filesByID: [UUID: AudioFile] = [:]
     var workspaceStore: WorkspaceStore?
+    let playback = PlaybackController()
     let libraryScanner = LibraryScanner()
     var workspaceAccess: ScopedURLAccess?
     var importedAccess: [ScopedURLAccess] = []
@@ -110,6 +111,7 @@ final class AppModel: ObservableObject {
             return $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
         rebuildBrowserMatches()
+        playback.updateTracks(files)
     }
 
     private func rebuildBrowserMatches() {
@@ -503,6 +505,9 @@ final class AppModel: ObservableObject {
         isWorking = true
         progress = 0
         statusMessage = "Writing metadata…"
+        if let playingID = playback.currentTrack?.fileID, targets.contains(where: { $0.id == playingID }) {
+            playback.stop()
+        }
         defer {
             isWorking = false
             progress = nil
@@ -531,6 +536,7 @@ final class AppModel: ObservableObject {
         }
         isWorking = true
         statusMessage = "Organizing files…"
+        if let playingID = playback.currentTrack?.fileID, selectedFileIDs.contains(playingID) { playback.stop() }
         defer { isWorking = false }
         do {
             let organized = try await organizationCoordinator.organize(

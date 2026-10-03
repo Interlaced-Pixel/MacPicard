@@ -35,6 +35,8 @@ The script refuses to submit for notarization unless a Developer ID identity is 
 - Launch the packaged app on a clean macOS 26 user account.
 - Import MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV files from Finder and the file picker.
 - Run MusicBrainz search, select a match, edit metadata, preview/apply a script, fetch cover art, save, and organize files.
+- Right-click both main-list tracks and sidebar tracks; verify exact-song playback, album playback, queue ordering, and multi-selection action targets.
+- Verify pause/resume, seek, volume/mute, previous/next, queue controls, playback errors, double-click playback, and Playback menu shortcuts. The automated gate decodes silent fixtures for all six audio formats through the native player.
 - Quit during an unsaved edit, relaunch, and verify recovery selection, discard, and accept paths.
 - Enable VoiceOver and complete import, selection, lookup, edit, artwork, script, save, and organize workflows.
 - Repeat the primary workflow with Reduce Motion, Increase Contrast, and Larger Text enabled.

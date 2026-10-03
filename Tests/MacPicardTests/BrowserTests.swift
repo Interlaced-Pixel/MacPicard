@@ -89,8 +89,10 @@ final class BrowserTests: XCTestCase {
         model.sessionManager = SessionManager(store: await store.sessionStore(for: first.id))
         model.files = [file]
         model.expandAllAlbums()
+        model.playback.enqueue([PlaybackTrack(file)])
         await model.switchWorkspace(second.id)
         XCTAssertTrue(model.files.isEmpty)
+        XCTAssertTrue(model.playback.queue.isEmpty, "Workspace switching must release the previous library's playback access")
         await model.switchWorkspace(first.id)
         XCTAssertEqual(model.files.first?.metadata.firstValue(for: "title"), "Pending")
         XCTAssertTrue(model.files.first?.isModified == true)
