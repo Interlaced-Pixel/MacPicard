@@ -4,6 +4,131 @@ import XCTest
 import PicardFoundation
 
 final class CoverArtTests: XCTestCase {
+    func testLegacyArchiveImageAndThumbnailURLsUseHTTPS() async throws {
+        let imageData = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        let transport = StubTransport(responses: [
+            Data(#"{"images":[{"id":19383654919,"types":["Front"],"image":"http://coverartarchive.org/release/album/19383654919.jpg","thumbnails":{"250":"http://coverartarchive.org/release/album/19383654919-250.jpg","500":"http://archive.org/download/album/cover-500.jpg","1200":"http://ia800123.us.archive.org/items/album/cover-1200.jpg"}}]}"#.utf8),
+            imageData
+        ])
+        let client = CoverArtClient(userAgent: "MacPicardTests/1.0", transport: transport, minimumRequestInterval: .zero)
+
+        let release = try await client.release(identifier: "album")
+        let image = try XCTUnwrap(release.images.first)
+        XCTAssertEqual(image.imageURL.absoluteString, "https://coverartarchive.org/release/album/19383654919.jpg")
+        for size in CoverArtImageSize.allCases {
+            XCTAssertEqual(image.url(for: size).scheme, "https")
+            let artwork = try await client.download(image, size: size)
+            XCTAssertEqual(artwork.width, 1)
+            XCTAssertEqual(artwork.source, .remote(image.url(for: size)))
+        }
+        let requests = await transport.requests()
+        XCTAssertEqual(requests.count, 5)
+        XCTAssertTrue(requests.allSatisfy { $0.url?.scheme == "https" })
+    }
+
+    func testPreviouslyCachedHTTPArchiveLinksAreUpgraded() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let response = Data(#"{"images":[{"id":1,"types":["Front"],"image":"http://coverartarchive.org/release/album/front.jpg"}]}"#.utf8)
+        let firstTransport = StubTransport(responses: [response])
+        let first = CoverArtClient(userAgent: "MacPicardTests/1.0", transport: firstTransport, cacheDirectory: directory, minimumRequestInterval: .zero)
+        _ = try await first.release(identifier: "album")
+
+        let secondTransport = StubTransport(responses: [Data()])
+        let restored = CoverArtClient(userAgent: "MacPicardTests/1.0", transport: secondTransport, cacheDirectory: directory, minimumRequestInterval: .zero)
+        let release = try await restored.release(identifier: "album")
+        XCTAssertEqual(release.images.first?.imageURL.scheme, "https")
+        let requests = await secondTransport.requests()
+        XCTAssertTrue(requests.isEmpty, "The old cached JSON should work without deleting the cache.")
+    }
+
+    func testURLPolicyPreservesPathsQueriesAndRequestHeaders() throws {
+        let original = URL(string: "http://archive.org:80/download/album/front%20cover.jpg?token=a%2Fb&size=1200#cover")!
+        var request = URLRequest(url: original)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 12
+        request.setValue("MacPicardTests/1.0", forHTTPHeaderField: "User-Agent")
+        let secured = try CoverArtURLPolicy.secureRequest(request)
+        XCTAssertEqual(secured.url?.absoluteString, "https://archive.org/download/album/front%20cover.jpg?token=a%2Fb&size=1200#cover")
+        XCTAssertEqual(secured.httpMethod, "HEAD")
+        XCTAssertEqual(secured.timeoutInterval, 12)
+        XCTAssertEqual(secured.value(forHTTPHeaderField: "User-Agent"), "MacPicardTests/1.0")
+
+        let https = URL(string: "https://images.example:8443/front.jpg?size=1200")!
+        XCTAssertEqual(try CoverArtURLPolicy.secureURL(https), https)
+    }
+
+    func testUnsafeArtworkURLsAreRejectedBeforeTransport() async throws {
+        let urls = [
+            "http://images.example/front.jpg",
+            "http://archive.org.evil.example/front.jpg",
+            "http://evilarchive.org/front.jpg",
+            "http://archive.org:8080/front.jpg",
+            "https://user:password@archive.org/front.jpg",
+            "file:///tmp/front.jpg",
+            "ftp://archive.org/front.jpg",
+            "/relative/front.jpg"
+        ]
+        let transport = StubTransport(responses: [Data()])
+        let client = CoverArtClient(userAgent: "MacPicardTests/1.0", transport: transport, minimumRequestInterval: .zero)
+        for value in urls {
+            let image = CoverArtImage(id: "1", types: [.front], imageURL: URL(string: value)!)
+            do {
+                _ = try await client.download(image)
+                XCTFail("Unsafe URL was accepted: \(value)")
+            } catch let error as CoverArtError {
+                switch error {
+                case .insecureURL, .invalidURL: break
+                default: XCTFail("Unexpected error: \(error)")
+                }
+            }
+        }
+        let requests = await transport.requests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testRedirectDelegateUpgradesArchiveDowngradesAndRejectsOtherHTTPHosts() async throws {
+        let session = URLSession.shared
+        let source = URL(string: "https://coverartarchive.org/release/album/front")!
+        let task = session.dataTask(with: source)
+        defer { task.cancel() }
+        let response = try XCTUnwrap(HTTPURLResponse(url: source, statusCode: 307, httpVersion: nil, headerFields: nil))
+        for (target, expected) in [
+            ("http://archive.org/download/album/front.jpg", "https://archive.org/download/album/front.jpg"),
+            ("http://ia800123.us.archive.org/items/album/front.jpg", "https://ia800123.us.archive.org/items/album/front.jpg"),
+            ("https://images.example/front.jpg", "https://images.example/front.jpg"),
+            ("http://images.example/front.jpg", nil),
+            ("http://archive.org.evil.example/front.jpg", nil)
+        ] as [(String, String?)] {
+            let redirected: URLRequest? = await withCheckedContinuation { continuation in
+                CoverArtRedirectDelegate.shared.urlSession(
+                    session, task: task, willPerformHTTPRedirection: response,
+                    newRequest: URLRequest(url: URL(string: target)!),
+                    completionHandler: { continuation.resume(returning: $0) }
+                )
+            }
+            XCTAssertEqual(redirected?.url?.absoluteString, expected)
+        }
+    }
+
+    /// Opt in explicitly; ordinary unit tests must not depend on Internet Archive availability.
+    func testLiveLukasGrahamCoverArtDownload() async throws {
+        guard ProcessInfo.processInfo.environment["MACPICARD_LIVE_COVER_ART_TEST"] == "1" else {
+            throw XCTSkip("Set MACPICARD_LIVE_COVER_ART_TEST=1 to check the real archive.")
+        }
+        let client = CoverArtClient(userAgent: "MacPicardTests/0.1.0 (cover art integration test)")
+        let release = try await client.release(identifier: "5e0abf8a-c77a-4826-b435-b3c23b22c0b1")
+        let image = try XCTUnwrap(release.images.first(where: { $0.types.contains(.front) }))
+        XCTAssertEqual(image.imageURL.scheme, "https")
+        let artwork = try await client.download(image, size: .thumbnail1200)
+        XCTAssertGreaterThan(artwork.data?.count ?? 0, 0)
+        XCTAssertGreaterThan(artwork.width ?? 0, 0)
+        XCTAssertGreaterThan(artwork.height ?? 0, 0)
+        guard case let .remote(url) = artwork.source else { return XCTFail("Expected remote artwork") }
+        XCTAssertEqual(url.scheme, "https")
+    }
+
     func testCoverArtClientDecodesReleaseImagesAndDownloadsArtwork() async throws {
         let imageData = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
         let transport = StubTransport(responses: [

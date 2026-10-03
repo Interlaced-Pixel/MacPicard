@@ -84,6 +84,7 @@ Phase 6 adds scripts and automatic identification:
 Phase 7 adds cover art, saving, organization, and session persistence:
 
 - `PicardCoverArt` integrates Cover Art Archive release and release-group endpoints and validates downloaded image bytes before embedding.
+- Legacy HTTP links from Cover Art Archive and Internet Archive are upgraded to HTTPS, including redirects. Other insecure artwork URLs are rejected; App Transport Security remains enabled.
 - `ArtworkProcessor` uses native ImageIO/CoreGraphics APIs for inspection, resizing, output conversion, and deduplication.
 - `PicardSessions` serializes audio saves through temporary same-format files, detects external changes, preserves timestamps, and reports failures without partially updating the in-memory file.
 - Script-rendered destination paths are sanitized against absolute paths and traversal, checked for collisions, and executed through a rollback-capable move plan.

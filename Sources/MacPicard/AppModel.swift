@@ -463,6 +463,7 @@ final class AppModel: ObservableObject {
             statusMessage = "Choose a MusicBrainz release before downloading cover art."
             return
         }
+        errorMessage = nil
         isWorking = true
         statusMessage = "Downloading cover art…"
         let targets = selectedFileIDs

@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 public enum CoverArtError: Error, LocalizedError, Sendable, Equatable {
     case invalidIdentifier
     case invalidURL(String)
+    case insecureURL(String)
     case network(String)
     case httpStatus(Int, String)
     case decoding(String)
@@ -19,6 +20,7 @@ public enum CoverArtError: Error, LocalizedError, Sendable, Equatable {
         switch self {
         case .invalidIdentifier: return "A MusicBrainz release or release-group identifier is required."
         case let .invalidURL(value): return "Cover Art Archive URL is invalid: \(value)"
+        case let .insecureURL(value): return "Cover art requires a secure HTTPS connection: \(value)"
         case let .network(message): return "Cover Art Archive request failed: \(message)"
         case let .httpStatus(status, body): return "Cover Art Archive returned HTTP \(status): \(body)"
         case let .decoding(message): return "Cover Art Archive response decoding failed: \(message)"
@@ -100,7 +102,8 @@ public struct URLSessionCoverArtTransport: CoverArtTransport, Sendable {
 
     public func data(for request: URLRequest) async throws -> CoverArtHTTPResponse {
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let secured = try CoverArtURLPolicy.secureRequest(request)
+            let (data, response) = try await URLSession.shared.data(for: secured, delegate: CoverArtRedirectDelegate.shared)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw CoverArtError.network("The server returned a non-HTTP response.")
             }
@@ -131,14 +134,14 @@ private struct CoverArtAPIImage: Decodable {
     let image: URL
     let thumbnails: [String: URL]?
 
-    var model: CoverArtImage {
+    func model() throws -> CoverArtImage {
         let mappedTypes = (types ?? []).compactMap { ArtworkType(rawValue: $0.lowercased()) }
         var mappedThumbnails: [CoverArtImageSize: URL] = [:]
         for (key, url) in thumbnails ?? [:] {
             switch key {
-            case "250": mappedThumbnails[.thumbnail250] = url
-            case "500": mappedThumbnails[.thumbnail500] = url
-            case "1200": mappedThumbnails[.thumbnail1200] = url
+            case "250": mappedThumbnails[.thumbnail250] = try CoverArtURLPolicy.secureURL(url)
+            case "500": mappedThumbnails[.thumbnail500] = try CoverArtURLPolicy.secureURL(url)
+            case "1200": mappedThumbnails[.thumbnail1200] = try CoverArtURLPolicy.secureURL(url)
             default: break
             }
         }
@@ -147,7 +150,7 @@ private struct CoverArtAPIImage: Decodable {
             types: mappedTypes,
             comment: comment ?? "",
             approved: approved ?? false,
-            imageURL: image,
+            imageURL: try CoverArtURLPolicy.secureURL(image),
             thumbnails: mappedThumbnails
         )
     }
@@ -186,7 +189,7 @@ public actor CoverArtClient {
     }
 
     public func download(_ image: CoverArtImage, size: CoverArtImageSize = .original) async throws -> Artwork {
-        let url = image.url(for: size)
+        let url = try CoverArtURLPolicy.secureURL(image.url(for: size))
         let data = try await fetchData(url: url)
         let info = try ArtworkProcessor.inspect(data)
         return Artwork(
@@ -205,13 +208,16 @@ public actor CoverArtClient {
         let data = try await fetchData(url: url)
         do {
             let response = try JSONDecoder().decode(CoverArtAPIResponse.self, from: data)
-            return CoverArtRelease(identifier: path.split(separator: "/").last.map(String.init) ?? path, images: response.images.map(\.model))
+            return CoverArtRelease(identifier: path.split(separator: "/").last.map(String.init) ?? path, images: try response.images.map { try $0.model() })
+        } catch let error as CoverArtError {
+            throw error
         } catch {
             throw CoverArtError.decoding(error.localizedDescription)
         }
     }
 
     private func fetchData(url: URL) async throws -> Data {
+        let url = try CoverArtURLPolicy.secureURL(url)
         let key = cacheKey(for: url)
         if let cacheDirectory,
            let data = try? Data(contentsOf: cacheDirectory.appendingPathComponent(key)) {
