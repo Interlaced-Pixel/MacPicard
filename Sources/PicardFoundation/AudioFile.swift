@@ -115,6 +115,7 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
     public private(set) var originalArtwork: ArtworkCollection
     public private(set) var artwork: ArtworkCollection
     public private(set) var lastError: String?
+    public private(set) var durationInMilliseconds: Int?
 
     public init(id: UUID = UUID(), url: URL) {
         self.id = id
@@ -145,7 +146,8 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
     public mutating func finishLoading(
         metadata: Metadata,
         artwork: ArtworkCollection = ArtworkCollection(),
-        identity: AudioFileIdentity
+        identity: AudioFileIdentity,
+        durationInMilliseconds: Int? = nil
     ) throws {
         try requireState([.loading], operation: "finish loading")
         self.originalMetadata = metadata
@@ -153,6 +155,7 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
         self.originalArtwork = artwork
         self.artwork = artwork
         self.identity = identity
+        self.durationInMilliseconds = durationInMilliseconds
         self.state = .ready
         self.lastError = nil
     }
@@ -169,6 +172,15 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
         self.artwork = artwork
         state = metadataDiff.isEmpty && artwork == originalArtwork ? .ready : .changed
         lastError = nil
+    }
+
+    /// Reverts only unsaved tag/artwork edits, never writes or reloads the audio.
+    /// Missing/failed files keep their availability state and diagnostic.
+    public mutating func discardChanges() throws {
+        try requireState([.ready, .changed, .saved, .removed, .failed, .unsupported], operation: "discard changes")
+        metadata = originalMetadata
+        artwork = originalArtwork
+        if [.ready, .changed, .saved].contains(state) { state = .ready; lastError = nil }
     }
 
     public mutating func updateURL(_ url: URL) throws {
@@ -225,7 +237,8 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
             metadata: metadata,
             originalArtwork: originalArtwork,
             artwork: artwork,
-            lastError: lastError
+            lastError: lastError,
+            durationInMilliseconds: durationInMilliseconds
         )
     }
 
@@ -238,6 +251,7 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
         file.originalArtwork = record.originalArtwork
         file.artwork = record.artwork
         file.lastError = record.lastError
+        file.durationInMilliseconds = record.durationInMilliseconds
         return file
     }
 
@@ -262,6 +276,7 @@ public struct AudioFileSessionRecord: Codable, Sendable, Equatable, Identifiable
     public let originalArtwork: ArtworkCollection
     public let artwork: ArtworkCollection
     public let lastError: String?
+    public let durationInMilliseconds: Int?
 
     public init(
         id: UUID,
@@ -272,7 +287,8 @@ public struct AudioFileSessionRecord: Codable, Sendable, Equatable, Identifiable
         metadata: Metadata,
         originalArtwork: ArtworkCollection,
         artwork: ArtworkCollection,
-        lastError: String?
+        lastError: String?,
+        durationInMilliseconds: Int? = nil
     ) {
         self.id = id
         self.url = url
@@ -283,5 +299,6 @@ public struct AudioFileSessionRecord: Codable, Sendable, Equatable, Identifiable
         self.originalArtwork = originalArtwork
         self.artwork = artwork
         self.lastError = lastError
+        self.durationInMilliseconds = durationInMilliseconds
     }
 }

@@ -299,7 +299,8 @@ public actor AudioFileCoordinator {
 
         var file = AudioFile(id: id, url: url)
         try file.beginLoading()
-        try file.finishLoading(metadata: result.metadata, artwork: result.artwork, identity: identity)
+        try file.finishLoading(metadata: result.metadata, artwork: result.artwork, identity: identity,
+                               durationInMilliseconds: result.audioProperties?.lengthInMilliseconds)
         return file
     }
 

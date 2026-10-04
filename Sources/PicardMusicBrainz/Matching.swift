@@ -232,104 +232,127 @@ public struct TrackMatcher: Sendable {
         localTracks: [LocalTrackCandidate],
         releaseTracks: [MusicBrainzTrack]
     ) -> [TrackMatch] {
-        guard !localTracks.isEmpty else { return [] }
-
-        struct Pair {
-            let localIndex: Int
-            let remoteIndex: Int
-            let score: Double
-            let exact: Bool
-        }
-
-        var pairs: [Pair] = []
-        for (localIndex, local) in localTracks.enumerated() {
-            for (remoteIndex, remote) in releaseTracks.enumerated() {
-                let result = score(local: local, remote: remote)
-                pairs.append(Pair(localIndex: localIndex, remoteIndex: remoteIndex, score: result.score, exact: result.exact))
-            }
-        }
-
-        let sortedPairs = pairs.sorted {
-            if $0.score == $1.score {
-                if $0.localIndex == $1.localIndex { return $0.remoteIndex < $1.remoteIndex }
-                return $0.localIndex < $1.localIndex
-            }
-            return $0.score > $1.score
-        }
-
-        var assignedLocals: Set<Int> = []
-        var assignedRemotes: Set<Int> = []
-        var results: [TrackMatch] = []
-
-        for pair in sortedPairs {
-            guard !assignedLocals.contains(pair.localIndex), !assignedRemotes.contains(pair.remoteIndex) else {
-                continue
-            }
-            guard pair.score >= minimumSimilarity else { continue }
-
-            let local = localTracks[pair.localIndex]
-            let remote = releaseTracks[pair.remoteIndex]
-            let alternatives = pairs
-                .filter { $0.localIndex == pair.localIndex && $0.remoteIndex != pair.remoteIndex }
-                .map(\.score)
-                .sorted(by: >)
-            let secondScore = alternatives.first ?? 0
-            let margin = pair.score - secondScore
-            let decision: TrackMatchDecision
-
-            if pair.exact {
-                decision = .exact
-            } else if margin < minimumMargin {
-                decision = .ambiguous
-            } else {
-                decision = .matched
-            }
-
-            assignedLocals.insert(pair.localIndex)
-            assignedRemotes.insert(pair.remoteIndex)
-            results.append(
-                TrackMatch(
-                    localTrackID: local.id,
-                    releaseTrackID: remote.id,
-                    score: pair.score,
-                    decision: decision
-                )
-            )
-        }
-
-        for (index, local) in localTracks.enumerated() where !assignedLocals.contains(index) {
-            results.append(
-                TrackMatch(
-                    localTrackID: local.id,
-                    releaseTrackID: nil,
-                    score: 0,
-                    decision: .unmatched
-                )
-            )
-        }
-
-        return results.sorted { $0.localTrackID.uuidString < $1.localTrackID.uuidString }
+        match(localTracks: localTracks, releaseTracks: releaseTracks, discs: [:])
     }
 
-    private func score(local: LocalTrackCandidate, remote: MusicBrainzTrack) -> (score: Double, exact: Bool) {
-        if let localRecordingID = local.recordingID, localRecordingID == remote.recordingID {
-            return (1, true)
+    public func match(localTracks: [LocalTrackCandidate], release: MusicBrainzRelease) -> [TrackMatch] {
+        let discs = release.media.reduce(into: [String: Int]()) { result, medium in
+            for track in medium.tracks { result[track.id] = medium.position }
         }
+        return match(localTracks: localTracks, releaseTracks: release.tracks, discs: discs)
+    }
 
-        if !local.isrcs.isEmpty, !Set(local.isrcs).isDisjoint(with: remote.isrcs) {
-            return (1, true)
+    public func evidence(local: LocalTrackCandidate, remote: MusicBrainzTrack, disc: Int? = nil) -> TrackMatchEvidence {
+        var reasons: [String] = []
+        let recording = local.recordingID?.lowercased() == remote.recordingID?.lowercased() && local.recordingID?.isEmpty == false
+        let isrc = !Set(local.isrcs.map { $0.uppercased() }).isDisjoint(with: remote.isrcs.map { $0.uppercased() })
+        let exact = recording || isrc
+        if recording { reasons.append("Recording ID matches") }
+        if isrc { reasons.append("ISRC matches") }
+        let title = local.title.isEmpty ? 0 : Similarity.text(local.title, remote.title)
+        var weight = 0.60
+        var total = title * weight
+        if title >= 0.99 { reasons.append("Title matches") }
+        else if title >= 0.70 { reasons.append("Similar title") }
+        if let artist = local.artist, !artist.isEmpty, !remote.artistCredit.isEmpty {
+            let similarity = Similarity.text(artist, remote.artistCredit)
+            total += similarity * 0.15; weight += 0.15
+            if similarity >= 0.85 { reasons.append("Artist matches") }
         }
-
-        let title = Similarity.text(local.title, remote.title)
-        let artist = Similarity.text(local.artist, remote.artistCredit)
-        let duration = Similarity.duration(local.durationInMilliseconds, remote.lengthInMilliseconds)
-        var total = (title * 0.60) + (artist * 0.15) + (duration * 0.25)
-
+        var lengthMismatch = false
+        if let duration = local.durationInMilliseconds, let remoteDuration = remote.lengthInMilliseconds, duration > 0, remoteDuration > 0 {
+            total += Similarity.duration(duration, remoteDuration) * 0.25; weight += 0.25
+            let difference = abs(duration - remoteDuration)
+            reasons.append(difference <= 2_000 ? "Length within 2 seconds" : "Length differs by \(difference / 1_000) seconds")
+            lengthMismatch = difference > 15_000
+        }
+        total = exact ? 0.93 : total / weight * 0.95
         if let localNumber = local.trackNumber, let remoteNumber = Int(remote.number.split(separator: "/").first ?? "") {
-            total += localNumber == remoteNumber ? 0.05 : -0.10
+            total += localNumber == remoteNumber ? 0.02 : -0.025
+            if localNumber == remoteNumber { reasons.append("Track number matches") }
         }
+        if let localDisc = local.discNumber, let disc {
+            total += localDisc == disc ? 0.025 : -0.04
+            reasons.append(localDisc == disc ? "Disc matches" : "Different disc")
+        }
+        if lengthMismatch && !exact { total = min(total, 0.68) }
+        return TrackMatchEvidence(score: max(0, min(1, total)), exact: exact, reasons: reasons)
+    }
 
-        return (max(0, min(1, total)), false)
+    private func match(localTracks: [LocalTrackCandidate], releaseTracks: [MusicBrainzTrack], discs: [String: Int]) -> [TrackMatch] {
+        guard !localTracks.isEmpty else { return [] }
+        // Optimize the entire album, not a greedy first-come pairing. Dummy columns
+        // allow any file to remain unmatched, including incomplete collections.
+        let evidence = localTracks.map { local in
+            releaseTracks.map { self.evidence(local: local, remote: $0, disc: discs[$0.id]) }
+        }
+        let exactBonus = Double(localTracks.count + 1)
+        let weights = evidence.map { row in
+            row.map { item in item.score >= minimumSimilarity ? item.score + (item.exact ? exactBonus : 0) : -1_000_000 }
+                + Array(repeating: max(0, minimumSimilarity - 0.000_001), count: localTracks.count)
+        }
+        let assignment = MaximumTrackAssignment.solve(weights)
+        return localTracks.indices.map { localIndex in
+            let remoteIndex = assignment[localIndex]
+            guard remoteIndex < releaseTracks.count else {
+                return TrackMatch(localTrackID: localTracks[localIndex].id, releaseTrackID: nil, score: 0, decision: .unmatched)
+            }
+            let item = evidence[localIndex][remoteIndex]
+            let localAlternative = evidence[localIndex].enumerated().filter { $0.offset != remoteIndex }.map(\.element.score).max() ?? 0
+            let competitor = evidence.indices.filter { $0 != localIndex }.map { evidence[$0][remoteIndex].score }.max() ?? 0
+            let ambiguous = item.score - max(localAlternative, competitor) < minimumMargin
+            return TrackMatch(localTrackID: localTracks[localIndex].id, releaseTrackID: releaseTracks[remoteIndex].id,
+                              score: item.score, decision: ambiguous ? .ambiguous : item.exact ? .exact : .matched)
+        }
+    }
+}
+
+public struct TrackMatchEvidence: Sendable, Equatable {
+    public let score: Double
+    public let exact: Bool
+    public let reasons: [String]
+}
+
+/// Rectangular Hungarian assignment with deterministic tie breaking. Columns >= rows.
+private enum MaximumTrackAssignment {
+    static func solve(_ weights: [[Double]]) -> [Int] {
+        let rows = weights.count
+        guard rows > 0 else { return [] }
+        let columns = weights[0].count
+        var u = [Double](repeating: 0, count: rows + 1)
+        var v = [Double](repeating: 0, count: columns + 1)
+        var p = [Int](repeating: 0, count: columns + 1)
+        var way = [Int](repeating: 0, count: columns + 1)
+        for row in 1...rows {
+            p[0] = row
+            var column = 0
+            var minimum = [Double](repeating: .infinity, count: columns + 1)
+            var used = [Bool](repeating: false, count: columns + 1)
+            repeat {
+                used[column] = true
+                let activeRow = p[column]
+                var delta = Double.infinity
+                var next = 0
+                for candidate in 1...columns where !used[candidate] {
+                    let cost = -weights[activeRow - 1][candidate - 1] - u[activeRow] - v[candidate]
+                    if cost < minimum[candidate] { minimum[candidate] = cost; way[candidate] = column }
+                    if minimum[candidate] < delta { delta = minimum[candidate]; next = candidate }
+                }
+                for candidate in 0...columns {
+                    if used[candidate] { u[p[candidate]] += delta; v[candidate] -= delta }
+                    else { minimum[candidate] -= delta }
+                }
+                column = next
+            } while p[column] != 0
+            repeat {
+                let previous = way[column]
+                p[column] = p[previous]
+                column = previous
+            } while column != 0
+        }
+        var result = [Int](repeating: columns, count: rows)
+        for column in 1...columns where p[column] > 0 { result[p[column] - 1] = column - 1 }
+        return result
     }
 }
 
@@ -407,7 +430,7 @@ public struct ReleaseMatcher: Sendable {
         guard !candidates.isEmpty else { return [] }
 
         let scored = candidates.map { candidate in
-            let trackMatches = trackMatcher.match(localTracks: local.tracks, releaseTracks: candidate.tracks)
+            let trackMatches = trackMatcher.match(localTracks: local.tracks, release: candidate)
             return (candidate, score(local: local, release: candidate, trackMatches: trackMatches), trackMatches)
         }.sorted {
             if $0.1.total == $1.1.total { return $0.0.id < $1.0.id }
@@ -459,7 +482,7 @@ public struct ReleaseMatcher: Sendable {
     }
 
     public func score(local: LocalAlbumCandidate, release: MusicBrainzRelease) -> ReleaseMatchScore {
-        let trackMatches = trackMatcher.match(localTracks: local.tracks, releaseTracks: release.tracks)
+        let trackMatches = trackMatcher.match(localTracks: local.tracks, release: release)
         return score(local: local, release: release, trackMatches: trackMatches)
     }
 

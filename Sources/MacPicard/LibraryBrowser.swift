@@ -21,6 +21,20 @@ final class AppPresentation: ObservableObject {
     @Published var showsPlaybackQueue = false
     @Published var isConfirmingTrackRemoval = false
     @Published var trackRemovalRequest: TrackRemovalRequest?
+    @Published var isConfirmingDiscard = false
+    @Published var discardRequest: DiscardRequest?
+
+    struct DiscardRequest {
+        let workspaceID: UUID?
+        let fileIDs: Set<UUID>
+    }
+
+    func requestDiscard(_ files: [AudioFile], workspaceID: UUID?) {
+        let ids = Set(files.filter(\.isModified).map(\.id))
+        guard !ids.isEmpty else { return }
+        discardRequest = DiscardRequest(workspaceID: workspaceID, fileIDs: ids)
+        isConfirmingDiscard = true
+    }
 
     struct TrackRemovalRequest {
         let workspaceID: UUID?

@@ -55,6 +55,7 @@ final class AppModel: ObservableObject {
     @Published var lookupResults: [MusicBrainzReleaseSummary] = []
     @Published var matchResults: [ReleaseMatchResult] = []
     @Published private(set) var selectedRelease: MusicBrainzRelease?
+    @Published private(set) var matchReview: ReleaseMatchReview?
     @Published private(set) var scriptOutput = ""
     @Published var scriptSource = "$if2(%albumartist%,%artist%)/$if2(%album%,Unknown Album)/%tracknumber% %title%"
     @Published var destinationDirectory: URL?
@@ -71,6 +72,9 @@ final class AppModel: ObservableObject {
     var sessionSaveTask: Task<Void, Never>?
     private var autosaveTask: Task<Void, Never>?
     private var selectedReleaseFileIDs = Set<UUID>()
+    private var reviewFiles: [AudioFile] = []
+    private var lookupGeneration = UUID()
+    private let lookupAudioEngine = FormatEngine()
     private var filesByID: [UUID: AudioFile] = [:]
     var workspaceStore: WorkspaceStore?
     let playback = PlaybackController()
@@ -169,6 +173,7 @@ final class AppModel: ObservableObject {
 
     var canDownloadCoverArt: Bool {
         guard !selectedFiles.isEmpty else { return false }
+        if matchReview != nil { return false }
         if selectedRelease != nil { return true }
         let releaseIDs = Set(selectedFiles.map { $0.metadata.firstValue(for: "musicbrainz_albumid") ?? "" })
         return releaseIDs.count == 1 && releaseIDs.first?.isEmpty == false
@@ -343,6 +348,9 @@ final class AppModel: ObservableObject {
         selectedFileIDs = Set(group.fileIDs).intersection(matchingFileIDs)
         selectedRelease = nil
         selectedReleaseFileIDs.removeAll()
+        matchReview = nil
+        reviewFiles.removeAll()
+        lookupGeneration = UUID()
         scheduleSessionSave()
     }
 
@@ -354,6 +362,9 @@ final class AppModel: ObservableObject {
         selectedFileIDs.removeAll()
         selectedRelease = nil
         selectedReleaseFileIDs.removeAll()
+        matchReview = nil
+        reviewFiles.removeAll()
+        lookupGeneration = UUID()
         scheduleSessionSave()
     }
 
@@ -362,6 +373,9 @@ final class AppModel: ObservableObject {
         selectedAlbumID = nil
         selectedRelease = nil
         selectedReleaseFileIDs.removeAll()
+        matchReview = nil
+        reviewFiles.removeAll()
+        lookupGeneration = UUID()
         lookupResults.removeAll()
         matchResults.removeAll()
         searchQuery = ""
@@ -375,6 +389,9 @@ final class AppModel: ObservableObject {
         if ids != selectedReleaseFileIDs {
             selectedRelease = nil
             selectedReleaseFileIDs.removeAll()
+            matchReview = nil
+            reviewFiles.removeAll()
+            lookupGeneration = UUID()
         }
         scheduleSessionSave()
     }
@@ -402,7 +419,7 @@ final class AppModel: ObservableObject {
         scheduleSessionSave()
     }
 
-    func lookup() async {
+    func lookup(albumTitle: String? = nil, albumArtist: String? = nil) async {
         guard canLookupSelection else {
             statusMessage = "Select tracks from one album before looking up a release."
             return
@@ -412,100 +429,200 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let local = LocalAlbumCandidate(
-            metadata: primary.metadata,
-            tracks: selectedFiles.map { LocalTrackCandidate(metadata: $0.metadata, id: $0.id) }
-        )
+        var queryMetadata = primary.metadata
+        if albumTitle != nil || albumArtist != nil {
+            // Explicit search criteria must not be constrained/ranked by stale IDs.
+            for key in ["barcode", "musicbrainz_albumid", "musicbrainz_releaseid", "musicbrainz_releasegroupid", "catalognumber", "label"] {
+                queryMetadata.unset(key)
+            }
+        }
+        if let albumTitle { queryMetadata.setValue(albumTitle, for: "album") }
+        if let albumArtist { queryMetadata.setValue(albumArtist, for: "albumartist") }
+        let local = LocalAlbumCandidate(metadata: queryMetadata, tracks: selectedFiles.map { Self.localCandidate($0) })
         guard local.albumTitle != nil || local.albumArtist != nil || local.barcode != nil else {
             statusMessage = "Add an album, artist, or barcode before searching MusicBrainz."
             return
         }
 
         isWorking = true
+        cancelMatchReview()
+        let generation = lookupGeneration
+        let targets = selectedFileIDs
+        lookupResults.removeAll(); matchResults.removeAll()
         errorMessage = nil
         statusMessage = "Searching MusicBrainz…"
         defer { isWorking = false }
         do {
             let results = try await musicBrainzClient.searchReleases(for: local)
+            guard generation == lookupGeneration, targets == selectedFileIDs else { return }
             lookupResults = results
             matchResults = ReleaseMatcher().rank(local: local, candidates: results)
             statusMessage = results.isEmpty ? "No matching releases found." : "Found \(results.count) releases."
         } catch {
+            guard generation == lookupGeneration else { return }
             present(error)
         }
     }
 
     func chooseMatch(_ result: ReleaseMatchResult) async {
-        guard let musicBrainzClient, !isWorking else { return }
+        guard let musicBrainzClient, canLookupSelection else { return }
         isWorking = true
         errorMessage = nil
         selectedRelease = nil
         selectedReleaseFileIDs = []
+        matchReview = nil
+        reviewFiles.removeAll()
+        lookupGeneration = UUID()
+        let generation = lookupGeneration
         statusMessage = "Loading release details…"
         defer { isWorking = false }
         do {
-            let targets = selectedFileIDs
+            let originals = selectedFiles
+            let targets = Set(originals.map(\.id))
             let release = try await musicBrainzClient.lookupRelease(id: result.release.id)
-            guard targets == selectedFileIDs else { return }
+            var candidates: [LocalTrackCandidate] = []
+            for file in originals {
+                var duration = file.durationInMilliseconds
+                if duration == nil {
+                    duration = try? await lookupAudioEngine.read(url: file.url).audioProperties?.lengthInMilliseconds
+                }
+                candidates.append(Self.localCandidate(file, duration: duration))
+            }
+            guard generation == lookupGeneration, targets == selectedFileIDs,
+                  originals.allSatisfy({ file(id: $0.id) == $0 }) else { return }
+            let localTracks = candidates
+            let review = try await Task.detached(priority: .userInitiated) {
+                try ReleaseMatchReview(release: release, localTracks: localTracks)
+            }.value
+            guard generation == lookupGeneration, targets == selectedFileIDs,
+                  originals.allSatisfy({ file(id: $0.id) == $0 }) else { return }
             selectedRelease = release
             selectedReleaseFileIDs = targets
-            statusMessage = "Selected \(result.release.title)."
+            reviewFiles = originals
+            matchReview = review
+            statusMessage = "Review \(review.assignments.count) suggested matches for \(result.release.title)."
         } catch {
+            guard generation == lookupGeneration else { return }
             present(error)
         }
     }
 
-    func applySelectedRelease() {
-        guard let selectedRelease, !isWorking else {
-            statusMessage = "Choose a MusicBrainz match first."
-            return
-        }
+    var canApplyReleaseReview: Bool {
+        guard !isBusy, let matchReview, !matchReview.assignments.isEmpty,
+              selectedFileIDs == selectedReleaseFileIDs else { return false }
+        return reviewFiles.allSatisfy { file(id: $0.id) == $0 }
+    }
 
-        let trackValues = selectedRelease.tracks
-        let targets = selectedFiles
-        let matches = TrackMatcher().match(
-            localTracks: targets.map { LocalTrackCandidate(metadata: $0.metadata, id: $0.id) },
-            releaseTracks: trackValues
-        )
-        let matchedIDs = Dictionary(uniqueKeysWithValues: matches.compactMap { match in
-            match.releaseTrackID.map { (match.localTrackID, $0) }
-        })
-        let tracksByID = Dictionary(uniqueKeysWithValues: trackValues.map { ($0.id, $0) })
+    func reviewFile(_ id: UUID) -> AudioFile? { reviewFiles.first { $0.id == id } }
+
+    func assignReviewTrack(fileID: UUID, trackID: String?) {
+        guard !isBusy, var review = matchReview else { return }
+        do { try review.assign(fileID: fileID, trackID: trackID); matchReview = review }
+        catch { present(error) }
+    }
+
+    func resetReviewAssignments(unmatchAll: Bool = false) {
+        guard !isBusy, var review = matchReview else { return }
+        if unmatchAll { review.unmatchAll() } else { review.resetToSuggestions() }
+        matchReview = review
+    }
+
+    func cancelMatchReview() {
+        lookupGeneration = UUID()
+        selectedRelease = nil; selectedReleaseFileIDs.removeAll()
+        matchReview = nil; reviewFiles.removeAll()
+    }
+
+    func reviewedMetadata(for fileID: UUID) -> Metadata? {
+        guard let review = matchReview, let file = reviewFile(fileID),
+              let remoteID = review.assignments[fileID], let track = review.release.tracks.first(where: { $0.id == remoteID }),
+              let medium = review.release.media.first(where: { $0.tracks.contains { $0.id == remoteID } }) else { return nil }
+        let release = review.release
+        var metadata = file.metadata
+        metadata.setValue(release.title, for: "album")
+        metadata.setValue(release.artistCredit, for: "albumartist")
+        for (key, value) in [("date", release.date), ("barcode", release.barcode), ("musicbrainz_releasegroupid", release.releaseGroupID),
+                             ("label", release.labelNames.first), ("catalognumber", release.catalogNumbers.first)] {
+            if let value { metadata.setValue(value, for: key) } else { metadata.unset(key) }
+        }
+        metadata.setValue(release.id, for: "musicbrainz_albumid")
+        metadata.unset("musicbrainz_releaseid")
+        metadata.setValue(track.title, for: "title")
+        metadata.setValue(track.artistCredit.isEmpty ? release.artistCredit : track.artistCredit, for: "artist")
+        metadata.setValue(track.number, for: "tracknumber")
+        metadata.setValue(String(medium.tracks.count), for: "totaltracks")
+        metadata.setValue(String(medium.position), for: "discnumber")
+        metadata.setValue(String(release.media.count), for: "totaldiscs")
+        metadata.setValue(track.id, for: "musicbrainz_releasetrackid")
+        if let recording = track.recordingID { metadata.setValue(recording, for: "musicbrainz_trackid") }
+        else { metadata.unset("musicbrainz_trackid") }
+        metadata.unset("musicbrainz_recordingid")
+        if track.isrcs.isEmpty { metadata.unset("isrc") } else { metadata.setValues(track.isrcs, for: "isrc") }
+        return metadata
+    }
+
+    @discardableResult
+    func applySelectedRelease() -> Bool {
+        guard canApplyReleaseReview, let review = matchReview else {
+            statusMessage = "Review track assignments first. If the files changed, reload the release."
+            return false
+        }
         var edited = files
         let indices = Dictionary(uniqueKeysWithValues: edited.enumerated().map { ($0.element.id, $0.offset) })
-        for file in targets {
-            guard let index = indices[file.id] else { continue }
-            var metadata = edited[index].metadata
-            metadata.setValue(selectedRelease.title, for: "album")
-            metadata.setValue(selectedRelease.artistCredit, for: "albumartist")
-            if let date = selectedRelease.date { metadata.setValue(date, for: "date") }
-            if let barcode = selectedRelease.barcode { metadata.setValue(barcode, for: "barcode") }
-            if let releaseGroupID = selectedRelease.releaseGroupID {
-                metadata.setValue(releaseGroupID, for: "musicbrainz_releasegroupid")
-            }
-            metadata.setValue(selectedRelease.id, for: "musicbrainz_albumid")
-            if let label = selectedRelease.labelNames.first { metadata.setValue(label, for: "label") }
-            if let catalog = selectedRelease.catalogNumbers.first { metadata.setValue(catalog, for: "catalognumber") }
-            if let matchedID = matchedIDs[file.id], let track = tracksByID[matchedID] {
-                metadata.setValue(track.title, for: "title")
-                metadata.setValue(track.artistCredit, for: "artist")
-                metadata.setValue(track.number, for: "tracknumber")
-                metadata.setValue(track.id, for: "musicbrainz_releasetrackid")
-                if let recordingID = track.recordingID {
-                    metadata.setValue(recordingID, for: "musicbrainz_trackid")
-                    metadata.unset("musicbrainz_recordingid")
-                }
-                if !track.isrcs.isEmpty { metadata.setValues(track.isrcs, for: "isrc") }
-            }
-            do {
+        do {
+            for fileID in review.assignments.keys {
+                guard let index = indices[fileID], let metadata = reviewedMetadata(for: fileID) else { return false }
                 try edited[index].updateMetadata(metadata)
-            } catch {
-                present(error)
+            }
+        } catch { present(error); return false }
+        files = edited
+        statusMessage = "Applied reviewed metadata to \(review.assignments.count) files; \(review.unmatchedFileIDs.count) left unchanged. Save Tags to write to disk."
+        errorMessage = nil
+        cancelMatchReview()
+        scheduleSessionSave()
+        return true
+    }
+
+    private static func localCandidate(_ file: AudioFile, duration: Int? = nil) -> LocalTrackCandidate {
+        var metadata = file.metadata
+        if metadata.firstValue(for: "title")?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            let name = file.url.deletingPathExtension().lastPathComponent
+                .replacingOccurrences(of: #"^\s*\d+\s*[-_. ]\s*"#, with: "", options: .regularExpression)
+            if name.range(of: #"^(track|audio|untitled|unknown)([\s_-]*\d+)?$"#, options: [.regularExpression, .caseInsensitive]) == nil {
+                metadata.setValue(name, for: "title")
             }
         }
-        files = edited
-        statusMessage = "Applied MusicBrainz metadata to \(targets.count) files."
-        scheduleSessionSave()
+        return LocalTrackCandidate(metadata: metadata, id: file.id, durationInMilliseconds: duration ?? file.durationInMilliseconds)
+    }
+
+    func canDiscardChanges(_ ids: Set<UUID>) -> Bool {
+        let targets = contextFiles(ids).filter(\.isModified)
+        return !isBusy && !targets.isEmpty && targets.allSatisfy {
+            [.ready, .changed, .saved, .removed, .failed, .unsupported].contains($0.state)
+        }
+    }
+
+    func discardChanges(_ ids: Set<UUID>, confirmed: Bool = false) async {
+        guard confirmed, canDiscardChanges(ids) else { return }
+        isWorking = true
+        defer { isWorking = false }
+        let previous = files
+        var edited = previous
+        var count = 0
+        do {
+            for index in edited.indices where ids.contains(edited[index].id) && edited[index].isModified {
+                try edited[index].discardChanges(); count += 1
+            }
+            files = edited
+            cancelMatchReview()
+            try await flushSession()
+            errorMessage = nil
+            statusMessage = "Discarded pending tag and artwork changes for \(count) files. Audio files were not modified."
+        } catch {
+            files = previous
+            statusMessage = "Discard could not be saved. Your pending edits were kept."
+            present(error)
+        }
     }
 
     func downloadCoverArt() async {

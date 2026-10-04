@@ -12,9 +12,17 @@ Importing or dropping external music into a **Music Library** copies it into tha
 
 Choose **File → New Session…** (⌘N) for an independent tagging workspace, or **Save Session As…** (⇧⌘S) to snapshot the current files and pending edits. Switch with the sidebar workspace chooser or **File → Open Workspace**. Workspaces autosave on edits, before switching, and on quit; saving a workspace does not write tags to the music files. **Save Selected Tags** (⌘S) and **Save All Changed Tags** (⌥⌘S) write audio metadata.
 
+Use the toolbar **Discard**, track/album right-click **Discard Unsaved Changes…**, or **Edit → Discard Selected Changes…** (⌥⌘Z) to revert pending tags and artwork after confirmation. **Discard All Unsaved Changes…** applies across the current workspace. Discard restores the last loaded/saved values, persists the reverted workspace, and never writes audio or undoes tags already saved to disk. Missing/failed files keep their availability status.
+
 Albums start collapsed each time a workspace opens. Click an album to browse its tracks and select the album for batch editing; click its disclosure chevron to expand sidebar tracks. **Find Music…** (⌘F) searches title, artist, album, genre, and filename across the entire collection. Filters show unsaved changes, missing artwork, unidentified tracks, or unavailable files. Album sorting, Expand All, and Collapse All are available in the sidebar and View menu. Command-click and Shift-click support track selection.
 
 Search and filter changes deselect tracks that leave the results, and album selection respects the active filter. MusicBrainz lookup operates on one album at a time. Batch scripts evaluate each track's own metadata, preserving distinct titles and track numbers.
+
+### Review MusicBrainz matches
+
+**Look Up** now opens a find-and-match workspace. Refine the album/artist search without editing your local tags, choose a release, and inspect its complete track list next to your files. The matcher optimizes one-to-one assignments for the whole album using recording IDs/ISRCs, titles (with filename fallback for untagged files), real audio lengths, artist credits, and weak track/disc hints. Incorrect ordering and incomplete albums do not force positional matches. Uncertain or weak suggestions remain unassigned until explicitly chosen.
+
+Pick a release track for each local file; choosing an occupied slot swaps the pairing. Leave bonus/duplicate/unrecognized files unmatched to keep **all** their tags unchanged. The release-order panel marks tracks with no local file. **Reset Suggestions**, **Unmatch All**, confidence explanations, and per-file tag-change previews support review. **Apply Reviewed Matches** stages only assigned files, including corrected per-disc track/disc totals and distinct recording/release-track IDs; **Save Tags** remains a separate disk write. Cancel closes the review without applying it. Newer local edits invalidate an older review instead of being overwritten. Disc and track identity follow MusicBrainz's [release/medium model](https://musicbrainz.org/doc/Release).
 
 **Library → Manage Libraries & Sessions…** provides naming, switching, automatic refresh settings, and workspace removal. Removing a workspace leaves all music untouched and retains its document in Application Support. The original single-session data migrates automatically to **My Session**. Catalogs, separate session documents, and recovery files live under `Application Support/MacPicard/Workspaces`; directory access is retained with security-scoped bookmarks.
 

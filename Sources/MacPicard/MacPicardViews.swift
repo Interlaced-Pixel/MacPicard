@@ -151,6 +151,11 @@ private struct ActionBar: View {
                     Task { await model.saveSelected() }
                 }
                 .disabled(!model.canEditSelection || model.selectedModifiedCount == 0)
+                GlassActionButton("Discard", systemImage: "arrow.uturn.backward", compact: isCompact) {
+                    presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID)
+                }
+                .disabled(!model.canDiscardChanges(model.selectedFileIDs))
+                .help("Discard pending tags and artwork; keep audio files unchanged.")
                 GlassActionButton("Organize", systemImage: "folder.badge.gearshape", compact: isCompact) {
                     if model.destinationDirectory == nil {
                         isChoosingDestination = true
@@ -714,82 +719,6 @@ struct ArtworkThumbnail: View {
         }
         .clipped()
         .accessibilityLabel(artwork == nil ? "No artwork" : "Album artwork")
-    }
-}
-
-struct LookupView: View {
-    @ObservedObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var selectedResultID: UUID?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Label("MusicBrainz Lookup", systemImage: "magnifyingglass")
-                    .font(.title3.weight(.semibold))
-                Spacer()
-                Button("Close") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-            }
-            .padding(18)
-            Divider()
-
-            if model.isWorking && model.matchResults.isEmpty {
-                ProgressView("Searching MusicBrainz…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.matchResults.isEmpty {
-                ContentUnavailableView(
-                    "No matches",
-                    systemImage: "magnifyingglass",
-                    description: Text(model.statusMessage)
-                )
-            } else {
-                List(model.matchResults) { result in
-                    Button {
-                        selectedResultID = result.id
-                        Task { await model.chooseMatch(result) }
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: result.id == selectedResultID ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(result.id == selectedResultID ? Color.accentColor : Color.secondary)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(result.release.title)
-                                    .font(.body.weight(.medium))
-                                Text("\(result.release.artistCredit) · \(result.release.date ?? "Date unknown")")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text("Score \(result.score.total, format: .percent.precision(.fractionLength(0))) · \(result.decision.rawValue.capitalized)")
-                                    .font(.caption2)
-                                    .foregroundStyle(result.decision == .rejected ? Color.secondary : Color.accentColor)
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 3) {
-                                Text("\(result.release.trackCount) tracks")
-                                Text(result.release.country ?? "Country unknown")
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.vertical, 5)
-                }
-                .listStyle(.inset)
-            }
-
-            Divider()
-            HStack {
-                Text(model.selectedRelease.map { "Selected: \($0.title)" } ?? "Select a release to load full metadata.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Apply Match") { model.applySelectedRelease(); dismiss() }
-                    .buttonStyle(.glassProminent)
-                    .disabled(model.selectedRelease == nil)
-            }
-            .padding(14)
-        }
     }
 }
 

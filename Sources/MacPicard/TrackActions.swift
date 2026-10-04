@@ -182,6 +182,9 @@ private struct MetadataContextActions: View {
             model.selectionChanged(ids)
             Task { await model.saveSelected() }
         }.disabled(!model.canEdit(ids) || !model.contextFiles(ids).contains(where: \.isModified))
+        Button("Discard Unsaved Changes…", systemImage: "arrow.uturn.backward") {
+            presentation.requestDiscard(model.contextFiles(ids), workspaceID: model.activeWorkspaceID)
+        }.disabled(!model.canDiscardChanges(ids))
         Button("Organize Files…", systemImage: "folder.badge.gearshape") {
             model.selectionChanged(ids)
             presentation.isChoosingDestination = true

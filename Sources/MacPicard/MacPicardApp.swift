@@ -124,7 +124,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $presentation.isShowingLookup) {
             LookupView(model: model)
-                .frame(minWidth: 760, minHeight: 480)
+                .frame(minWidth: 1_120, minHeight: 680)
         }
         .sheet(isPresented: $presentation.isShowingScript) {
             ScriptView(model: model)
@@ -175,6 +175,16 @@ struct ContentView: View {
                 presentation: presentation
             )
             .frame(minWidth: 900, maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .alert("Discard unsaved changes?", isPresented: $presentation.isConfirmingDiscard,
+               presenting: presentation.discardRequest) { request in
+            Button("Discard Changes", role: .destructive) {
+                guard request.workspaceID == model.activeWorkspaceID else { return }
+                Task { await model.discardChanges(request.fileIDs, confirmed: true) }
+            }
+            Button("Keep Editing", role: .cancel) {}.keyboardShortcut(.defaultAction)
+        } message: { request in
+            Text("Pending tag and artwork edits on \(request.fileIDs.count) files will revert to their last saved or loaded values. Audio files will not be changed. This cannot undo tags already saved to disk.")
         }
     }
 }

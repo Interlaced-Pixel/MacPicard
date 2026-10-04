@@ -71,6 +71,16 @@ struct MacPicardCommands: Commands {
                 .keyboardShortcut("f", modifiers: .command)
         }
 
+        CommandGroup(after: .undoRedo) {
+            Button("Discard Selected Changes…") {
+                presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID)
+            }.keyboardShortcut("z", modifiers: [.command, .option])
+                .disabled(!model.canDiscardChanges(model.selectedFileIDs))
+            Button("Discard All Unsaved Changes…") {
+                presentation.requestDiscard(model.files, workspaceID: model.activeWorkspaceID)
+            }.disabled(!model.canDiscardChanges(Set(model.files.map(\.id))))
+        }
+
         CommandGroup(after: .sidebar) {
             Button(presentation.showsSidebar ? "Hide Sidebar" : "Show Sidebar") {
                 presentation.showsSidebar.toggle()
@@ -162,9 +172,9 @@ struct MacPicardCommands: Commands {
                 Task { await model.lookup() }
             }.keyboardShortcut("l", modifiers: [.command, .shift])
                 .disabled(!model.canLookupSelection)
-            Button("Apply Selected Match") { model.applySelectedRelease() }
+            Button("Review Track Matches…") { presentation.isShowingLookup = true }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
-                .disabled(model.isBusy || model.selectedRelease == nil)
+                .disabled(model.isBusy || model.matchReview == nil)
             Button("Download Cover Art") { Task { await model.downloadCoverArt() } }
                 .disabled(model.isBusy || !model.canDownloadCoverArt)
             Divider()
@@ -197,6 +207,8 @@ struct QuickStartView: View {
                   text: "Choose File → Add Music Library and select a folder. Imports copy audio into Artist / Album folders, leaving originals untouched. Existing library files are indexed in place. Right-click tracks or albums to remove them from the library or move its copies to Trash after confirmation. Remove a library in Library → Manage Libraries & Sessions; this never deletes its audio.")
             guide("Keep separate sessions", symbol: "rectangle.stack",
                   text: "Create a named session for a particular tagging task. Import files or folders, then return through the workspace chooser or File → Open Workspace. Pending edits are saved in the workspace; Save Tags writes them to the audio files.")
+            guide("Review and revert", symbol: "arrow.triangle.branch",
+                  text: "Look Up shows suggested file-to-track assignments. Choose or swap tracks, leave extras unmatched, and preview tag changes before applying. Nothing is written until Save Tags. Use Discard on the toolbar or in the Edit/right-click menus to revert pending tags and artwork; already-saved tags cannot be undone this way.")
             guide("Navigate a large collection", symbol: "magnifyingglass",
                   text: "Albums start collapsed. Click an album to open all its tracks; click its chevron to expand the sidebar. Press ⌘F to search title, artist, album, genre, or filename across the collection. Filters highlight unsaved edits, missing artwork, unidentified tracks, and unavailable files.")
             guide("Edit and identify music", symbol: "slider.horizontal.3",
