@@ -5,7 +5,7 @@ struct LibraryMatchView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var presentation: AppPresentation
     @Environment(\.dismiss) private var dismiss
-    @State private var threshold = 0.75
+    @State private var threshold = 0.85
     @State private var showOnlyReview = false
 
     private var run: AppModel.LibraryMatchRun? { model.libraryMatchRun }

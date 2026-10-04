@@ -443,7 +443,7 @@ final class AppModel: ObservableObject {
     /// Searches, resolves, and scores every album in the active library. The
     /// operation only creates proposals; it never changes metadata. The normal
     /// MusicBrainz client rate limiter and response cache remain in the path.
-    func matchEntireLibrary(autoApplyThreshold: Double = 0.75) async {
+    func matchEntireLibrary(autoApplyThreshold: Double = 0.85) async {
         guard let musicBrainzClient, activeWorkspace?.kind == .library else {
             statusMessage = "Open a Music Library before matching the whole library."
             return
