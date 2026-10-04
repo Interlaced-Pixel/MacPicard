@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 final class AppPresentation: ObservableObject {
     @Published var isImporting = false
-    @Published var isChoosingDestination = false
+    @Published var isShowingOrganization = false
     @Published var isShowingLookup = false
     @Published var isShowingScript = false
     @Published var isShowingSettings = false

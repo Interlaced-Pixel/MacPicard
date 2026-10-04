@@ -17,6 +17,14 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
+        if model.isExecutingOrganization {
+            let alert = NSAlert()
+            alert.messageText = "Files are still being organized."
+            alert.informativeText = "Wait for the move to finish before quitting so file locations can be safely saved."
+            alert.addButton(withTitle: "Keep Open")
+            alert.runModal()
+            return .terminateCancel
+        }
         model.playback.stop(clearQueue: true)
         Task { @MainActor in
             do {
@@ -104,12 +112,6 @@ struct ContentView: View {
             allowsMultipleSelection: true,
             onCompletion: { result in Task { await model.importResult(result) } }
         )
-        .fileImporter(
-            isPresented: $presentation.isChoosingDestination,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false,
-            onCompletion: model.chooseDestination
-        )
         .fileImporter(isPresented: $presentation.isAddingLibrary,
                       allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
             if case let .success(urls) = result, let url = urls.first {
@@ -129,6 +131,10 @@ struct ContentView: View {
         .sheet(isPresented: $presentation.isShowingScript) {
             ScriptView(model: model)
                 .frame(minWidth: 760, minHeight: 500)
+        }
+        .sheet(isPresented: $presentation.isShowingOrganization) {
+            OrganizationView(model: model)
+                .frame(minWidth: 980, minHeight: 660)
         }
         .sheet(isPresented: $presentation.isShowingSettings) {
             SettingsView(model: model)
@@ -168,7 +174,6 @@ struct ContentView: View {
             WorkspaceView(
                 model: model,
                 isImporting: $presentation.isImporting,
-                isChoosingDestination: $presentation.isChoosingDestination,
                 isShowingLookup: $presentation.isShowingLookup,
                 isShowingScript: $presentation.isShowingScript,
                 isDropTargeted: $isDropTargeted,

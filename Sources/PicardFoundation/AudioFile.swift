@@ -183,9 +183,10 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
         if [.ready, .changed, .saved].contains(state) { state = .ready; lastError = nil }
     }
 
-    public mutating func updateURL(_ url: URL) throws {
+    public mutating func updateURL(_ url: URL, identity: AudioFileIdentity? = nil) throws {
         try requireState([.discovered, .ready, .changed, .saved, .removed, .failed], operation: "update file location")
         self.url = url
+        if let identity { self.identity = identity }
     }
 
     public mutating func beginSaving() throws {

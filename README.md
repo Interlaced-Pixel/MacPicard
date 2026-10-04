@@ -32,6 +32,16 @@ The File, Edit, View, Library, and Metadata menus share their actions and enable
 
 Menu placement and persistent folder access follow Apple's [command groups](https://developer.apple.com/documentation/swiftui/commandgroupplacement) and [security-scoped URL access](https://developer.apple.com/documentation/foundation/url/startaccessingsecurityscopedresource()) APIs.
 
+## Review file organization
+
+**Organize** (⇧⌘O), its Metadata menu item and track/album context actions always open a read-only review. Music Libraries default to their own folder; Sessions ask for a destination (or reuse the last chosen one). Choosing a folder does **not** start moving files. Pick an artist/album/track naming preset, artist/title layout, original filenames, or a custom Picard naming pattern. Naming is separate from metadata scripts and uses the current pending tags without saving them. The library preset pads track numbers, prefixes multi-disc tracks, sanitizes unsafe tag characters, and falls back to filenames and unknown artist/album folders.
+
+The searchable preview shows full **From / To** paths, ready/unchanged/blocked/skipped counts, and per-file exclusion checkboxes. Filter to moves or issues, include all again, or refresh the filesystem preview. Resolve existing and duplicate destinations with **Stop on conflicts**, **Skip conflicting files**, or **Add numbered suffixes**; there is no overwrite option. Case/Unicode-equivalent destinations are conservatively treated as collisions. Files already at their target stay untouched.
+
+**Move Files…** requires a separate confirmation. Moving outside a Music Library also requires explicit acknowledgment; those files remain linked in the workspace, but are no longer stored in its directory. Unlike library import, Organize moves files rather than copying originals. External music apps or playlists may need their file locations updated. Cancel keeps all file paths and tags unchanged.
+
+Execution uses the exact reviewed paths, rejects changed selection/tags/options or replaced source/destination folders, rechecks source identities and all destination conflicts before any move, and atomically refuses late overwrite races. A failed move invokes two-phase rollback; recovery failures identify the retained file paths instead of hiding them. Cross-volume moves stage a complete destination-side copy before committing, then update file identities so subsequent tag saves work. Successful moves preserve pending edits and original discard baselines, update workspace paths and library exclusions, and persist the session. Session write failures before execution block the move; a post-move write failure retains the new paths and attempts recovery persistence. Quit is blocked while a move is executing. **Save Tags** remains a separate action; discarding pending tags cannot undo a file move.
+
 ## Playback and right-click actions
 
 Right-click a song in either the track list or an expanded sidebar album to **Play**, **Play Next**, **Add to Queue**, or **Play Album**. Play starts with the exact song clicked and continues through its album in numeric track order, without changing the metadata-editing selection. Double-clicking a main-list track also plays it. Right-click album rows for album playback and batch actions.

@@ -182,7 +182,7 @@ struct MacPicardCommands: Commands {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(!model.canEditSelection)
             Button("Organize Selected Files…") {
-                presentation.isChoosingDestination = true
+                presentation.isShowingOrganization = true
             }.keyboardShortcut("o", modifiers: [.command, .shift])
                 .disabled(!model.canEditSelection)
         }
@@ -216,7 +216,7 @@ struct QuickStartView: View {
             guide("Listen while you work", symbol: "play.circle",
                   text: "Right-click a song to Play, Play Next, or Add to Queue. Right-click an album to play it in track order. The player provides pause, seeking, volume, and queue controls. Double-click a track to play it; ⌘P toggles playback. Playback stops when you switch workspaces or quit.")
             guide("Organize files", symbol: "folder.badge.gearshape",
-                  text: "Use the Script Editor to preview a naming path, then Organize Selected Files to choose a destination. Reveal files in Finder with ⇧⌘R. Unavailable files remain in the library so they can be found again when the drive reconnects.")
+                  text: "Organize previews filenames and folders before moving anything. Choose a naming preset or custom pattern, resolve conflicts, exclude files, then confirm Move Files. Libraries default to their own folder; moves outside it need explicit acknowledgment. Existing files are never overwritten. Pending tags remain unsaved. Reveal files in Finder with ⇧⌘R.")
         }
         .padding(24)
         .frame(width: 650)

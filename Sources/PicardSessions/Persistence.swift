@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import PicardFormats
 import PicardFoundation
@@ -93,12 +94,14 @@ public struct FileMoveOperation: Codable, Sendable, Equatable, Identifiable {
     public let fileID: UUID
     public let source: URL
     public let destination: URL
+    public let expectedIdentity: AudioFileIdentity?
 
-    public init(id: UUID = UUID(), fileID: UUID, source: URL, destination: URL) {
+    public init(id: UUID = UUID(), fileID: UUID, source: URL, destination: URL, expectedIdentity: AudioFileIdentity? = nil) {
         self.id = id
         self.fileID = fileID
         self.source = source
         self.destination = destination
+        self.expectedIdentity = expectedIdentity
     }
 }
 
@@ -171,9 +174,19 @@ public actor FileOrganizationCoordinator {
         var active: [FileMoveOperation] = []
         var skipped: [UUID] = []
 
+        guard Set(plan.operations.map(\.fileID)).count == plan.operations.count,
+              Set(plan.operations.map { $0.source.standardizedFileURL.path }).count == plan.operations.count,
+              Set(plan.operations.map { $0.destination.standardizedFileURL.path }).count == plan.operations.count else {
+            throw SaveError.invalidName("The move plan contains duplicate files or destinations.")
+        }
+
         for operation in plan.operations {
             guard fileManager.fileExists(atPath: operation.source.path) else {
                 throw SaveError.sourceMissing(path: operation.source.path)
+            }
+            if let expected = operation.expectedIdentity,
+               !expected.matches(try AudioFileIdentity.capture(url: operation.source)) {
+                throw SaveError.externalModification(path: operation.source.path)
             }
             if operation.source.standardizedFileURL == operation.destination.standardizedFileURL {
                 skipped.append(operation.fileID)
@@ -207,6 +220,7 @@ public actor FileOrganizationCoordinator {
             }
 
             for operation in active {
+                try Task.checkCancellation()
                 let temporary = operation.source.deletingLastPathComponent().appendingPathComponent(
                     ".macpicard-move-\(UUID().uuidString)"
                 )
@@ -217,6 +231,11 @@ public actor FileOrganizationCoordinator {
             var moved: [UUID] = []
             var destinations: [UUID: URL] = [:]
             for (operation, temporary) in temporaryLocations {
+                try Task.checkCancellation()
+                if let expected = operation.expectedIdentity,
+                   !expected.matches(try AudioFileIdentity.capture(url: temporary)) {
+                    throw SaveError.externalModification(path: operation.source.path)
+                }
                 if fileManager.fileExists(atPath: operation.destination.path) {
                     if collisionPolicy == .overwrite {
                         try fileManager.removeItem(at: operation.destination)
@@ -225,7 +244,7 @@ public actor FileOrganizationCoordinator {
                     }
                 }
                 try fileManager.createDirectory(at: operation.destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try fileManager.moveItem(at: temporary, to: operation.destination)
+                try exclusiveMove(from: temporary, to: operation.destination, fileManager: fileManager)
                 completedMoves.append(operation)
                 moved.append(operation.fileID)
                 destinations[operation.fileID] = operation.destination
@@ -233,11 +252,12 @@ public actor FileOrganizationCoordinator {
             for backup in backups { try? fileManager.removeItem(at: backup.backup) }
             return FileMoveReport(movedFileIDs: moved, skippedFileIDs: skipped, destinations: destinations)
         } catch let error as SaveError {
-            rollback(completedMoves: completedMoves, temporaryLocations: temporaryLocations, backups: backups, fileManager: fileManager)
+            let recovery = rollback(completedMoves: completedMoves, temporaryLocations: temporaryLocations, backups: backups, fileManager: fileManager)
+            if !recovery.isEmpty { throw SaveError.moveFailed(path: active.first?.source.path ?? "", reason: error.localizedDescription + " Recovery required: " + recovery.joined(separator: "; ")) }
             throw error
         } catch {
-            rollback(completedMoves: completedMoves, temporaryLocations: temporaryLocations, backups: backups, fileManager: fileManager)
-            throw SaveError.moveFailed(path: active.first?.source.path ?? "", reason: error.localizedDescription)
+            let recovery = rollback(completedMoves: completedMoves, temporaryLocations: temporaryLocations, backups: backups, fileManager: fileManager)
+            throw SaveError.moveFailed(path: active.first?.source.path ?? "", reason: error.localizedDescription + (recovery.isEmpty ? "" : " Recovery required: " + recovery.joined(separator: "; ")))
         }
     }
 
@@ -291,21 +311,67 @@ public actor FileOrganizationCoordinator {
         temporaryLocations: [(operation: FileMoveOperation, temporary: URL)],
         backups: [(destination: URL, backup: URL)],
         fileManager: FileManager
-    ) {
+    ) -> [String] {
+        var issues: [String] = []
+        // Stage completed destinations back into their temporary slots first.
+        // Restoring directly to source paths fails for a rename cycle/swap.
         for operation in completedMoves.reversed() {
-            if fileManager.fileExists(atPath: operation.destination.path) {
-                try? fileManager.moveItem(at: operation.destination, to: operation.source)
+            if let temporary = temporaryLocations.first(where: { $0.operation.id == operation.id })?.temporary,
+               fileManager.fileExists(atPath: operation.destination.path) {
+                do { try exclusiveMove(from: operation.destination, to: temporary, fileManager: fileManager) }
+                catch { issues.append("Recover \(operation.destination.path) to \(operation.source.path): \(error.localizedDescription)") }
             }
         }
         for (operation, temporary) in temporaryLocations.reversed() {
             if fileManager.fileExists(atPath: temporary.path) {
-                try? fileManager.moveItem(at: temporary, to: operation.source)
+                do { try exclusiveMove(from: temporary, to: operation.source, fileManager: fileManager) }
+                catch { issues.append("Recover \(temporary.path) to \(operation.source.path): \(error.localizedDescription)") }
             }
         }
         for backup in backups.reversed() {
             if fileManager.fileExists(atPath: backup.backup.path) {
-                try? fileManager.moveItem(at: backup.backup, to: backup.destination)
+                do { try exclusiveMove(from: backup.backup, to: backup.destination, fileManager: fileManager) }
+                catch { issues.append("Recover \(backup.backup.path) to \(backup.destination.path): \(error.localizedDescription)") }
             }
+        }
+        return issues
+    }
+
+    /// RENAME_EXCL is an atomic no-overwrite commit. Cross-volume copies are
+    /// staged beside the destination, then published using the same primitive.
+    private func exclusiveMove(from source: URL, to destination: URL, fileManager: FileManager) throws {
+        if renamex_np(source.path, destination.path, UInt32(RENAME_EXCL)) == 0 { return }
+        let code = errno
+        if code == EEXIST || code == ENOTEMPTY { throw SaveError.collision(path: destination.path) }
+        guard code == EXDEV else {
+            throw SaveError.moveFailed(path: source.path, reason: String(cString: strerror(code)))
+        }
+        let staging = destination.deletingLastPathComponent().appendingPathComponent(".macpicard-copy-\(UUID())")
+        do {
+            let before = try AudioFileIdentity.capture(url: source)
+            try fileManager.copyItem(at: source, to: staging)
+            guard before.matches(try AudioFileIdentity.capture(url: source)) else {
+                throw SaveError.externalModification(path: source.path)
+            }
+            let copied = try AudioFileIdentity.capture(url: staging)
+            guard before.byteCount == copied.byteCount, before.prefixHash == copied.prefixHash else {
+                throw SaveError.moveFailed(path: source.path, reason: "The staged copy could not be verified.")
+            }
+            if renamex_np(staging.path, destination.path, UInt32(RENAME_EXCL)) != 0 {
+                let code = errno
+                if code == EEXIST || code == ENOTEMPTY { throw SaveError.collision(path: destination.path) }
+                throw SaveError.moveFailed(path: source.path, reason: String(cString: strerror(code)))
+            }
+            do { try fileManager.removeItem(at: source) }
+            catch {
+                // The source still exists; remove only our newly committed copy.
+                do { try fileManager.removeItem(at: destination) }
+                catch { throw SaveError.moveFailed(path: source.path, reason: "The copied destination \(destination.path) needs manual recovery: \(error.localizedDescription)") }
+                throw error
+            }
+        } catch {
+            if fileManager.fileExists(atPath: staging.path) { try? fileManager.removeItem(at: staging) }
+            throw error
         }
     }
 }

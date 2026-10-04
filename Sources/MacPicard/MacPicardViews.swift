@@ -61,7 +61,6 @@ struct SidebarTrackRow: View {
 struct WorkspaceView: View {
     @ObservedObject var model: AppModel
     @Binding var isImporting: Bool
-    @Binding var isChoosingDestination: Bool
     @Binding var isShowingLookup: Bool
     @Binding var isShowingScript: Bool
     @Binding var isDropTargeted: Bool
@@ -72,7 +71,6 @@ struct WorkspaceView: View {
             ActionBar(
                 model: model,
                 isImporting: $isImporting,
-                isChoosingDestination: $isChoosingDestination,
                 isShowingLookup: $isShowingLookup,
                 isShowingScript: $isShowingScript,
                 presentation: presentation
@@ -112,7 +110,6 @@ struct WorkspaceView: View {
 private struct ActionBar: View {
     @ObservedObject var model: AppModel
     @Binding var isImporting: Bool
-    @Binding var isChoosingDestination: Bool
     @Binding var isShowingLookup: Bool
     @Binding var isShowingScript: Bool
     @ObservedObject var presentation: AppPresentation
@@ -157,13 +154,10 @@ private struct ActionBar: View {
                 .disabled(!model.canDiscardChanges(model.selectedFileIDs))
                 .help("Discard pending tags and artwork; keep audio files unchanged.")
                 GlassActionButton("Organize", systemImage: "folder.badge.gearshape", compact: isCompact) {
-                    if model.destinationDirectory == nil {
-                        isChoosingDestination = true
-                    } else {
-                        Task { await model.organizeSelected() }
-                    }
+                    presentation.isShowingOrganization = true
                 }
                 .disabled(!model.canEditSelection)
+                .help("Review filenames, folders and conflicts before moving selected files.")
 
                 Button { presentation.showsInspector.toggle() } label: {
                     Image(systemName: "sidebar.right")

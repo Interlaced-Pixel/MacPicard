@@ -60,7 +60,7 @@ public actor LibraryImporter {
         return LibraryImportResult(file: file, copied: result.copied)
     }
 
-    private static func namingMetadata(_ metadata: Metadata) -> Metadata {
+    static func namingMetadata(_ metadata: Metadata) -> Metadata {
         var result = metadata
         for key in ["albumartist", "artist", "album", "title"] {
             if let value = metadata.firstValue(for: key) {
@@ -83,7 +83,7 @@ public actor LibraryImporter {
         return result
     }
 
-    private static func safeComponent(_ value: String) -> String {
+    static func safeComponent(_ value: String) -> String {
         var safe = String(String.UnicodeScalarView(value.unicodeScalars.map {
             $0.value < 0x20 || CharacterSet(charactersIn: "/\\:").contains($0) ? UnicodeScalar("_") : $0
         })).trimmingCharacters(in: .whitespacesAndNewlines)

@@ -59,14 +59,25 @@ final class AppModel: ObservableObject {
     @Published private(set) var scriptOutput = ""
     @Published var scriptSource = "$if2(%albumartist%,%artist%)/$if2(%album%,Unknown Album)/%tracknumber% %title%"
     @Published var destinationDirectory: URL?
-    @Published var collisionPolicy: FileCollisionPolicy = .fail
+    @Published var organizationReview: OrganizationReview?
+    @Published var organizationDirectory: URL?
+    @Published var organizationNamingScript = LibraryImporter.defaultNamingScript
+    @Published var organizationConflictPolicy = OrganizationConflictPolicy.stop
+    @Published var organizationExcludedIDs = Set<UUID>()
+    @Published var organizationError: String?
+    @Published var isPreparingOrganization = false
+    @Published var isExecutingOrganization = false
+    var organizationFiles: [AudioFile] = []
+    var organizationWorkspaceID: UUID?
+    var organizationLibraryRoot: URL?
+    var organizationGeneration = UUID()
 
     var runtime: PicardRuntime?
     private var audioCoordinator: AudioFileCoordinator?
     private var musicBrainzClient: MusicBrainzClient?
     private var coverArtClient: CoverArtClient?
     private var saveCoordinator: AudioSaveCoordinator?
-    private var organizationCoordinator: FileOrganizationCoordinator?
+    let organizationCoordinator = FileOrganizationCoordinator()
     var sessionManager: SessionManager?
     var sessionCreatedAt = Date()
     var sessionSaveTask: Task<Void, Never>?
@@ -222,7 +233,6 @@ final class AppModel: ObservableObject {
             self.musicBrainzClient = musicBrainz
             self.coverArtClient = coverArt
             self.saveCoordinator = AudioSaveCoordinator(coordinator: audio)
-            self.organizationCoordinator = FileOrganizationCoordinator()
             try await restoreWorkspaces()
             if snapshot.configuration.autosaveEnabled {
                 startAutosave(interval: max(15, snapshot.configuration.autosaveIntervalSeconds))
@@ -369,6 +379,7 @@ final class AppModel: ObservableObject {
     }
 
     func resetWorkspaceSelection() {
+        cancelOrganizationReview()
         selectedFileIDs.removeAll()
         selectedAlbumID = nil
         selectedRelease = nil
@@ -703,30 +714,6 @@ final class AppModel: ObservableObject {
         await saveSession()
     }
 
-    func organizeSelected() async {
-        guard let organizationCoordinator, let destinationDirectory, !selectedFiles.isEmpty, !isWorking else {
-            statusMessage = "Choose a destination folder and select files to organize."
-            return
-        }
-        isWorking = true
-        statusMessage = "Organizing files…"
-        if let playingID = playback.currentTrack?.fileID, selectedFileIDs.contains(playingID) { playback.stop() }
-        defer { isWorking = false }
-        do {
-            let organized = try await organizationCoordinator.organize(
-                files: selectedFiles,
-                destinationDirectory: destinationDirectory,
-                namingScript: scriptSource,
-                collisionPolicy: collisionPolicy
-            )
-            replaceFiles(organized)
-            statusMessage = "Organized \(organized.count) files."
-            await saveSession()
-        } catch {
-            present(error)
-        }
-    }
-
     func runScript(applying: Bool) {
         guard !isBusy else { return }
         guard !selectedFiles.isEmpty else {
@@ -754,27 +741,6 @@ final class AppModel: ObservableObject {
             }
         } catch {
             scriptOutput = error.localizedDescription
-            present(error)
-        }
-    }
-
-    func chooseDestination(_ result: Result<[URL], Error>) {
-        do {
-            guard let directory = try result.get().first else {
-                statusMessage = "No destination selected."
-                return
-            }
-            destinationDirectory = directory
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                let accessed = directory.startAccessingSecurityScopedResource()
-                defer { if accessed { directory.stopAccessingSecurityScopedResource() } }
-                do {
-                    try await self.rememberImportAccess([directory])
-                    await self.organizeSelected()
-                } catch { self.present(error) }
-            }
-        } catch {
             present(error)
         }
     }
@@ -840,7 +806,7 @@ final class AppModel: ObservableObject {
     }
 
     private func saveRecovery() async {
-        guard let sessionManager else { return }
+        guard let sessionManager, !isExecutingOrganization else { return }
         try? await sessionManager.saveRecovery(makeSessionDocument())
     }
 

@@ -187,7 +187,7 @@ private struct MetadataContextActions: View {
         }.disabled(!model.canDiscardChanges(ids))
         Button("Organize Files…", systemImage: "folder.badge.gearshape") {
             model.selectionChanged(ids)
-            presentation.isChoosingDestination = true
+            presentation.isShowingOrganization = true
         }.disabled(!model.canEdit(ids))
     }
 }
