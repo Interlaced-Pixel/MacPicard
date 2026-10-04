@@ -52,7 +52,7 @@ struct OrganizationView: View {
             footer
         }
         .background(.background)
-        .onAppear { model.beginOrganizationReview() }
+        .onAppear { model.beginOrganizationReview(entireLibrary: model.organizationEntireLibraryRequested) }
         .task(id: previewKey) {
             do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
             await model.refreshOrganizationPreview()
@@ -80,8 +80,12 @@ struct OrganizationView: View {
         HStack(spacing: 14) {
             Image(systemName: "folder.badge.gearshape").font(.title2).foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Organize Files").font(.title2.weight(.semibold))
-                Text("Review filenames and folders before anything moves.").font(.callout).foregroundStyle(.secondary)
+                Text(model.organizationTargetsEntireLibrary ? "Organize Entire Library" : "Organize Files")
+                    .font(.title2.weight(.semibold))
+                Text(model.organizationTargetsEntireLibrary
+                     ? "Review every library file before anything moves."
+                     : "Review filenames and folders before anything moves.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             Spacer()
             if model.isPreparingOrganization || model.isWorking { ProgressView().controlSize(.small) }

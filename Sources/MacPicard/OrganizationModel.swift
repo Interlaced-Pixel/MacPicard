@@ -3,10 +3,16 @@ import PicardFoundation
 import PicardSessions
 
 extension AppModel {
-    func beginOrganizationReview() {
-        guard canEditSelection else { return }
+    func requestOrganizationReview(entireLibrary: Bool = false) {
+        organizationEntireLibraryRequested = entireLibrary
+    }
+
+    func beginOrganizationReview(entireLibrary: Bool = false) {
+        let targets = entireLibrary && activeWorkspace?.kind == .library ? files : selectedFiles
+        guard !targets.isEmpty, targets.allSatisfy({ [.ready, .changed, .saved].contains($0.state) }) else { return }
         cancelOrganizationReview()
-        organizationFiles = selectedFiles
+        organizationTargetsEntireLibrary = entireLibrary && activeWorkspace?.kind == .library
+        organizationFiles = targets
         organizationWorkspaceID = activeWorkspaceID
         organizationLibraryRoot = libraryDirectory
         organizationDirectory = libraryDirectory ?? destinationDirectory
@@ -60,7 +66,9 @@ extension AppModel {
         guard let review = organizationReview,
               organizationWorkspaceID == activeWorkspaceID,
               organizationLibraryRoot == libraryDirectory,
-              Set(organizationFiles.map(\.id)) == selectedFileIDs,
+              (organizationTargetsEntireLibrary
+                ? Set(organizationFiles.map(\.id)) == Set(files.map(\.id))
+                : Set(organizationFiles.map(\.id)) == selectedFileIDs),
               organizationFiles.allSatisfy({ file(id: $0.id) == $0 }),
               organizationDirectory == review.directory,
               organizationNamingScript == review.namingScript,
@@ -84,6 +92,7 @@ extension AppModel {
         organizationGeneration = UUID()
         organizationReview = nil
         organizationFiles.removeAll()
+        organizationTargetsEntireLibrary = false
         organizationError = nil
         isPreparingOrganization = false
     }

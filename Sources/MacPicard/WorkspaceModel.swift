@@ -65,6 +65,12 @@ extension AppModel {
         }
     }
 
+    var canOrganizeEntireLibrary: Bool {
+        activeWorkspace?.kind == .library && !isBusy && !files.isEmpty && files.allSatisfy {
+            [.ready, .changed, .saved].contains($0.state)
+        }
+    }
+
     var canLookupSelection: Bool {
         guard canEditSelection else { return false }
         let ids = selectedFileIDs

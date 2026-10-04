@@ -154,10 +154,20 @@ private struct ActionBar: View {
                 .disabled(!model.canDiscardChanges(model.selectedFileIDs))
                 .help("Discard pending tags and artwork; keep audio files unchanged.")
                 GlassActionButton("Organize", systemImage: "folder.badge.gearshape", compact: isCompact) {
+                    model.requestOrganizationReview()
                     presentation.isShowingOrganization = true
                 }
                 .disabled(!model.canEditSelection)
                 .help("Review filenames, folders and conflicts before moving selected files.")
+
+                if model.activeWorkspace?.kind == .library {
+                    GlassActionButton("Library", systemImage: "books.vertical", compact: isCompact) {
+                        model.requestOrganizationReview(entireLibrary: true)
+                        presentation.isShowingOrganization = true
+                    }
+                    .disabled(!model.canOrganizeEntireLibrary)
+                    .help("Review filenames, folders and conflicts for the entire library.")
+                }
 
                 Button { presentation.showsInspector.toggle() } label: {
                     Image(systemName: "sidebar.right")

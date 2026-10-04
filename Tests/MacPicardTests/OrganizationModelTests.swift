@@ -28,6 +28,23 @@ final class OrganizationModelTests: XCTestCase {
     }
 
     @MainActor
+    func testEntireLibraryOrganizationIncludesFilesOutsideCurrentSelection() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let library = try folder("Library", in: root)
+        let first = try audio("first.mp3", in: library), second = try audio("second.mp3", in: library)
+        let model = libraryModel(library, files: [first, second])
+        model.selectedFileIDs = [first.id]
+
+        XCTAssertTrue(model.canOrganizeEntireLibrary)
+        model.beginOrganizationReview(entireLibrary: true)
+        await model.refreshOrganizationPreview()
+
+        XCTAssertTrue(model.organizationTargetsEntireLibrary)
+        XCTAssertEqual(model.organizationFiles.map(\.id), [first.id, second.id])
+        XCTAssertEqual(model.organizationReview?.rows.map(\.id), [first.id, second.id])
+    }
+
+    @MainActor
     func testSessionWithoutDestinationShowsNoExecutablePreviewAndFolderChoiceNeverMoves() async throws {
         let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
         let destination = try folder("Destination", in: root), file = try audio("source.mp3", in: root)

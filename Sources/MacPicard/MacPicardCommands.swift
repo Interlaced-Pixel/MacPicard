@@ -185,9 +185,17 @@ struct MacPicardCommands: Commands {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(!model.canEditSelection)
             Button("Organize Selected Files…") {
+                model.requestOrganizationReview()
                 presentation.isShowingOrganization = true
             }.keyboardShortcut("o", modifiers: [.command, .shift])
                 .disabled(!model.canEditSelection)
+            if model.activeWorkspace?.kind == .library {
+                Button("Organize Entire Library…") {
+                    model.requestOrganizationReview(entireLibrary: true)
+                    presentation.isShowingOrganization = true
+                }
+                .disabled(!model.canOrganizeEntireLibrary)
+            }
         }
 
         CommandGroup(replacing: .help) {

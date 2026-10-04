@@ -112,6 +112,8 @@ final class AppModel: ObservableObject {
     @Published var isPreparingOrganization = false
     @Published var isExecutingOrganization = false
     var organizationFiles: [AudioFile] = []
+    var organizationTargetsEntireLibrary = false
+    var organizationEntireLibraryRequested = false
     var organizationWorkspaceID: UUID?
     var organizationLibraryRoot: URL?
     var organizationGeneration = UUID()

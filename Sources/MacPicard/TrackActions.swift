@@ -186,6 +186,7 @@ private struct MetadataContextActions: View {
             presentation.requestDiscard(model.contextFiles(ids), workspaceID: model.activeWorkspaceID)
         }.disabled(!model.canDiscardChanges(ids))
         Button("Organize Files…", systemImage: "folder.badge.gearshape") {
+            model.requestOrganizationReview()
             model.selectionChanged(ids)
             presentation.isShowingOrganization = true
         }.disabled(!model.canEdit(ids))
