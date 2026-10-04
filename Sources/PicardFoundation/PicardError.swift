@@ -30,11 +30,11 @@ public enum PicardError: Error, LocalizedError, Sendable, Equatable {
         case let .migrationFailed(from, to, reason):
             return "Could not migrate configuration from schema \(from) to \(to): \(reason)"
         case let .sessionRead(path, reason):
-            return "Could not read session at \(path): \(reason)"
+            return "Could not read library data at \(path): \(reason)"
         case let .sessionWrite(path, reason):
-            return "Could not write session at \(path): \(reason)"
+            return "Could not write library data at \(path): \(reason)"
         case let .sessionEncoding(message):
-            return "Session encoding failed: \(message)"
+            return "Saved data encoding failed: \(message)"
         case let .invalidState(entity, state, operation):
             return "Cannot \(operation) \(entity) while it is in state \(state)."
         case let .keychain(operation, status):

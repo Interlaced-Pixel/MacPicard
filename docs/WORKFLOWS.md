@@ -4,7 +4,7 @@ Open **Library → Collection Tools…** (⇧⌘K), or the toolbar's More menu. 
 
 ## Scope and safety
 
-Choose Selection, Album or Entire collection. Entire collection includes all indexed files in the active library/session, regardless of search, filter or selection. Unavailable files appear as blocked review rows. A review freezes file/workspace baselines; changing the underlying files invalidates application. Reviews show changes, unchanged files and failures. Exclusion and explicit confirmation precede staging. Staged edits support the existing global undo/discard flow; **Save Tags is a separate disk write**.
+Choose Selection, Album or Entire Library. Entire Library includes all indexed files in the active Music Library, regardless of search, filter or selection. Unavailable files appear as blocked review rows. A review freezes file/library baselines; changing the underlying files invalidates application. Reviews show changes, unchanged files and failures. Exclusion and explicit confirmation precede staging. Staged edits support the existing global undo/discard flow; **Save Tags is a separate disk write**.
 
 ## Scripts
 
@@ -22,7 +22,7 @@ Repeated separators can make a filename ambiguous: `Artist - Song - Remix` does 
 
 ## Configuration profiles
 
-Profiles are preference presets, **not libraries or sessions**. Capture current preferences, name/duplicate/delete the preset, choose included groups, save the library and explicitly activate the profile. Activation changes only checked groups:
+Profiles are preference presets, **not Music Libraries**. Capture current preferences, name/duplicate/delete the preset, choose included groups, save the profile and explicitly activate it. Activation changes only checked groups:
 
 | Group | Included preferences |
 | --- | --- |

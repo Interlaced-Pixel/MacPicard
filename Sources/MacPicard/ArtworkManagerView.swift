@@ -109,7 +109,7 @@ struct ArtworkManagerView: View {
                 Picker("Scope", selection: $scope) {
                     Text("Selection").tag("selection")
                     Text("Album").tag("album")
-                    Text("Entire workspace").tag("workspace")
+                    Text("Entire Library").tag("workspace")
                 }.frame(width: 270).disabled(changed || busy)
                     .onChange(of: scope) { _, value in changeScope(value) }
                 Picker("Preview file", selection: $fileID) {

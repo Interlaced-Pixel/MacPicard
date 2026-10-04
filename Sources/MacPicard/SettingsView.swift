@@ -57,11 +57,11 @@ struct SettingsView: View {
     @ViewBuilder private var settingsContent: some View {
         switch section {
         case .general:
-            Section("Workspace recovery") {
+            Section("Library Recovery") {
                 Toggle("Write periodic recovery snapshots", isOn: $draft.autosaveEnabled)
                 Stepper("Recovery every \(draft.autosaveIntervalSeconds) seconds", value: $draft.autosaveIntervalSeconds, in: 15...3600, step: 15)
                     .disabled(!draft.autosaveEnabled)
-                Text("Edits are saved to your library or session automatically. Periodic backups add recovery points without writing audio tags.").font(.caption)
+                Text("Library changes are saved automatically. Periodic backups add recovery points without writing audio tags.").font(.caption)
             }
         case .libraries:
             Section("Background monitoring") {
@@ -91,7 +91,7 @@ struct SettingsView: View {
             }
             Section("Saving") {
                 Toggle("Preserve file modification timestamps", isOn: $draft.preserveFileTimestamps)
-                Text("Save Tags writes changes to audio after checking for external edits. Save Workspace only saves the library or session.").font(.caption)
+                Text("Save Tags writes changes to audio after checking for external edits. Save Library saves pending edits without changing audio tags.").font(.caption)
             }
         case .artwork:
             Section("Cover Art Archive") {

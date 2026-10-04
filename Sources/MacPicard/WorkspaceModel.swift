@@ -91,7 +91,7 @@ extension AppModel {
 
     var browserSubtitle: String {
         if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "\(visibleFiles.count) matches in \(activeWorkspace?.name ?? "this workspace")"
+            return "\(visibleFiles.count) matches in \(activeWorkspace?.name ?? "this library")"
         }
         return displayedAlbum?.artist ?? "\(albumGroups.count) albums · \(workspaceFilesCount) audio files"
     }
@@ -142,18 +142,26 @@ extension AppModel {
     func collapseAllAlbums() { expandedAlbumIDs.removeAll() }
 
     func restoreWorkspaces() async throws {
-        guard let runtime, let snapshot else { return }
-        let store = WorkspaceStore(directory: snapshot.paths.applicationSupportDirectory.appendingPathComponent("Workspaces"))
+        guard let runtime else { return }
+        let paths = await runtime.paths
+        let store = WorkspaceStore(directory: paths.applicationSupportDirectory.appendingPathComponent("Workspaces"))
         workspaceStore = store
+        let hadCatalog = await store.hasSavedCatalog()
         var catalog = try await store.load()
-        if catalog.workspaces.isEmpty {
+        if catalog.workspaces.isEmpty && !hadCatalog {
             // Migrate the original single workspace without touching the original files.
             let legacyStore = await runtime.sessionStore
             let legacy = try await SessionManager(store: legacyStore).loadBestAvailable()
-            let workspace = MusicWorkspace(name: "My Session", kind: .session)
+            var workspace = MusicWorkspace(name: "Music")
+            workspace.automaticallyRefreshes = configuration.editing.newLibrariesMonitorAutomatically
             catalog = try await store.create(workspace, document: legacy?.document ?? SessionDocument())
         }
         workspaces = catalog.workspaces
+        guard !catalog.workspaces.isEmpty else {
+            clearActiveLibrary()
+            statusMessage = "Create a Music Library or open a music folder."
+            return
+        }
         let id = catalog.activeWorkspaceID ?? catalog.workspaces[0].id
         try await loadWorkspace(id)
         startLibraryRefresh()
@@ -163,6 +171,7 @@ extension AppModel {
         guard id != activeWorkspaceID, !isBusy, workspaceStore != nil else { return }
         isSwitchingWorkspace = true
         defer { isSwitchingWorkspace = false }
+        errorMessage = nil
         do {
             sessionSaveTask?.cancel()
             if let sessionManager { try await sessionManager.save(makeSessionDocument()) }
@@ -191,7 +200,7 @@ extension AppModel {
         sessionCreatedAt = Date()
         resetWorkspaceSelection()
         files.removeAll()
-        statusMessage = "Opened \(activeWorkspace?.name ?? "workspace")."
+        statusMessage = "Opened \(activeWorkspace?.name ?? "Music Library")."
         errorMessage = nil
         restoreSession(loaded)
         await restoreWorkspaceAccess()
@@ -214,26 +223,29 @@ extension AppModel {
         }
     }
 
-    func createSession(named name: String, copyingCurrent: Bool = false) async {
-        guard !isBusy, let workspaceStore else { return }
+    @discardableResult
+    func createMusicLibrary(named name: String) async -> Bool {
+        guard !isBusy, let workspaceStore else { return false }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
+        guard !name.isEmpty else { return false }
         isSwitchingWorkspace = true
         defer { isSwitchingWorkspace = false }
+        errorMessage = nil
         do {
             sessionSaveTask?.cancel()
             if let sessionManager { try await sessionManager.save(makeSessionDocument()) }
-            let document = copyingCurrent ? makeSessionDocument() : SessionDocument()
-            let workspace = MusicWorkspace(name: name, kind: .session)
-            _ = try await workspaceStore.create(workspace, document: document)
+            var workspace = MusicWorkspace(name: name)
+            workspace.automaticallyRefreshes = configuration.editing.newLibrariesMonitorAutomatically
+            _ = try await workspaceStore.create(workspace, document: SessionDocument())
             try await loadWorkspace(workspace.id)
-        } catch { present(error) }
+            return true
+        } catch { present(error); return false }
     }
 
     func addLibrary(directory: URL) async {
         guard !isBusy, let workspaceStore, let runtime else { return }
         if let existing = workspaces.first(where: {
-            $0.kind == .library && $0.directory?.standardizedFileURL == directory.standardizedFileURL
+            $0.directory?.resolvingSymlinksInPath().standardizedFileURL == directory.resolvingSymlinksInPath().standardizedFileURL
         }) { await switchWorkspace(existing.id); return }
         isSwitchingWorkspace = true
         defer { isSwitchingWorkspace = false }
@@ -288,19 +300,33 @@ extension AppModel {
         do {
             try await flushSession()
             if workspace.id == activeWorkspaceID {
-                let nextID: UUID
-                if let next = workspaces.first(where: { $0.id != workspace.id }) { nextID = next.id }
-                else {
-                    let next = MusicWorkspace(name: "My Session", kind: .session)
-                    _ = try await workspaceStore.create(next, document: SessionDocument())
-                    nextID = next.id
+                if let next = workspaces.first(where: { $0.id != workspace.id }) {
+                    try await loadWorkspace(next.id)
                 }
-                try await loadWorkspace(nextID)
             }
             workspaces = try await workspaceStore.remove(workspace.id).workspaces
-            statusMessage = "Removed \(workspace.name). Its audio files and saved workspace were kept."
+            if workspaces.isEmpty { clearActiveLibrary() }
+            statusMessage = "Removed \(workspace.name). Its audio files and saved library were kept."
         }
         catch { present(error) }
+    }
+
+    private func clearActiveLibrary() {
+        stopLibraryMonitoring()
+        sessionSaveTask?.cancel()
+        recoveryCheckTask?.cancel()
+        clearEditHistory()
+        playback.stop(clearQueue: true)
+        workspaceAccess = nil
+        importedAccess.removeAll()
+        accessBookmarkKeys.removeAll()
+        sessionManager = nil
+        activeWorkspaceID = nil
+        operationHistoryDirectory = nil
+        operationHistory.removeAll()
+        monitoringMessage = nil
+        resetWorkspaceSelection()
+        files.removeAll()
     }
 
     func setAutomaticRefresh(_ enabled: Bool) async {
@@ -567,7 +593,7 @@ extension AppModel {
             if let access = try? await runtime.bookmarks.resolve(key: key) { importedAccess.append(access) }
         }
         // Earlier builds stored an individual bookmark for each imported file.
-        if accessBookmarkKeys.isEmpty, activeWorkspace?.kind == .session {
+        if accessBookmarkKeys.isEmpty {
             for file in files {
                 if let access = try? await runtime.bookmarks.resolve(key: file.id.uuidString) {
                     importedAccess.append(access)

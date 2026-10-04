@@ -57,7 +57,7 @@ struct ArtworkDraft: Sendable {
         let currentByID = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
         guard self.workspaceID == workspaceID,
               baselines.allSatisfy({ baseline in currentByID[baseline.id] == baseline }) else {
-            throw ArtworkValidation.Failure("The workspace or files changed. Reopen Manage Artwork before applying edits.")
+            throw ArtworkValidation.Failure("The library or files changed. Reopen Manage Artwork before applying edits.")
         }
         var result = current
         let indices = Dictionary(uniqueKeysWithValues: current.enumerated().map { ($0.element.id, $0.offset) })
@@ -100,7 +100,7 @@ extension AppModel {
         let worker = Task.detached(priority: .utility) { try draft.editedFiles(current: current, workspaceID: workspaceID, replaceAllWith: fileID) }
         let edited = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
         try Task.checkCancellation()
-        guard files == current, activeWorkspaceID == workspaceID else { throw ArtworkValidation.Failure("The workspace changed during validation. Reopen Manage Artwork.") }
+        guard files == current, activeWorkspaceID == workspaceID else { throw ArtworkValidation.Failure("The library changed during validation. Reopen Manage Artwork.") }
         commitStagedEdits(edited, action: "Edit artwork")
     }
 }

@@ -3,7 +3,7 @@ import PicardSessions
 
 extension AppModel {
     var removalActionTitle: String {
-        activeWorkspace?.kind == .library ? "Remove from Library…" : "Remove from Session…"
+        "Remove from Library…"
     }
 
     func canTrash(_ ids: Set<UUID>) -> Bool {

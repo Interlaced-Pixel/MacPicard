@@ -7,6 +7,52 @@ import XCTest
 
 final class LibraryManagementTests: XCTestCase {
     @MainActor
+    func testImportWithoutLibraryCannotFallBackToOriginalReferences() async throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("untouched.mp3")
+        let bytes = Data("No parsing or copying should occur".utf8)
+        try bytes.write(to: source)
+        let model = AppModel(audioCoordinator: AudioFileCoordinator())
+        await model.importURLs(expanding: [source])
+        XCTAssertTrue(model.files.isEmpty)
+        XCTAssertTrue(model.operationHistory.isEmpty)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertEqual(try Data(contentsOf: source), bytes)
+        XCTAssertFalse(model.isWritingAudio)
+    }
+
+    @MainActor
+    func testOriginalSingleDocumentMigratesIntoMusicLibraryWithPendingEdits() async throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try fixture(in: root)
+        let original = try Data(contentsOf: source)
+        var file = try await AudioFileCoordinator().load(url: source)
+        var metadata = file.metadata
+        metadata.setValue("Legacy pending title", for: "title")
+        try file.updateMetadata(metadata)
+        let runtime = PicardRuntime(paths: AppPaths(applicationSupportDirectory: root.appendingPathComponent("State")))
+        _ = try await runtime.start()
+        try await runtime.sessionStore.save(SessionDocument(files: [file.sessionRecord()], selectedFileIDs: [file.id]))
+        let model = AppModel()
+        model.runtime = runtime
+        defer { model.stopLibraryMonitoring(); model.sessionSaveTask?.cancel() }
+        try await model.restoreWorkspaces()
+        await model.libraryScanTask?.value
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.workspaces.count, 1)
+        XCTAssertEqual(model.activeWorkspace?.kind, .library)
+        XCTAssertNotNil(model.libraryDirectory)
+        XCTAssertEqual(model.files.first?.id, file.id)
+        XCTAssertEqual(model.files.first?.url, source)
+        XCTAssertEqual(model.files.first?.metadata.firstValue(for: "title"), "Legacy pending title")
+        XCTAssertTrue(model.files.first?.isModified == true)
+        XCTAssertFalse(model.canTrash([file.id]), "Migrated external originals must never be offered as library copies for Trash.")
+        XCTAssertEqual(try Data(contentsOf: source), original)
+    }
+
+    @MainActor
     func testLibraryFolderImportCopiesDeduplicatesAndSurvivesSourceRemovalAndRestart() async throws {
         let root = try directory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -34,23 +80,29 @@ final class LibraryManagementTests: XCTestCase {
     }
 
     @MainActor
-    func testSessionImportReferencesOriginalsAndRemovalDoesNotDeleteThem() async throws {
+    func testManagedLibraryImportCopiesOriginalsAndRemovalDoesNotDeleteThem() async throws {
         let root = try directory()
         defer { try? FileManager.default.removeItem(at: root) }
         let source = try fixture(in: root)
         let original = try Data(contentsOf: source)
         let model = AppModel(audioCoordinator: AudioFileCoordinator())
-        defer { model.sessionSaveTask?.cancel() }
-        let session = MusicWorkspace(name: "Tagging", kind: .session)
-        model.workspaces = [session]; model.activeWorkspaceID = session.id
+        defer { model.stopLibraryMonitoring(); model.sessionSaveTask?.cancel() }
+        model.workspaceStore = WorkspaceStore(directory: root.appendingPathComponent("Catalog"))
+        let created = await model.createMusicLibrary(named: "Tagging")
+        XCTAssertTrue(created)
+        await model.libraryScanTask?.value
         await model.importURLs(expanding: [source])
-        XCTAssertEqual(model.files.first?.url, source)
+        let libraryRoot = try XCTUnwrap(model.libraryDirectory)
+        let imported = try XCTUnwrap(model.files.first)
+        XCTAssertNotEqual(imported.url, source)
+        XCTAssertNotNil(LibraryPaths.relativePath(of: imported.url, in: libraryRoot))
         let ids = Set(model.files.map(\.id))
-        XCTAssertFalse(model.canTrash(ids), "Session originals must not expose the library Trash action.")
+        XCTAssertTrue(model.canTrash(ids), "Only the managed copy is eligible for Trash.")
         await model.removeFiles(ids)
         XCTAssertEqual(model.files.count, 1, "Removal requires confirmation.")
         await model.removeFiles(ids, confirmed: true)
         XCTAssertTrue(model.files.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: imported.url.path))
         XCTAssertEqual(try Data(contentsOf: source), original)
     }
 
@@ -71,7 +123,7 @@ final class LibraryManagementTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.url.path))
         await model.refreshLibrary()
         XCTAssertTrue(model.files.isEmpty, "Refresh must not bring removed items back.")
-        let reloadedStore = WorkspaceStore(directory: root.appendingPathComponent("Catalog"))
+        let reloadedStore = WorkspaceStore(directory: root.appendingPathComponent("Workspaces"))
         let catalog = try await reloadedStore.load()
         let saved = try XCTUnwrap(catalog.workspaces.first)
         XCTAssertEqual(saved.excludedRelativePaths, ["Artist/Album/01 - Song.flac"])
@@ -161,13 +213,23 @@ final class LibraryManagementTests: XCTestCase {
         model.setMetadata("title", value: "Pending before library removal")
         await model.removeWorkspace(workspace)
         XCTAssertNil(model.errorMessage)
-        XCTAssertEqual(model.workspaces.count, 1)
-        XCTAssertEqual(model.activeWorkspace?.kind, .session)
+        XCTAssertTrue(model.workspaces.isEmpty)
+        XCTAssertNil(model.activeWorkspace)
+        XCTAssertNil(model.sessionManager)
+        XCTAssertNil(model.libraryMonitor)
         XCTAssertTrue(model.files.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.url.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
         let retained = try await store.sessionStore(for: workspace.id).load()
         XCTAssertEqual(retained?.files.first?.metadata.firstValue(for: "title"), "Pending before library removal")
+        let runtime = PicardRuntime(paths: AppPaths(applicationSupportDirectory: root))
+        let restarted = AppModel()
+        restarted.runtime = runtime
+        _ = try await runtime.start()
+        defer { restarted.stopLibraryMonitoring(); restarted.sessionSaveTask?.cancel() }
+        try await restarted.restoreWorkspaces()
+        XCTAssertTrue(restarted.workspaces.isEmpty, "Removing the last library must survive relaunch, without recreating a session or library.")
+        XCTAssertNil(restarted.activeWorkspace)
     }
 
     func testLegacyWorkspaceCatalogDecodesWithoutExclusionField() throws {
@@ -183,7 +245,7 @@ final class LibraryManagementTests: XCTestCase {
     @MainActor
     private func libraryModel(in root: URL) async throws -> (AppModel, MusicWorkspace, WorkspaceStore) {
         let directory = try directory(in: root, name: "Library")
-        let store = WorkspaceStore(directory: root.appendingPathComponent("Catalog"))
+        let store = WorkspaceStore(directory: root.appendingPathComponent("Workspaces"))
         let workspace = MusicWorkspace(name: "Music Library", kind: .library, directory: directory)
         let catalog = try await store.create(workspace, document: SessionDocument())
         let model = AppModel(audioCoordinator: AudioFileCoordinator())

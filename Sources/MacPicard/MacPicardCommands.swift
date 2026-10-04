@@ -15,13 +15,13 @@ struct MacPicardCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Session…") { presentation.newSession() }
+            Button("New Music Library…") { presentation.newLibrary() }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(model.isBusy)
-            Button("Add Music Library…") { presentation.isAddingLibrary = true }
+            Button("Open Music Folder…") { presentation.isAddingLibrary = true }
                 .keyboardShortcut("o", modifiers: .command)
                 .disabled(model.isBusy)
-            Menu("Open Workspace") {
+            Menu("Open Music Library") {
                 ForEach(model.workspaces.sorted { $0.lastOpenedAt > $1.lastOpenedAt }) { workspace in
                     Button(workspace.name) { Task { await model.switchWorkspace(workspace.id) } }
                         .disabled(model.isBusy || workspace.id == model.activeWorkspaceID)
@@ -32,7 +32,7 @@ struct MacPicardCommands: Commands {
         CommandGroup(replacing: .importExport) {
             Button("Import Audio Files or Folder…") { presentation.isImporting = true }
                 .keyboardShortcut("i", modifiers: .command)
-                .disabled(model.isBusy)
+                .disabled(model.isBusy || model.activeWorkspace == nil)
         }
 
         CommandGroup(replacing: .saveItem) {
@@ -43,12 +43,9 @@ struct MacPicardCommands: Commands {
                 .keyboardShortcut("s", modifiers: [.command, .option])
                 .disabled(model.isBusy || !model.hasUnsavedChanges)
             Divider()
-            Button("Save Workspace") { Task { await model.saveSession() } }
+            Button("Save Library") { Task { await model.saveSession() } }
                 .keyboardShortcut("s", modifiers: [.command, .control])
-                .disabled(model.isBusy)
-            Button("Save Session As…") { presentation.newSession(copying: true) }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
-                .disabled(model.isBusy)
+                .disabled(model.isBusy || model.activeWorkspace == nil)
             Divider()
             Button("Close Window") { NSApp.keyWindow?.performClose(nil) }
                 .keyboardShortcut("w", modifiers: .command)
@@ -117,7 +114,7 @@ struct MacPicardCommands: Commands {
                 presentation.collectionToolsPage = "operations"; presentation.isShowingCollectionTools = true
             }.keyboardShortcut("k", modifiers: [.command, .shift])
             Divider()
-            Button("Manage Libraries & Sessions…") { presentation.isManagingWorkspaces = true }
+            Button("Manage Music Libraries…") { presentation.isManagingWorkspaces = true }
                 .keyboardShortcut("l", modifiers: [.command, .option])
             Button("Refresh Library") { Task { await model.refreshLibrary() } }
                 .keyboardShortcut("r", modifiers: .command)
@@ -143,7 +140,7 @@ struct MacPicardCommands: Commands {
             Button("Move Library Files to Trash…", role: .destructive) {
                 presentation.requestRemoval(model.selectedFileIDs, workspaceID: model.activeWorkspaceID, trash: true)
             }.disabled(!model.canTrash(model.selectedFileIDs))
-            Button("Remove Current Workspace…") { presentation.isManagingWorkspaces = true }
+            Button("Remove Current Library…") { presentation.isManagingWorkspaces = true }
                 .disabled(model.isBusy || model.activeWorkspace == nil)
             Divider()
             Button("Reveal Library Folder in Finder") { model.revealLibrary() }
@@ -252,9 +249,7 @@ struct QuickStartView: View {
             }
             ScrollView { VStack(alignment: .leading, spacing: 14) {
             guide("Libraries", symbol: "externaldrive",
-                  text: "Choose File → Add Music Library and select a folder. Imports copy audio into Artist / Album folders, leaving originals untouched. Existing library files are indexed in place. Right-click tracks or albums to remove them from the library or move its copies to Trash after confirmation. Remove a library in Library → Manage Libraries & Sessions; this never deletes its audio.")
-            guide("Sessions", symbol: "rectangle.stack",
-                  text: "Create a named session for a particular tagging task. Import files or folders, then return through the workspace chooser or File → Open Workspace. Pending edits are saved in the workspace; Save Tags writes them to the audio files.")
+                  text: "Choose File → New Music Library for an app-managed folder, or Open Music Folder for an existing collection. Imports copy audio into Artist / Album folders, leaving originals untouched. Existing files are indexed in place. Switch libraries in the sidebar or File → Open Music Library. Library changes are saved automatically; Save Tags writes edits to audio files. Manage Music Libraries lets you rename or remove a library without deleting its music.")
             guide("Review changes", symbol: "arrow.triangle.branch",
                   text: "Look Up pairs files with MusicBrainz tracks. Choose a track in each row; choosing an occupied track swaps the pair. Open a row’s changes button to compare tags. Apply changes the pending tags; Save writes them to audio. Discard is in More, Edit, and track context menus.")
             guide("Navigation", symbol: "magnifyingglass",
@@ -262,7 +257,7 @@ struct QuickStartView: View {
             guide("Metadata", symbol: "slider.horizontal.3",
                   text: "Select tracks with Command-click or Shift-click. The inspector shows Multiple values when tags differ; typing applies that value to the selection. Look Up finds MusicBrainz releases. Apply to Files changes pending tags; ⌘S saves selected tags, and ⌥⌘S saves all changed tags.")
             guide("Playback", symbol: "play.circle",
-                  text: "Right-click a song to Play, Play Next, or Add to Queue. Right-click an album to play it in track order. The player provides pause, seeking, volume, and queue controls. Double-click a track to play it; ⌘P toggles playback. Playback stops when you switch workspaces or quit.")
+                  text: "Right-click a song to Play, Play Next, or Add to Queue. Right-click an album to play it in track order. The player provides pause, seeking, volume, and queue controls. Double-click a track to play it; ⌘P toggles playback. Playback stops when you switch libraries or quit.")
             guide("Organize files", symbol: "folder.badge.gearshape",
                   text: "Organize previews filenames and folders before moving anything. Choose a naming preset or custom pattern, resolve conflicts, exclude files, then confirm Move Files. Libraries default to their own folder; moves outside it need explicit acknowledgment. Existing files are never overwritten. Pending tags remain unsaved. Reveal files in Finder with ⇧⌘R.")
             } }

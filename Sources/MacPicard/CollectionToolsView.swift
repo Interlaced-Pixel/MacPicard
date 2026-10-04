@@ -394,7 +394,7 @@ struct CollectionWorkflowView: View {
                         Text("Only saved, unchanged files can move in this step. Failed saves stay pending.").font(.caption).foregroundStyle(.secondary)
                         HStack {
                             Button("Organize Saved Files…") {
-                                guard savedScopeWorkspace == model.activeWorkspaceID else { error = "Review and save this workspace before organizing saved files."; return }
+                                guard savedScopeWorkspace == model.activeWorkspaceID else { error = "Review and save this library before organizing saved files."; return }
                                 let eligible = Set(savedScopeIDs.filter { id in model.file(id: id).map { !$0.isModified && [.ready, .saved].contains($0.state) && savedBaselines[id] == $0 } == true })
                                 guard !eligible.isEmpty else { error = "No unchanged saved files are eligible. Save and review again."; return }
                                 model.requestOrganizationReview(ids: eligible, label: "Guided saved/clean files"); openWindow(id: "workspace"); presentation.isShowingOrganization = true
@@ -418,7 +418,7 @@ struct CollectionWorkflowView: View {
         .onChange(of: scope) { _, _ in reviewingSave = false; savedScopeIDs = [] }
     }
     private func save() {
-        guard saveWorkspace == model.activeWorkspaceID, saveReview.allSatisfy({ model.file(id: $0.id) == $0 }) else { error = "Workspace/files changed after review. Review again before writing."; return }
+        guard saveWorkspace == model.activeWorkspaceID, saveReview.allSatisfy({ model.file(id: $0.id) == $0 }) else { error = "The library or files changed after review. Review again before writing."; return }
         let scopeFiles = targets, changes = saveReview, workspace = saveWorkspace
         reviewingSave = false
         job = Task {

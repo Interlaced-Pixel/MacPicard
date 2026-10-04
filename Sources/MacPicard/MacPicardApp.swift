@@ -45,7 +45,7 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
                 sender.reply(toApplicationShouldTerminate: true)
             } catch {
                 let alert = NSAlert()
-                alert.messageText = "The workspace could not be saved."
+                alert.messageText = "The library could not be saved."
                 alert.informativeText = error.localizedDescription
                 alert.addButton(withTitle: "Keep Open")
                 alert.addButton(withTitle: "Quit Without Saving")
@@ -193,8 +193,8 @@ struct ContentView: View {
         .sheet(isPresented: $presentation.isShowingFingerprints) { FingerprintResultsView(model: model, presentation: presentation) }
         .sheet(item: $model.fingerprintSubmissionReview) { review in FingerprintSubmissionView(model: model, review: review) }
         .sheet(isPresented: $presentation.isRegrouping) { RegroupView(model: model) }
-        .sheet(isPresented: $presentation.isNamingSession) {
-            NewSessionView(model: model, copying: presentation.copiesCurrentSession)
+        .sheet(isPresented: $presentation.isNamingLibrary) {
+            NewMusicLibraryView(model: model)
         }
         .sheet(isPresented: $presentation.isManagingWorkspaces) {
             WorkspaceManagerView(model: model, presentation: presentation)
@@ -213,7 +213,7 @@ struct ContentView: View {
         } message: { request in
             Text(request.trash
                  ? "\(request.fileIDs.count) library files will be moved to the recoverable Trash. External originals stay untouched. Pending edits on these items will be discarded."
-                 : "\(request.fileIDs.count) items will be removed from this workspace; all audio files stay on disk. Removed library items stay hidden during refresh until re-imported or restored. Pending edits on these items will be discarded.")
+                 : "\(request.fileIDs.count) items will be removed from this library; all audio files stay on disk. Removed library items stay hidden during refresh until re-imported or restored. Pending edits on these items will be discarded.")
         }
     }
 

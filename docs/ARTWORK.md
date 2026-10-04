@@ -4,7 +4,7 @@ The improvement-roadmap phase 7 adds a full staged artwork manager. No additiona
 
 ## Open and choose the scope
 
-Select editable tracks, then use **Metadata → Manage Artwork…** (⌥⌘A), Cover Art in the toolbar, Manage Artwork in the inspector, or the track/album context menu. Choose Selection, Album, or Entire workspace before editing. Entire workspace includes available, editable files; unavailable files are excluded. The scope freezes once the draft changes so switching it cannot silently discard work.
+Select editable tracks, then use **Metadata → Manage Artwork…** (⌥⌘A), More in the toolbar, Manage Artwork in the inspector, or the track/album context menu. Choose Selection, Album, or Entire Library before editing. Entire Library includes available, editable files; unavailable files are excluded. The scope freezes once the draft changes so switching it cannot silently discard work.
 
 Preview file chooses which file's image set you edit. By default, changes affect that file only; edit other files with the picker. To intentionally copy one artwork set to every scoped file, enable **Replace artwork on all … files with the preview file’s set**. This replaces, rather than merges, their complete image sets, including removal if the proposed set is empty. Review the per-file image counts before applying.
 

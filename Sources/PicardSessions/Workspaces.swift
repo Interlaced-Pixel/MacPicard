@@ -3,7 +3,6 @@ import PicardFormats
 import PicardFoundation
 
 public enum WorkspaceKind: String, Codable, Sendable {
-    case session
     case library
 }
 
@@ -17,7 +16,7 @@ public struct MusicWorkspace: Codable, Identifiable, Sendable, Equatable {
     public var automaticallyRefreshes: Bool
     public var excludedRelativePaths: Set<String> = []
 
-    public init(id: UUID = UUID(), name: String, kind: WorkspaceKind, directory: URL? = nil) {
+    public init(id: UUID = UUID(), name: String, kind: WorkspaceKind = .library, directory: URL? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
@@ -34,17 +33,23 @@ public struct MusicWorkspace: Codable, Identifiable, Sendable, Equatable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(UUID.self, forKey: .id)
         name = try values.decode(String.self, forKey: .name)
-        kind = try values.decode(WorkspaceKind.self, forKey: .kind)
+        // Sessions from older catalogs become libraries. Their saved documents,
+        // bookmarks and file URLs stay in place; only the catalog is migrated.
+        let savedKind = try values.decode(String.self, forKey: .kind)
+        guard savedKind == "library" || savedKind == "session" else {
+            throw DecodingError.dataCorruptedError(forKey: .kind, in: values, debugDescription: "Unknown library type.")
+        }
+        kind = .library
         directory = try values.decodeIfPresent(URL.self, forKey: .directory)
         lastOpenedAt = try values.decode(Date.self, forKey: .lastOpenedAt)
         lastScannedAt = try values.decodeIfPresent(Date.self, forKey: .lastScannedAt)
-        automaticallyRefreshes = try values.decodeIfPresent(Bool.self, forKey: .automaticallyRefreshes) ?? (kind == .library)
+        automaticallyRefreshes = try values.decodeIfPresent(Bool.self, forKey: .automaticallyRefreshes) ?? (savedKind == "library")
         excludedRelativePaths = try values.decodeIfPresent(Set<String>.self, forKey: .excludedRelativePaths) ?? []
     }
 }
 
 public struct WorkspaceCatalog: Codable, Sendable, Equatable {
-    public var schemaVersion = 1
+    public var schemaVersion = 2
     public var workspaces: [MusicWorkspace] = []
     public var activeWorkspaceID: UUID?
 
@@ -61,6 +66,10 @@ public actor WorkspaceStore {
         self.directory = directory
     }
 
+    public func hasSavedCatalog() -> Bool {
+        FileManager.default.fileExists(atPath: directory.appendingPathComponent("workspaces.json").path)
+    }
+
     public func load() throws -> WorkspaceCatalog {
         if let catalog { return catalog }
         let url = directory.appendingPathComponent("workspaces.json")
@@ -71,11 +80,25 @@ public actor WorkspaceStore {
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
-        let loaded = try decoder.decode(WorkspaceCatalog.self, from: Data(contentsOf: url))
-        guard loaded.schemaVersion == 1,
+        var loaded = try decoder.decode(WorkspaceCatalog.self, from: Data(contentsOf: url))
+        guard (1...2).contains(loaded.schemaVersion),
               Set(loaded.workspaces.map(\.id)).count == loaded.workspaces.count,
-              loaded.workspaces.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-            throw SaveError.session("The workspace catalog is invalid or requires a newer MacPicard version.")
+              loaded.workspaces.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              loaded.activeWorkspaceID == nil || loaded.workspaces.contains(where: { $0.id == loaded.activeWorkspaceID }) else {
+            throw SaveError.session("The library catalog is invalid or requires a newer MacPicard version.")
+        }
+        if loaded.schemaVersion == 1 {
+            guard loaded.workspaces.allSatisfy({ $0.directory == nil || $0.directory?.isFileURL == true }) else {
+                throw SaveError.session("A saved Music Library must use a local folder. The catalog was not replaced.")
+            }
+            for index in loaded.workspaces.indices where loaded.workspaces[index].directory == nil {
+                loaded.workspaces[index] = try materializeLibrary(loaded.workspaces[index])
+            }
+            loaded.schemaVersion = 2
+            try persist(loaded)
+        }
+        guard loaded.workspaces.allSatisfy({ $0.directory?.isFileURL == true }) else {
+            throw SaveError.session("A saved Music Library is missing its folder. The catalog was not replaced.")
         }
         catalog = loaded
         return loaded
@@ -84,14 +107,14 @@ public actor WorkspaceStore {
     public func create(_ workspace: MusicWorkspace, document: SessionDocument) async throws -> WorkspaceCatalog {
         guard !pendingCreates.contains(workspace.id),
               !(try load()).workspaces.contains(where: { $0.id == workspace.id }) else {
-            throw SaveError.session("This workspace already exists.")
+            throw SaveError.session("This Music Library already exists.")
         }
-        guard !workspace.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              workspace.kind != .library || workspace.directory != nil else {
-            throw SaveError.session("A workspace needs a name, and a library needs a folder.")
+        guard !workspace.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SaveError.session("A Music Library needs a name.")
         }
         pendingCreates.insert(workspace.id)
         defer { pendingCreates.remove(workspace.id) }
+        let workspace = try materializeLibrary(workspace)
         try await sessionStore(for: workspace.id).save(document)
         var next = try load()
         next.workspaces.append(workspace)
@@ -103,7 +126,7 @@ public actor WorkspaceStore {
     public func activate(_ id: UUID) throws -> WorkspaceCatalog {
         var next = try load()
         guard let index = next.workspaces.firstIndex(where: { $0.id == id }) else {
-            throw SaveError.session("The requested workspace does not exist.")
+            throw SaveError.session("The requested Music Library does not exist.")
         }
         next.activeWorkspaceID = id
         next.workspaces[index].lastOpenedAt = Date()
@@ -114,8 +137,9 @@ public actor WorkspaceStore {
     public func update(_ workspace: MusicWorkspace) throws -> WorkspaceCatalog {
         var next = try load()
         guard let index = next.workspaces.firstIndex(where: { $0.id == workspace.id }),
-              !workspace.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw SaveError.session("The workspace could not be updated.")
+              !workspace.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              workspace.directory?.isFileURL == true else {
+            throw SaveError.session("The Music Library could not be updated.")
         }
         next.workspaces[index] = workspace
         try persist(next)
@@ -124,10 +148,11 @@ public actor WorkspaceStore {
 
     public func remove(_ id: UUID) throws -> WorkspaceCatalog {
         var next = try load()
-        guard next.activeWorkspaceID != id else {
-            throw SaveError.session("Open another workspace before removing this one.")
+        guard next.activeWorkspaceID != id || next.workspaces.count == 1 else {
+            throw SaveError.session("Open another Music Library before removing this one.")
         }
         next.workspaces.removeAll { $0.id == id }
+        if next.activeWorkspaceID == id { next.activeWorkspaceID = nil }
         // Retain the document and recovery file so removal is recoverable on disk.
         try persist(next)
         return next
@@ -143,6 +168,20 @@ public actor WorkspaceStore {
 
     public func operationDirectory(for id: UUID) -> URL {
         directory.appendingPathComponent(id.uuidString, isDirectory: true).appendingPathComponent("Operations", isDirectory: true)
+    }
+
+    private func materializeLibrary(_ library: MusicWorkspace) throws -> MusicWorkspace {
+        var result = library
+        if result.directory == nil {
+            let root = directory.appendingPathComponent(result.id.uuidString, isDirectory: true)
+                .appendingPathComponent("Music", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            result.directory = root
+        }
+        guard result.directory?.isFileURL == true else {
+            throw SaveError.session("A Music Library must use a local folder.")
+        }
+        return result
     }
 
     private func persist(_ next: WorkspaceCatalog) throws {

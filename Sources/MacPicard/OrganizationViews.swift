@@ -109,7 +109,7 @@ struct OrganizationView: View {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Destination").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Text(model.organizationDirectory?.path ?? "Choose a folder for this session")
+                    Text(model.organizationDirectory?.path ?? "Choose a destination folder")
                         .font(.callout).lineLimit(2).textSelection(.enabled)
                         .help(model.organizationDirectory?.path ?? "No folder selected")
                 }.frame(maxWidth: .infinity, alignment: .leading)

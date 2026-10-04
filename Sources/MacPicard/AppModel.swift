@@ -412,10 +412,12 @@ final class AppModel: ObservableObject {
     }
 
     func importURLs(expanding urls: [URL]) async {
-        guard let audioCoordinator, !isBusy else { return }
-        let isLibrary = activeWorkspace?.kind == .library
-        let libraryRoot = libraryDirectory
-        if isLibrary && libraryRoot == nil {
+        guard audioCoordinator != nil, !isBusy else { return }
+        guard activeWorkspace != nil else {
+            errorMessage = "Create or open a Music Library before importing files."
+            return
+        }
+        guard let libraryRoot = libraryDirectory else {
             errorMessage = "Reconnect the library folder before importing files."
             return
         }
@@ -423,7 +425,6 @@ final class AppModel: ObservableObject {
         isWritingAudio = true
         progress = 0
         errorMessage = nil
-        var imported = 0
         var copied = 0
         var alreadyPresent = 0
         var cancelled = false
@@ -457,27 +458,15 @@ final class AppModel: ObservableObject {
                     if accessed { url.stopAccessingSecurityScopedResource() }
                 }
                 let file: AudioFile
-                if let libraryRoot {
-                    statusMessage = "Copying and organizing \(url.lastPathComponent)…"
-                    let result = try await libraryImporter.importFile(at: url, into: libraryRoot, existing: files + loadedFiles)
-                    file = result.file
-                    if result.copied { copied += 1 } else { alreadyPresent += 1 }
-                    if let path = LibraryPaths.relativePath(of: file.url, in: libraryRoot) { restoredPaths.insert(path) }
-                } else {
-                    if knownPaths.contains(url.resolvingSymlinksInPath().standardizedFileURL.path) {
-                        importJournal.items[index].state = .skipped
-                        try await persistOperation(importJournal)
-                        continue
-                    }
-                    statusMessage = "Importing \(url.lastPathComponent)…"
-                    file = try await audioCoordinator.load(url: url)
-                }
+                statusMessage = "Copying and organizing \(url.lastPathComponent)…"
+                let result = try await libraryImporter.importFile(at: url, into: libraryRoot, existing: files + loadedFiles)
+                file = result.file
+                if result.copied { copied += 1 } else { alreadyPresent += 1 }
+                if let path = LibraryPaths.relativePath(of: file.url, in: libraryRoot) { restoredPaths.insert(path) }
                 if let existingIndex = files.firstIndex(where: { $0.id == file.id }) {
-                    if files[existingIndex].url != file.url { imported += 1 }
                     files[existingIndex] = file
                 } else if knownPaths.insert(file.url.resolvingSymlinksInPath().standardizedFileURL.path).inserted {
                     loadedFiles.append(file)
-                    imported += 1
                 }
                 importJournal.items[index].state = .completed
                 importJournal.items[index].destination = file.url
@@ -501,7 +490,7 @@ final class AppModel: ObservableObject {
             progress = Double(index + 1) / Double(expandedURLs.count)
         }
         files.append(contentsOf: loadedFiles)
-        if var workspace = activeWorkspace, isLibrary, !restoredPaths.isDisjoint(with: workspace.excludedRelativePaths) {
+        if var workspace = activeWorkspace, !restoredPaths.isDisjoint(with: workspace.excludedRelativePaths) {
             workspace.excludedRelativePaths.subtract(restoredPaths)
             do {
                 if let workspaceStore { workspaces = try await workspaceStore.update(workspace).workspaces }
@@ -516,10 +505,8 @@ final class AppModel: ObservableObject {
         importJournal.state = cancelled ? .interrupted : (failures.isEmpty ? .completed : .failed)
         importJournal.finishedAt = Date()
         do { try await flushSession(); try await persistOperation(importJournal) }
-        catch { present(error); statusMessage = "Files were imported, but the workspace could not be saved. Check Activity before importing again."; return }
-        statusMessage = isLibrary
-            ? "Copied \(copied) \(copied == 1 ? "file" : "files") into \(activeWorkspace?.name ?? "the library")."
-            : "Imported \(imported) \(imported == 1 ? "file" : "files")."
+        catch { present(error); statusMessage = "Files were imported, but the library could not be saved. Check Activity before importing again."; return }
+        statusMessage = "Copied \(copied) \(copied == 1 ? "file" : "files") into \(activeWorkspace?.name ?? "the library")."
         if alreadyPresent > 0 { statusMessage += " \(alreadyPresent) already in the library." }
         if !failures.isEmpty { statusMessage += " \(failures.count) failed." }
         if cancelled { statusMessage = "Import cancelled. " + statusMessage }
@@ -1057,7 +1044,7 @@ final class AppModel: ObservableObject {
         accessBookmarkKeys = loaded.document.accessBookmarkKeys
         expandedAlbumIDs.removeAll()
         if loaded.source == .recovery {
-            statusMessage = "Recovered an autosaved session."
+            statusMessage = "Recovered unsaved library changes."
         }
     }
 

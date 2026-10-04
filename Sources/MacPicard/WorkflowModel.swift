@@ -3,7 +3,7 @@ import PicardFoundation
 import PicardScripts
 
 enum CollectionScope: String, CaseIterable, Identifiable {
-    case selection = "Selection", album = "Album", workspace = "Entire collection"
+    case selection = "Selection", album = "Album", workspace = "Entire Library"
     var id: String { rawValue }
 }
 struct FileSaveOutcome: Identifiable, Sendable {
@@ -95,7 +95,7 @@ extension AppModel {
     }
 
     func applyWorkflowReview(_ review: WorkflowReview, excluded: Set<UUID>, confirmed: Bool) throws {
-        guard confirmed, !isBusy, review.workspaceID == activeWorkspaceID else { throw WorkflowFailure.invalid("Confirm the reviewed batch in the current workspace.") }
+        guard confirmed, !isBusy, review.workspaceID == activeWorkspaceID else { throw WorkflowFailure.invalid("Confirm the reviewed batch in the current library.") }
         let current = Dictionary(uniqueKeysWithValues: files.map { ($0.id, $0) })
         guard review.rows.allSatisfy({ current[$0.id] == $0.file }) else { throw WorkflowFailure.invalid("Files changed after preview. Preview again; nothing was applied.") }
         var edited = files

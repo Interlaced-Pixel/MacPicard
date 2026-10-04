@@ -80,7 +80,9 @@ struct WorkspaceView: View {
 
             if model.files.isEmpty {
                 EmptyLibraryView(
+                    hasLibrary: model.activeWorkspace != nil,
                     importAction: { isImporting = true },
+                    newLibraryAction: { presentation.newLibrary() },
                     addLibraryAction: { presentation.isAddingLibrary = true }
                 )
             } else {
@@ -90,12 +92,13 @@ struct WorkspaceView: View {
             WorkspaceStatusBar(model: model, presentation: presentation)
         }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted) { providers in
+            guard model.activeWorkspace != nil, !model.isBusy else { return false }
             model.importDroppedProviders(providers)
             return true
         }
         .overlay(alignment: .top) {
             if isDropTargeted {
-                Text(model.activeWorkspace?.kind == .library ? "Drop to copy and organize in this library" : "Drop audio files or folders to import")
+                Text("Drop to copy and organize in this library")
                     .font(.headline)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 6)
@@ -120,10 +123,8 @@ private struct ActionBar: View {
                 GlassActionButton("Import", systemImage: "plus", compact: isCompact) {
                     isImporting = true
                 }
-                .disabled(model.isBusy)
-                .help(model.activeWorkspace?.kind == .library
-                      ? "Copy audio files into this library. Originals stay unchanged."
-                      : "Add audio files to this session without copying them.")
+                .disabled(model.isBusy || model.activeWorkspace == nil)
+                .help("Copy audio files into this library. Originals stay unchanged.")
                 if !presentation.showsMatchComparison {
                 GlassActionButton("Look Up", systemImage: "magnifyingglass", compact: isCompact) {
                     presentation.showsMatchComparison = true
@@ -238,8 +239,8 @@ private struct WorkspaceStatusBar: View {
             if let progress = model.progress {
                 ProgressView(value: progress).frame(width: 90)
             }
-            if let workspace = model.activeWorkspace {
-                Text(workspace.kind == .library ? "Folder library" : "Session autosaved")
+            if model.activeWorkspace != nil {
+                Text("Library autosaved")
                     .foregroundStyle(.secondary)
                     .fixedSize()
             }
@@ -291,18 +292,26 @@ private struct GlassActionButton: View {
 }
 
 private struct EmptyLibraryView: View {
+    let hasLibrary: Bool
     let importAction: () -> Void
+    let newLibraryAction: () -> Void
     let addLibraryAction: () -> Void
 
     var body: some View {
         ContentUnavailableView {
-            Label("No Audio Files", systemImage: "music.note.list")
+            Label(hasLibrary ? "No Audio Files" : "No Music Library", systemImage: "music.note.list")
         } description: {
-            Text("Add a music folder as a library, or import files into this session.")
+            Text(hasLibrary ? "Import audio to copy and organize it in this library." : "Create a library or open a folder containing your music.")
         } actions: {
-            Button("Add Music Library…") { addLibraryAction() }
-                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
-            Button("Import Audio…") { importAction() }.buttonStyle(.bordered)
+            if hasLibrary {
+                Button("Import Audio…") { importAction() }
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
+            } else {
+                Button("New Music Library…") { newLibraryAction() }
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
+            }
+            Button("Open Music Folder…") { addLibraryAction() }
+                .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

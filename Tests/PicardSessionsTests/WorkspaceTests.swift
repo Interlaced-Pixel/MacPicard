@@ -5,6 +5,82 @@ import XCTest
 @testable import PicardSessions
 
 final class WorkspaceTests: XCTestCase {
+    func testLegacySessionsMigrateWithoutMovingAudioOrRewritingSavedEdits() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeFixture(in: root)
+        let sourceBytes = try Data(contentsOf: source)
+        var file = try await AudioFileCoordinator().load(url: source)
+        var tags = file.metadata
+        tags.setValue("Pending title", for: "title")
+        try file.updateMetadata(tags)
+        var library = MusicWorkspace(name: "Album Repair")
+        library.automaticallyRefreshes = false
+        library.excludedRelativePaths = ["Hidden/track.flac"]
+        var catalog = WorkspaceCatalog()
+        catalog.schemaVersion = 1
+        catalog.workspaces = [library]
+        catalog.activeWorkspaceID = library.id
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(catalog)) as? [String: Any])
+        var items = try XCTUnwrap(json["workspaces"] as? [[String: Any]])
+        items[0]["kind"] = "session"
+        items[0].removeValue(forKey: "directory")
+        json["workspaces"] = items
+        let catalogURL = root.appendingPathComponent("workspaces.json")
+        try JSONSerialization.data(withJSONObject: json).write(to: catalogURL)
+        let store = WorkspaceStore(directory: root)
+        let documentStore = await store.sessionStore(for: library.id)
+        let document = SessionDocument(files: [file.sessionRecord()], selectedFileIDs: [file.id], accessBookmarkKeys: ["old-source-access"])
+        try await documentStore.save(document)
+        var recovery = document
+        recovery.selectedAlbumKey = "recover-this-album"
+        try await documentStore.saveRecovery(recovery)
+        let documentURL = root.appendingPathComponent(library.id.uuidString).appendingPathComponent("session.json")
+        let recoveryURL = documentURL.deletingLastPathComponent().appendingPathComponent("recovery.json")
+        let savedBytes = try Data(contentsOf: documentURL)
+        let recoveryBytes = try Data(contentsOf: recoveryURL)
+        let migrated = try await store.load()
+        let entry = try XCTUnwrap(migrated.workspaces.first)
+        XCTAssertEqual(migrated.schemaVersion, 2)
+        XCTAssertEqual(migrated.activeWorkspaceID, library.id)
+        XCTAssertEqual(entry.id, library.id)
+        XCTAssertEqual(entry.name, library.name)
+        XCTAssertEqual(entry.kind, .library)
+        XCTAssertFalse(entry.automaticallyRefreshes)
+        XCTAssertEqual(entry.excludedRelativePaths, library.excludedRelativePaths)
+        let folder = try XCTUnwrap(entry.directory)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertEqual(try Data(contentsOf: source), sourceBytes)
+        XCTAssertEqual(try Data(contentsOf: documentURL), savedBytes)
+        XCTAssertEqual(try Data(contentsOf: recoveryURL), recoveryBytes)
+        let restored = try await documentStore.load()
+        XCTAssertEqual(restored?.files.first?.url, source)
+        XCTAssertEqual(restored?.files.first?.metadata.firstValue(for: "title"), "Pending title")
+        XCTAssertEqual(restored?.accessBookmarkKeys, ["old-source-access"])
+        let catalogBytes = try Data(contentsOf: catalogURL)
+        let reopened = try await WorkspaceStore(directory: root).load()
+        XCTAssertEqual(reopened, migrated)
+        XCTAssertEqual(try Data(contentsOf: catalogURL), catalogBytes, "Migration must not repeat on every launch.")
+    }
+
+    func testInvalidCatalogMigrationLeavesOriginalCatalogUntouched() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var catalog = WorkspaceCatalog()
+        catalog.schemaVersion = 1
+        catalog.workspaces = [MusicWorkspace(name: "Invalid", directory: URL(string: "https://example.com/music")!)]
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        let bytes = try encoder.encode(catalog)
+        let url = root.appendingPathComponent("workspaces.json")
+        try bytes.write(to: url)
+        do { _ = try await WorkspaceStore(directory: root).load(); XCTFail("Remote folders cannot become libraries") }
+        catch {}
+        XCTAssertEqual(try Data(contentsOf: url), bytes)
+    }
+
     func testIncrementalScanReadsOnlyHintedFileAndPreservesUnambiguousRename() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -89,16 +165,16 @@ final class WorkspaceTests: XCTestCase {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let store = WorkspaceStore(directory: root)
-        let first = MusicWorkspace(name: "Tagging", kind: .session)
+        let first = MusicWorkspace(name: "Tagging")
         let second = MusicWorkspace(name: "Music", kind: .library, directory: root)
         let file = AudioFile(url: root.appendingPathComponent("test.flac"))
         let document = SessionDocument(createdAt: Date(timeIntervalSince1970: 1_700_000_000),
                                        savedAt: Date(timeIntervalSince1970: 1_700_000_001),
                                        files: [file.sessionRecord()], selectedFileIDs: [file.id],
                                        selectedAlbumKey: "album", accessBookmarkKeys: ["folder-access"])
-        _ = try await store.create(first, document: document)
+        let created = try await store.create(first, document: document)
         _ = try await store.create(second, document: SessionDocument())
-        var renamed = first
+        var renamed = try XCTUnwrap(created.workspaces.first)
         renamed.name = "Album Repair"
         _ = try await store.update(renamed)
         _ = try await store.activate(first.id)
@@ -113,14 +189,19 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(catalog.workspaces.first?.name, "Album Repair")
         XCTAssertEqual(firstDocument, document)
         XCTAssertEqual(secondDocument?.files.count, 0)
+        do {
+            _ = try await reopened.remove(first.id)
+            XCTFail("Switch away before removing an active library when another library exists")
+        } catch {}
         _ = try await reopened.remove(second.id)
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.path))
         let retained = try await secondStore.load()
         XCTAssertNotNil(retained, "Removing a workspace must retain its saved document.")
-        do {
-            _ = try await reopened.remove(first.id)
-            XCTFail("The active workspace must not be removed")
-        } catch {}
+        let empty = try await reopened.remove(first.id)
+        XCTAssertTrue(empty.workspaces.isEmpty)
+        XCTAssertNil(empty.activeWorkspaceID)
+        let retainedFirst = try await firstStore.load()
+        XCTAssertEqual(retainedFirst, document)
     }
 
     func testConcurrentWorkspaceCreationDoesNotLoseEntries() async throws {
@@ -130,7 +211,7 @@ final class WorkspaceTests: XCTestCase {
         try await withThrowingTaskGroup(of: Void.self) { group in
             for index in 0..<12 {
                 group.addTask {
-                    _ = try await store.create(MusicWorkspace(name: "Session \(index)", kind: .session),
+                    _ = try await store.create(MusicWorkspace(name: "Library \(index)"),
                                                document: SessionDocument())
                 }
             }

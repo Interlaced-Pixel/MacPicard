@@ -151,7 +151,7 @@ extension AppModel {
             do { try await flushSession() }
             catch {
                 // Disk moves completed: keep the new paths, never pretend the old locations still exist.
-                errorMessage = "Files moved, but the workspace could not be saved: \(error.localizedDescription)"
+                errorMessage = "Files moved, but the library could not be saved: \(error.localizedDescription)"
                 try? await sessionManager?.saveRecovery(makeSessionDocument())
                 await reloadOperationHistory()
                 return false

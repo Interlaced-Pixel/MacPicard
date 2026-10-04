@@ -21,9 +21,8 @@ final class AppPresentation: ObservableObject {
     @Published var isRegrouping = false
     @Published var isAddingLibrary = false
     @Published var isRelinkingLibrary = false
-    @Published var isNamingSession = false
+    @Published var isNamingLibrary = false
     @Published var isManagingWorkspaces = false
-    @Published var copiesCurrentSession = false
     @Published var showsSidebar = true
     @Published var showsInspector = true
     @Published var searchFocusRequest = 0
@@ -57,9 +56,8 @@ final class AppPresentation: ObservableObject {
         isConfirmingTrackRemoval = true
     }
 
-    func newSession(copying: Bool = false) {
-        copiesCurrentSession = copying
-        isNamingSession = true
+    func newLibrary() {
+        isNamingLibrary = true
     }
 
     func focusSearch() {
@@ -137,12 +135,12 @@ struct LibrarySidebar: View {
                             Text(model.files.isEmpty ? "No albums" : "No matching albums")
                                 .font(.subheadline.weight(.medium))
                             Text(model.files.isEmpty
-                                ? "Add a library or import audio files."
+                                ? "Create a library, open a music folder, or import audio."
                                 : "Try another search or filter.")
                                 .font(.caption)
                                 .multilineTextAlignment(.center)
                             if model.files.isEmpty {
-                                Button("Add Music Library…") { presentation.isAddingLibrary = true }
+                                Button("Open Music Folder…") { presentation.isAddingLibrary = true }
                                     .buttonStyle(.bordered)
                             } else {
                                 Button("Clear Search & Filter") {
@@ -170,37 +168,32 @@ struct LibrarySidebar: View {
     private var workspaceChooser: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
-                Image(systemName: model.activeWorkspace?.kind == .library ? "externaldrive" : "rectangle.stack")
+                Image(systemName: "externaldrive")
                     .foregroundStyle(.tint)
-                Text(model.activeWorkspace?.kind == .library ? "Music Library" : "Session")
+                Text("Music Library")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Menu {
-                    Button("Add Music Library…") { presentation.isAddingLibrary = true }
-                    Button("New Session…") { presentation.newSession() }
-                    Button("Manage Libraries & Sessions…") { presentation.isManagingWorkspaces = true }
+                    Button("New Music Library…") { presentation.newLibrary() }
+                    Button("Open Music Folder…") { presentation.isAddingLibrary = true }
+                    Button("Manage Music Libraries…") { presentation.isManagingWorkspaces = true }
                 } label: { Image(systemName: "plus") }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .help("Add a library or session")
+                .help("Create or open a Music Library")
                 .disabled(model.isBusy)
             }
             Menu {
                 Section("Libraries") {
-                    ForEach(model.workspaces.filter { $0.kind == .library }) { workspace in
-                        workspaceButton(workspace)
-                    }
-                }
-                Section("Sessions") {
-                    ForEach(model.workspaces.filter { $0.kind == .session }) { workspace in
+                    ForEach(model.workspaces) { workspace in
                         workspaceButton(workspace)
                     }
                 }
                 Divider()
-                Button("Manage Libraries & Sessions…") { presentation.isManagingWorkspaces = true }
+                Button("Manage Music Libraries…") { presentation.isManagingWorkspaces = true }
             } label: {
-                Text(model.activeWorkspace?.name ?? "Choose a Workspace")
+                Text(model.activeWorkspace?.name ?? "Choose a Music Library")
                     .font(.headline)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -384,27 +377,27 @@ private struct AlbumBrowserRow: View {
     }
 }
 
-struct NewSessionView: View {
+struct NewMusicLibraryView: View {
     @ObservedObject var model: AppModel
-    let copying: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Label(copying ? "Save Session As" : "New Session", systemImage: "rectangle.stack.badge.plus")
+            Label("New Music Library", systemImage: "externaldrive.badge.plus")
                 .font(.title2.weight(.semibold))
-            Text(copying
-                ? "Save the current files and pending edits in a separate named session."
-                : "A session remembers its files and pending edits. You can return to it at any time.")
+            Text("MacPicard creates a music folder for this library. Imported files are copied and organized there; originals stay unchanged.")
                 .foregroundStyle(.secondary)
-            TextField("Session name", text: $name)
+            TextField("Library name", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { create() }
+            if let error = model.errorMessage {
+                Text(error).font(.caption).foregroundStyle(MusicBrainzTheme.error)
+            }
             HStack {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(copying ? "Save Session" : "Create Session") { create() }
+                Button("Create Library") { create() }
                     .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isBusy)
@@ -416,7 +409,7 @@ struct NewSessionView: View {
 
     private func create() {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        Task { await model.createSession(named: name, copyingCurrent: copying); dismiss() }
+        Task { if await model.createMusicLibrary(named: name) { dismiss() } }
     }
 }
 
@@ -433,7 +426,7 @@ struct WorkspaceManagerView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Libraries & Sessions").font(.title2.weight(.semibold))
+                Text("Music Libraries").font(.title2.weight(.semibold))
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(20)
@@ -442,10 +435,10 @@ struct WorkspaceManagerView: View {
                 List(selection: $selectedID) {
                     ForEach(model.workspaces) { workspace in
                         HStack {
-                            Image(systemName: workspace.kind == .library ? "externaldrive" : "rectangle.stack")
+                            Image(systemName: "externaldrive")
                             VStack(alignment: .leading) {
                                 Text(workspace.name)
-                                Text(workspace.kind == .library ? "Folder Library" : "Session")
+                                Text(workspace.directory?.lastPathComponent ?? "Folder unavailable")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -458,7 +451,7 @@ struct WorkspaceManagerView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     if let workspace = selected {
-                        Text(workspace.kind == .library ? "Music Library" : "Session")
+                        Text("Music Library")
                             .font(.headline)
                         TextField("Name", text: $name).textFieldStyle(.roundedBorder)
                         Button("Rename") { Task { await model.renameWorkspace(workspace, to: name) } }
@@ -487,7 +480,7 @@ struct WorkspaceManagerView: View {
                                 .disabled(workspace.id == model.activeWorkspaceID)
                             Button("Remove…", role: .destructive) { confirmsRemoval = true }
                         }
-                        Text("Removing a workspace leaves all audio files untouched. If it is open, MacPicard switches to another workspace.")
+                        Text("Removing a library keeps its music and saved changes on disk.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -495,8 +488,8 @@ struct WorkspaceManagerView: View {
             }
             Divider()
             HStack {
-                Button("Add Music Library…") { dismiss(); presentation.isAddingLibrary = true }
-                Button("New Session…") { dismiss(); presentation.newSession() }
+                Button("New Music Library…") { dismiss(); presentation.newLibrary() }
+                Button("Open Music Folder…") { dismiss(); presentation.isAddingLibrary = true }
                 Spacer()
             }.padding(16)
         }
@@ -509,10 +502,10 @@ struct WorkspaceManagerView: View {
                 self.selectedID = model.activeWorkspaceID
             }
         }
-        .confirmationDialog("Remove \(selected?.name ?? "workspace")?", isPresented: $confirmsRemoval) {
-            Button("Remove Workspace", role: .destructive) {
+        .confirmationDialog("Remove \(selected?.name ?? "library")?", isPresented: $confirmsRemoval) {
+            Button("Remove Library", role: .destructive) {
                 if let selected { Task { await model.removeWorkspace(selected) } }
             }
-        } message: { Text("Your music stays on disk. The saved workspace document is retained in Application Support.") }
+        } message: { Text("Your music stays on disk. The saved library and recovery documents are kept in Application Support.") }
     }
 }

@@ -134,7 +134,7 @@ extension AppModel {
                 && current.originalMetadata == snapshot.originalMetadata && current.originalArtwork == snapshot.originalArtwork
                 && current.identity == snapshot.identity && current.url == snapshot.url
         }) else {
-            clearEditHistory(); statusMessage = "Undo history reset because the files or workspace changed."; return
+            clearEditHistory(); statusMessage = "Undo history reset because the files or library changed."; return
         }
         let versions = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
         var edited = files

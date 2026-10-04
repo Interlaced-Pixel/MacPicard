@@ -24,7 +24,7 @@ public enum SaveError: Error, LocalizedError, Sendable, Equatable {
         case let .invalidName(message): return "Invalid file name: \(message)"
         case let .moveFailed(path, reason): return "Could not move \(path): \(reason)"
         case let .format(message): return "Audio save failed: \(message)"
-        case let .session(message): return "Session operation failed: \(message)"
+        case let .session(message): return "Saved data operation failed: \(message)"
         case .invalidInterval: return "Autosave interval must be greater than zero."
         }
     }

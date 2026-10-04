@@ -124,7 +124,7 @@ extension AppModel {
             provider = ChromaprintFingerprintProvider(executableURL: executable)
         }
         guard let directory = fingerprintCacheDirectory ?? snapshot?.paths.cacheDirectory.appendingPathComponent("Fingerprints") else {
-            throw FingerprintError.unavailable("The workspace cache directory is unavailable. Restart the app.")
+            throw FingerprintError.unavailable("The library cache directory is unavailable. Restart the app.")
         }
         let client = identify ? try await fingerprintClient() : nil
         return FingerprintScanProcessor(provider: provider, cache: FingerprintCache(directory: directory), version: version, acoustID: client, musicBrainz: musicBrainzClient)

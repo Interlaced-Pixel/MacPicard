@@ -139,8 +139,8 @@ final class BrowserTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("MacPicard-browser-tests-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
         let store = WorkspaceStore(directory: root)
-        let first = MusicWorkspace(name: "Original", kind: .session)
-        let second = MusicWorkspace(name: "Other", kind: .session)
+        let first = MusicWorkspace(name: "Original")
+        let second = MusicWorkspace(name: "Other")
         var file = try audioFile(title: "Before", artist: "Alice", album: "Album", track: "1")
         var metadata = file.metadata
         metadata.setValue("Pending", for: "title")
@@ -188,7 +188,7 @@ final class BrowserTests: XCTestCase {
         let model = AppModel()
         model.runtime = runtime
         model.workspaceStore = WorkspaceStore(directory: catalogDirectory)
-        await model.createSession(named: "Tagging")
+        await model.createMusicLibrary(named: "Tagging")
         await model.addLibrary(directory: music.deletingLastPathComponent())
         await model.libraryScanTask?.value
         XCTAssertNil(model.errorMessage)
