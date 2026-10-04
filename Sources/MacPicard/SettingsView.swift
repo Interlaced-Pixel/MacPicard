@@ -45,7 +45,7 @@ struct SettingsView: View {
                     .textSelection(.enabled)
                 Spacer()
                 if saving { ProgressView().controlSize(.small) }
-                Button("Save") { save() }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).keyboardShortcut(.defaultAction)
+                Button("Save") { save() }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill).keyboardShortcut(.defaultAction)
                     .disabled(model.isBusy || saving || loadingCredentials)
             }.padding(16)
         }
@@ -66,8 +66,8 @@ struct SettingsView: View {
         case .libraries:
             Section("Background monitoring") {
                 Toggle("Enable monitoring for new libraries", isOn: $draft.editing.newLibrariesMonitorAutomatically)
-                Stepper("Check every \(draft.editing.monitoringIntervalSeconds / 60) minutes", value: $draft.editing.monitoringIntervalSeconds, in: 60...3600, step: 60)
-                Text("Each library has its own monitoring switch. Checks wait during playback or other work. Refresh is always available.").font(.caption)
+                Stepper("Fallback check: every \(draft.editing.monitoringIntervalSeconds / 60) minutes", value: $draft.editing.monitoringIntervalSeconds, in: 60...3600, step: 60)
+                Text("Folder changes are checked in the background. Checks wait during playback, pending edits and other work. Refresh checks now; the fallback catches missed notifications.").font(.caption)
                 if model.activeWorkspace?.kind == .library {
                     Text("Current library: \(model.activeWorkspace?.name ?? "")")
                 }

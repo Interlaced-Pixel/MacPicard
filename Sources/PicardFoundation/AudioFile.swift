@@ -50,7 +50,12 @@ public struct AudioFileIdentity: Codable, Sendable, Equatable {
         let resourceValues: URLResourceValues
 
         do {
-            resourceValues = try url.resourceValues(forKeys: [
+            // URL retains resource-value caches across reads. Reusing a model's
+            // URL after an external replacement must query the filesystem, not
+            // the size/date/inode from its previous import.
+            var freshURL = url
+            freshURL.removeAllCachedResourceValues()
+            resourceValues = try freshURL.resourceValues(forKeys: [
                 .fileResourceIdentifierKey,
                 .fileSizeKey,
                 .contentModificationDateKey,
@@ -135,6 +140,17 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
 
     public var isModified: Bool {
         !metadataDiff.isEmpty || artwork != originalArtwork
+    }
+
+    /// Revision comparison across persisted documents. Date representation may
+    /// differ by an ULP between JSON epochs, but no filesystem-scale change or
+    /// edit is accepted. Equatable keeps its exact in-memory semantics.
+    public func matchesPersistedRevision(_ other: AudioFile?) -> Bool {
+        guard let other, id == other.id, url == other.url, state == other.state,
+              metadata == other.metadata, originalMetadata == other.originalMetadata,
+              artwork == other.artwork, originalArtwork == other.originalArtwork,
+              lastError == other.lastError, durationInMilliseconds == other.durationInMilliseconds else { return false }
+        return (identity == nil && other.identity == nil) || identity?.matches(other.identity) == true
     }
 
     public mutating func beginLoading() throws {

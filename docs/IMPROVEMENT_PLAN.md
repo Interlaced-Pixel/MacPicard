@@ -1,7 +1,7 @@
 # MacPicard end-to-end improvement plan
 
 Date: 2026-10-03  
-Status: Phases 1–8 implemented; phases 7–8 interactive acceptance pending. Phases 9–10 remain planned. See IMPROVEMENT_PROGRESS.md for evidence and outstanding gates.
+Status: Phases 1–9 implemented. Phase 9's targeted filesystem, persistence and desktop workflows are verified; broader phases 7–8 desktop/accessibility acceptance and phase 10 production validation remain open. See IMPROVEMENT_PROGRESS.md for evidence and outstanding gates.
 Baseline: Current native Swift 6 app, including library-wide matching and organization
 
 ## 1. Outcome and scope
@@ -188,6 +188,8 @@ Work:
 Acceptance: scripts operate on each track's own metadata; filename parsing stages correct values without writes; profile switching preserves unrelated preferences; whole-library organization includes all indexed files regardless of selection/filter; partial save failures leave failed edits pending and never auto-organize failed files.
 
 ### Phase 9 — Passive monitoring, scheduling, and recovery
+
+Implemented 2026-10-04. Targeted acceptance is recorded in IMPROVEMENT_PROGRESS.md. The cross-volume/native Trash/live-service matrix and 10,000-file, 100-ms performance gate remain phase-10 release checks; they are not inferred from smaller tests.
 
 Work:
 

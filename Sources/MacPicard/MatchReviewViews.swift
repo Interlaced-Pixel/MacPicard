@@ -92,13 +92,13 @@ struct LookupView: View {
                     if let review = model.matchReview, !model.canApplyReleaseReview, !review.assignments.isEmpty,
                         !model.isBusy
                     {
-                        Text("Files changed. Reload this release before applying.").foregroundStyle(.orange)
+                        Text("Files changed. Reload this release before applying.").foregroundStyle(MusicBrainzTheme.orange)
                     }
                 }.font(.caption).lineLimit(3).textSelection(.enabled)
                 Spacer()
                 Button("Apply to \(model.matchReview?.assignments.count ?? 0) Files") {
                     if model.applySelectedRelease() { if !embedded { finish() } }
-                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
                     .disabled(!model.canApplyReleaseReview)
             }.controlSize(.small).padding(.horizontal, 12).padding(.vertical, 8)

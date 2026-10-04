@@ -303,7 +303,7 @@ struct LibrarySidebar: View {
                 if model.hasUnsavedChanges {
                     Text("\(model.files.count(where: \.isModified)) pending edits")
                         .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(MusicBrainzTheme.orange)
                 }
             }
             Spacer()
@@ -405,7 +405,7 @@ struct NewSessionView: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(copying ? "Save Session" : "Create Session") { create() }
-                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isBusy)
             }
@@ -471,7 +471,7 @@ struct WorkspaceManagerView: View {
                             }
                         }
                         if workspace.id == model.activeWorkspaceID && workspace.kind == .library {
-                            Toggle("Check for changes every \(model.configuration.editing.monitoringIntervalSeconds / 60) minutes", isOn: Binding(
+                            Toggle("Monitor Folder Changes", isOn: Binding(
                                 get: { model.activeWorkspace?.automaticallyRefreshes ?? false },
                                 set: { value in Task { await model.setAutomaticRefresh(value) } }
                             ))
@@ -483,7 +483,7 @@ struct WorkspaceManagerView: View {
                         HStack {
                             Button("Open") {
                                 Task { await model.switchWorkspace(workspace.id); dismiss() }
-                            }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                            }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                                 .disabled(workspace.id == model.activeWorkspaceID)
                             Button("Remove…", role: .destructive) { confirmsRemoval = true }
                         }

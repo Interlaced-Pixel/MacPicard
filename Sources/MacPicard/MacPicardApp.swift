@@ -26,15 +26,16 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
-        if model.isExecutingOrganization || model.isExportingArtwork {
+        if model.isExecutingOrganization || model.isExportingArtwork || model.isWritingAudio {
             let alert = NSAlert()
-            alert.messageText = model.isExportingArtwork ? "Artwork is still being exported." : "Files are still being organized."
+            alert.messageText = model.isExportingArtwork ? "Artwork is still being exported." : "Files are still being written or organized."
             alert.informativeText = "Wait for the file operation to finish before quitting so its results can be safely saved."
             alert.addButton(withTitle: "Keep Open")
             alert.runModal()
             return .terminateCancel
         }
         model.playback.stop(clearQueue: true)
+        model.stopLibraryMonitoring()
         model.cancelFingerprintOperation()
         model.cancelLibraryMatch()
         terminationInProgress = true
@@ -107,7 +108,7 @@ struct MacPicardApp: App {
         .commands { MacPicardCommands(model: model, presentation: presentation) }
         Window("Collection Tools", id: "collection-tools") {
             CollectionToolsView(model: model, presentation: presentation)
-                .tint(.primary).accentColor(MusicBrainzTheme.purple)
+                .tint(MusicBrainzTheme.purple).accentColor(MusicBrainzTheme.purple)
                 .preferredColorScheme(model.configuration.editing.appearance == "dark" ? .dark : model.configuration.editing.appearance == "light" ? .light : nil)
         }.defaultSize(width: 1100, height: 780)
     }
@@ -132,7 +133,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 1_180, minHeight: 760)
         .background(GlassBackdrop())
-        .tint(.primary)
+        .tint(MusicBrainzTheme.purple)
         .accentColor(MusicBrainzTheme.purple)
         .preferredColorScheme(model.configuration.editing.appearance == "dark" ? .dark : model.configuration.editing.appearance == "light" ? .light : nil)
         .onReceive(NotificationCenter.default.publisher(for: NSText.didChangeNotification)) { _ in model.editHistoryRevision += 1 }
@@ -274,7 +275,7 @@ private struct StartupErrorView: View {
         VStack(spacing: 14) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 38))
-                .foregroundStyle(.orange)
+                .foregroundStyle(MusicBrainzTheme.orange)
             Text("MacPicard could not start")
                 .font(.title2.weight(.semibold))
             Text(message)

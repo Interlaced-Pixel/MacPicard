@@ -7,6 +7,30 @@ import XCTest
 @testable import MacPicard
 
 final class CompactInterfaceTests: XCTestCase {
+    @MainActor func testAccentAndButtonContrastInBothAppearances() throws {
+        func luminance(_ color: NSColor) throws -> Double {
+            let rgb = try XCTUnwrap(color.usingColorSpace(.sRGB))
+            func linear(_ component: CGFloat) -> Double {
+                let value = Double(component)
+                return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) + 0.0722 * linear(rgb.blueComponent)
+        }
+        for name in [NSAppearance.Name.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            var colors: [NSColor] = [], surface: NSColor = .white
+            appearance.performAsCurrentDrawingAppearance {
+                colors = [MusicBrainzTheme.accentColor, MusicBrainzTheme.warningColor, MusicBrainzTheme.successColor, MusicBrainzTheme.errorColor].map { $0.usingColorSpace(.sRGB)! }
+                surface = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)!
+            }
+            for color in colors {
+                let foreground = try luminance(color), background = try luminance(surface)
+                XCTAssertGreaterThanOrEqual((max(foreground, background) + 0.05) / (min(foreground, background) + 0.05), 4.5, "\(name)")
+            }
+        }
+        XCTAssertGreaterThanOrEqual(1.05 / (try luminance(MusicBrainzTheme.buttonColor) + 0.05), 4.5)
+    }
+
     @MainActor func testCompactComparisonAndWorkspaceRenderWithoutChangingFiles() async throws {
         let releaseID = "11111111-1111-1111-1111-111111111111"
         func title(_ number: Int) -> String {
@@ -91,7 +115,7 @@ final class CompactInterfaceTests: XCTestCase {
             let view = NSHostingView(
                 rootView: CompactMatchReviewPane(
                     model: model, review: review, focusedFileID: original[0].id, showsReleaseTracks: true
-                ).tint(.primary).accentColor(MusicBrainzTheme.purple).preferredColorScheme(dark ? .dark : .light))
+                ).tint(MusicBrainzTheme.purple).accentColor(MusicBrainzTheme.purple).preferredColorScheme(dark ? .dark : .light))
             let window = NSWindow(
                 contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered,
                 defer: false)

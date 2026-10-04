@@ -58,7 +58,7 @@ extension AppModel {
     }
 
     var workspaceFilesCount: Int { files.count }
-    var isBusy: Bool { isWorking || isExportingArtwork || isSwitchingWorkspace || isLoading || isPreparingOrganization || fingerprintJobIsScheduled }
+    var isBusy: Bool { isWorking || isExportingArtwork || isSwitchingWorkspace || isLoading || isPreparingOrganization || fingerprintJobIsScheduled || isCommittingLibraryScan }
     var canEditSelection: Bool {
         !isBusy && !selectedFiles.isEmpty && selectedFiles.allSatisfy {
             [.ready, .changed, .saved].contains($0.state)
@@ -176,6 +176,7 @@ extension AppModel {
         // Validate once before replacing the active workspace, then reuse that document.
         let loaded = try await manager.loadBestAvailable()
         let catalog = try await workspaceStore.activate(id)
+        stopLibraryMonitoring()
         clearEditHistory()
         playback.stop(clearQueue: true)
         workspaceAccess = nil
@@ -185,6 +186,8 @@ extension AppModel {
         activeWorkspaceID = id
         monitoringMessage = nil
         sessionManager = manager
+        operationHistoryDirectory = await workspaceStore.operationDirectory(for: id)
+        await reloadOperationHistory(markInterrupted: true)
         sessionCreatedAt = Date()
         resetWorkspaceSelection()
         files.removeAll()
@@ -192,6 +195,8 @@ extension AppModel {
         errorMessage = nil
         restoreSession(loaded)
         await restoreWorkspaceAccess()
+        await restoreCommittedOperationResults()
+        restartLibraryMonitoring()
         if activeWorkspace?.kind == .library {
             libraryScanTask?.cancel()
             activeLibraryScan?.cancel()
@@ -262,6 +267,7 @@ extension AppModel {
             workspace.directory = directory
             workspaces = try await workspaceStore.update(workspace).workspaces
             workspaceAccess = try? await runtime.bookmarks.resolve(key: "library-\(workspace.id)")
+            restartLibraryMonitoring()
             await refreshLibrary()
         } catch { present(error) }
     }
@@ -300,16 +306,27 @@ extension AppModel {
     func setAutomaticRefresh(_ enabled: Bool) async {
         guard let workspaceStore, var workspace = activeWorkspace, !isBusy else { return }
         workspace.automaticallyRefreshes = enabled
-        do { workspaces = try await workspaceStore.update(workspace).workspaces }
+        do { workspaces = try await workspaceStore.update(workspace).workspaces; restartLibraryMonitoring() }
         catch { present(error) }
     }
 
-    func refreshLibrary(automatic: Bool = false) async {
+    func refreshLibrary(automatic: Bool = false, affectedPaths: Set<URL>? = nil) async {
         guard !isBusy, let workspace = activeWorkspace, workspace.kind == .library,
               let directory = workspaceAccess?.url ?? workspace.directory else { return }
         // Monitoring stays out of the foreground while the user is listening
         // or performing another operation. Manual refresh remains explicit.
-        if automatic && playback.transportIsActive { return }
+        if automatic && monitoringMustWait { return }
+        if activeLibraryScanID != nil {
+            if automatic { return }
+            // A deliberate refresh preempts a quiet scan; its stale completion
+            // is discarded by the scan ID as well as cancellation.
+            activeLibraryScan?.cancel()
+        }
+        let scanID = UUID()
+        activeLibraryScanID = scanID
+        cancelledLibraryScanID = nil
+        var scanRecord = automatic ? nil : FileOperationRecord(workspaceID: workspace.id, kind: .scan,
+            items: files.map { FileOperationItem(file: $0) })
         if !automatic {
             isWorking = true
             isScanningLibrary = true
@@ -322,13 +339,25 @@ extension AppModel {
                 isWorking = false
                 isScanningLibrary = false
             }
-            activeLibraryScan = nil
+            if activeLibraryScanID == scanID { activeLibraryScan = nil; activeLibraryScanID = nil }
+            if activeLibraryScanID == nil { isCommittingLibraryScan = false }
             if !automatic { progress = nil }
         }
         do {
+            if let scanRecord { try await persistOperation(scanRecord) }
+            // Refresh a lost/stale security scope before reading the library.
+            if (workspaceAccess == nil || !FileManager.default.isReadableFile(atPath: directory.path)), let runtime {
+                workspaceAccess = try? await runtime.bookmarks.resolve(key: "library-\(workspace.id)")
+            }
+            let directory = workspaceAccess?.url ?? directory
+            if directory != workspace.directory, let previous = workspace.directory {
+                rebaseLibraryFiles(from: previous, to: directory)
+                libraryMonitor = nil
+            }
             let existing = files
             let scanner = libraryScanner
             let workspaceID = workspace.id
+            guard cancelledLibraryScanID != scanID else { throw CancellationError() }
             let scan: Task<LibraryScanResult, Error>
             if automatic {
                 scan = Task(priority: .utility) {
@@ -336,6 +365,7 @@ extension AppModel {
                         directory: directory,
                         existing: existing,
                         excludingRelativePaths: workspace.excludedRelativePaths,
+                        affectedPaths: affectedPaths,
                         progress: nil
                     )
                 }
@@ -354,36 +384,69 @@ extension AppModel {
             }
             activeLibraryScan = scan
             let report = try await scan.value
-            guard activeWorkspaceID == workspaceID else { return }
-            let changed = report.addedCount > 0 || report.updatedCount > 0 || report.missingCount > 0
-                || !report.conflicts.isEmpty || !report.failures.isEmpty
-            // Most monitoring passes are no-ops. Do not publish the same graph,
-            // touch the status bar, or autosave in that case.
-            if automatic && !changed { return }
-            files = report.files
-            selectedFileIDs.formIntersection(Set(files.map(\.id)))
-            var updated = workspace
-            updated.directory = directory
-            updated.lastScannedAt = Date()
-            if let workspaceStore { workspaces = try await workspaceStore.update(updated).workspaces }
-            if !automatic {
-                statusMessage = "\(files.count) files · \(report.addedCount) added · \(report.updatedCount) refreshed"
-                if report.missingCount > 0 { statusMessage += " · \(report.missingCount) unavailable" }
+            guard cancelledLibraryScanID != scanID else { throw CancellationError() }
+            try Task.checkCancellation()
+            guard activeWorkspaceID == workspaceID, activeLibraryScanID == scanID else { return }
+            installLibraryMonitorIfNeeded()
+            // Do not commit a quiet pass while a user operation is in flight.
+            if automatic && monitoringMustWait {
+                enqueueLibraryChanges(.init(paths: affectedPaths ?? [], requiresFullScan: affectedPaths == nil))
+                return
             }
+            let merged = report.merging(baseline: existing, current: files)
             let warnings = report.failures + report.conflicts.map {
                 "\($0) changed on disk; your pending edits were preserved."
             }
-            if automatic {
-                monitoringMessage = warnings.isEmpty ? nil : warnings.prefix(3).joined(separator: "\n")
-            } else {
-                errorMessage = warnings.isEmpty ? nil : warnings.prefix(3).joined(separator: "\n")
+            let warning = warnings.isEmpty ? nil : warnings.prefix(3).joined(separator: "\n")
+            if automatic && warning != monitoringMessage { monitoringMessage = warning }
+            let changed = merged != files
+            // Most monitoring passes are no-ops. Do not publish the same graph,
+            // touch the status bar, or autosave in that case.
+            if automatic && !changed { return }
+            isCommittingLibraryScan = true
+            if changed {
+                files = merged
+                scanPublicationCount += 1
+                selectedFileIDs.formIntersection(Set(files.map(\.id)))
             }
-            await saveSession()
+            var updated = activeWorkspace ?? workspace
+            updated.directory = directory
+            updated.lastScannedAt = Date()
+            if let workspaceStore { workspaces = try await workspaceStore.update(updated).workspaces }
+            if !automatic { errorMessage = warning }
+            try await flushSession()
+            if var record = scanRecord {
+                record.items = merged.map { file in
+                    var item = FileOperationItem(file: file)
+                    item.state = [.failed, .removed].contains(file.state) ? .failed : .completed
+                    item.message = file.lastError ?? (file.state == .removed ? "File unavailable." : "")
+                    return item
+                }
+                record.state = record.items.contains { $0.state == .failed } ? .failed : .completed
+                record.finishedAt = Date()
+                try await persistOperation(record)
+                scanRecord = record
+                statusMessage = "\(files.count) files · \(report.addedCount) added · \(report.updatedCount) refreshed"
+                if report.missingCount > 0 { statusMessage += " · \(report.missingCount) unavailable" }
+            }
         } catch is CancellationError {
+            guard activeWorkspaceID == workspace.id, activeLibraryScanID == scanID else { return }
+            if var record = scanRecord {
+                record.state = .interrupted; record.message = "Refresh cancelled. Refresh Again starts a fresh read-only check."
+                try? await persistOperation(record)
+            }
             if !automatic { statusMessage = "Library refresh cancelled." }
         } catch {
+            guard activeWorkspaceID == workspace.id, activeLibraryScanID == scanID else { return }
+            if var record = scanRecord {
+                record.state = .failed; record.message = error.localizedDescription
+                try? await persistOperation(record)
+            }
             if automatic {
-                monitoringMessage = "Monitoring needs attention: \(error.localizedDescription)"
+                let message = "Library unavailable. Reconnect its folder in the library menu. \(error.localizedDescription)"
+                if monitoringMessage != message { monitoringMessage = message }
+                workspaceAccess = nil
+                libraryMonitor = nil
             } else {
                 present(error)
                 statusMessage = "Library unavailable. Reconnect its folder and refresh."
@@ -391,23 +454,88 @@ extension AppModel {
         }
     }
 
-    func cancelLibraryRefresh() { activeLibraryScan?.cancel() }
+    func cancelLibraryRefresh() {
+        cancelledLibraryScanID = activeLibraryScanID
+        activeLibraryScan?.cancel()
+    }
 
     private func startLibraryRefresh() {
         refreshTask?.cancel()
         refreshTask = Task(priority: .utility) { @MainActor [weak self] in
             while !Task.isCancelled {
-                let seconds = self?.configuration.editing.monitoringIntervalSeconds ?? 300
+                let seconds = max(60, self?.configuration.editing.monitoringIntervalSeconds ?? 300)
                 do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
                 guard let self, !Task.isCancelled else { return }
                 if self.activeWorkspace?.automaticallyRefreshes == true {
-                    await self.refreshLibrary(automatic: true)
+                    self.enqueueLibraryChanges(.init(paths: [], requiresFullScan: true))
                 }
             }
         }
     }
 
-    func restartLibraryMonitoring() { startLibraryRefresh() }
+    var monitoringMustWait: Bool {
+        isBusy || playback.transportIsActive || files.contains(where: \.isModified)
+            || matchReview != nil || organizationReview != nil
+    }
+
+    func stopLibraryMonitoring() {
+        monitoringGeneration = UUID()
+        libraryMonitor = nil
+        refreshTask?.cancel()
+        monitoringDebounceTask?.cancel()
+        libraryScanTask?.cancel()
+        activeLibraryScan?.cancel()
+        activeLibraryScan = nil
+        activeLibraryScanID = nil
+        pendingLibraryPaths.removeAll()
+        monitoringNeedsFullScan = false
+    }
+
+    func restartLibraryMonitoring() {
+        stopLibraryMonitoring()
+        startLibraryRefresh()
+        installLibraryMonitorIfNeeded()
+    }
+
+    private func installLibraryMonitorIfNeeded() {
+        guard libraryMonitor == nil else { return }
+        guard let workspace = activeWorkspace, workspace.kind == .library, workspace.automaticallyRefreshes,
+              let directory = libraryDirectory else { return }
+        let generation = monitoringGeneration
+        do {
+            libraryMonitor = try LibraryDirectoryMonitor(directory: directory) { [weak self] hint in
+                Task { @MainActor [weak self] in
+                    guard let self, self.monitoringGeneration == generation,
+                          self.activeWorkspaceID == workspace.id else { return }
+                    self.enqueueLibraryChanges(hint)
+                }
+            }
+        } catch { monitoringMessage = error.localizedDescription }
+    }
+
+    func enqueueLibraryChanges(_ hint: LibraryChangeHint) {
+        guard activeWorkspace?.automaticallyRefreshes == true else { return }
+        pendingLibraryPaths.formUnion(hint.paths)
+        monitoringNeedsFullScan = monitoringNeedsFullScan || hint.requiresFullScan || pendingLibraryPaths.count > 512
+        if monitoringNeedsFullScan { pendingLibraryPaths.removeAll() }
+        monitoringDebounceTask?.cancel()
+        let generation = monitoringGeneration
+        monitoringDebounceTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            while !Task.isCancelled {
+                guard let self, self.monitoringGeneration == generation else { return }
+                if self.monitoringMustWait || self.activeLibraryScanID != nil {
+                    do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                    continue
+                }
+                let paths = self.monitoringNeedsFullScan ? nil : self.pendingLibraryPaths
+                self.pendingLibraryPaths.removeAll()
+                self.monitoringNeedsFullScan = false
+                await self.refreshLibrary(automatic: true, affectedPaths: paths)
+                return
+            }
+        }
+    }
 
     func rememberImportAccess(_ urls: [URL]) async throws {
         guard let runtime else { return }

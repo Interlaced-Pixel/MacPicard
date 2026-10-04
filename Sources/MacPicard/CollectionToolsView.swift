@@ -19,7 +19,7 @@ struct CollectionToolsView: View {
             Divider()
             if let error = model.workflowError {
                 HStack {
-                    Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    Text(error).font(.caption).foregroundStyle(MusicBrainzTheme.error).textSelection(.enabled)
                     Button("Reveal Data") { if let store = model.workflowStore { NSWorkspace.shared.activateFileViewerSelecting([store.url]) } }
                     Button("Retry Load") { Task { await model.reloadWorkflows() } }.disabled(model.isBusy)
                 }.padding(12)
@@ -72,7 +72,7 @@ private struct WorkflowReviewView: View {
                                     .disabled(row.error != nil || applied || model.isBusy)
                                 Spacer(); Text(row.error == nil ? (row.changes.isEmpty ? "Unchanged" : "\(row.changes.count) fields") : "Blocked").font(.caption).foregroundStyle(.secondary)
                             }
-                            if let error = row.error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                            if let error = row.error { Text(error).font(.caption).foregroundStyle(MusicBrainzTheme.error).textSelection(.enabled) }
                             ForEach(row.changes) { change in
                                 Text("\(change.key): \(change.originalDeleted ? "Deleted" : change.originalValues.joined(separator: " · ")) → \(change.currentDeleted ? "Delete" : change.currentValues.joined(separator: " · "))")
                                     .font(.caption.monospaced()).textSelection(.enabled)
@@ -83,14 +83,14 @@ private struct WorkflowReviewView: View {
                 }
             }
             if review.blockedCount > 0 { Toggle("Skip \(review.blockedCount) files with errors", isOn: $acknowledgesBlocked).font(.caption) }
-            if let error { Text(error).foregroundStyle(.red).font(.caption) }
+            if let error { Text(error).foregroundStyle(MusicBrainzTheme.error).font(.caption) }
             HStack {
                 Text(applied ? "Changes applied. Undo reverts this batch; Save writes it to audio." : "Preview does not write audio. Skipped files stay unchanged.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button(applied ? "Applied" : "Apply to \(eligibleCount) Files") {
                     do { try model.applyWorkflowReview(review, excluded: excluded, confirmed: true); applied = true }
                     catch { self.error = error.localizedDescription }
-                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).disabled(applied || model.isBusy || eligibleCount == 0 || (review.blockedCount > 0 && !acknowledgesBlocked))
+                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill).disabled(applied || model.isBusy || eligibleCount == 0 || (review.blockedCount > 0 && !acknowledgesBlocked))
             }
         }
     }
@@ -162,8 +162,8 @@ struct ScriptStudioView: View {
                     Text("\(namingReview.rows.count) paths · read-only; no files move here").font(.caption)
                     ScrollView { LazyVStack(alignment: .leading) { ForEach(namingReview.rows) { row in Text("\(row.source.lastPathComponent) → \(row.destination?.path ?? row.message)").font(.caption.monospaced()).textSelection(.enabled) } } }
                 }
-                if let error { Text(error).foregroundStyle(.red).font(.caption).textSelection(.enabled) }
-                if let error = model.workflowError { Text(error).foregroundStyle(.red).font(.caption) }
+                if let error { Text(error).foregroundStyle(MusicBrainzTheme.error).font(.caption).textSelection(.enabled) }
+                if let error = model.workflowError { Text(error).foregroundStyle(MusicBrainzTheme.error).font(.caption) }
                 if busy { HStack { ProgressView().controlSize(.small); Button("Stop") { task?.cancel() } } }
                 Spacer(minLength: 0)
             }.padding(18).frame(minWidth: 580)
@@ -229,7 +229,7 @@ struct FilenameTagsView: View {
                 task = Task { do { review = try await model.previewWorkflow(scope: scope, scripts: [], pattern: pattern, mappings: mappings) } catch { if !Task.isCancelled { self.error = error.localizedDescription } }; busy = false }
             }.disabled(busy || model.isBusy)
             if busy { HStack { ProgressView().controlSize(.small); Button("Stop") { task?.cancel() } } }
-            if let error { Text(error).foregroundStyle(.red).font(.caption) }
+            if let error { Text(error).foregroundStyle(MusicBrainzTheme.error).font(.caption) }
             if let review { WorkflowReviewView(model: model, review: review).id(review.id) }
             Spacer(minLength: 0)
         }.padding(20)
@@ -313,8 +313,8 @@ struct WorkflowProfilesView: View {
                         }
                         Button("Apply Profile") { let value = draft.profiles[index]; run { try await model.activateProfile(value) } }.buttonStyle(.borderedProminent)
                     } else { ContentUnavailableView("Capture or import a profile", systemImage: "slider.horizontal.3") }
-                    if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-                    if let error = model.workflowError { Text(error).font(.caption).foregroundStyle(.red) }
+                    if let error { Text(error).font(.caption).foregroundStyle(MusicBrainzTheme.error).textSelection(.enabled) }
+                    if let error = model.workflowError { Text(error).font(.caption).foregroundStyle(MusicBrainzTheme.error) }
                 }.padding(20)
             }
         }.disabled(model.isBusy)
@@ -380,7 +380,7 @@ struct CollectionWorkflowView: View {
                             } } }.frame(maxHeight: 180)
                             HStack {
                                 Button("Cancel Review") { reviewingSave = false }
-                                Button("Write Tags to \(saveReview.count) Files") { save() }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).disabled(model.isBusy)
+                                Button("Write Tags to \(saveReview.count) Files") { save() }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill).disabled(model.isBusy)
                             }
                         }
                         if model.isWorking { HStack { ProgressView().controlSize(.small); Button("Stop after current file") { job?.cancel() } } }
@@ -412,7 +412,7 @@ struct CollectionWorkflowView: View {
                         }.disabled(model.isBusy)
                     }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+                if let error { Text(error).foregroundStyle(MusicBrainzTheme.error).textSelection(.enabled) }
             }.padding(16)
         }.onDisappear { job?.cancel() }
         .onChange(of: scope) { _, _ in reviewingSave = false; savedScopeIDs = [] }

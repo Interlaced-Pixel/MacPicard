@@ -50,9 +50,9 @@ struct SidebarTrackRow: View {
 
     private var stateColor: Color {
         switch file.state {
-        case .changed: return .orange
-        case .saved: return .green
-        case .failed, .unsupported: return .red
+        case .changed: return MusicBrainzTheme.orange
+        case .saved: return MusicBrainzTheme.success
+        case .failed, .unsupported: return MusicBrainzTheme.error
         default: return .secondary
         }
     }
@@ -181,7 +181,7 @@ private struct ActionBar: View {
                         if model.selectedModifiedCount > 0 {
                             Text("\(model.selectedModifiedCount) pending save")
                                 .font(.caption2)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(MusicBrainzTheme.orange)
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -216,11 +216,11 @@ private struct WorkspaceStatusBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if model.isBusy {
+            if model.isBusy && !model.isCommittingLibraryScan {
                 ProgressView().controlSize(.mini)
             } else {
                 Image(systemName: model.errorMessage == nil ? "checkmark.circle" : "exclamationmark.triangle")
-                    .foregroundStyle(model.errorMessage == nil ? Color.secondary : .orange)
+                    .foregroundStyle(model.errorMessage == nil ? Color.secondary : MusicBrainzTheme.orange)
             }
             Text(model.errorMessage ?? model.statusMessage)
                 .lineLimit(2)
@@ -229,7 +229,7 @@ private struct WorkspaceStatusBar: View {
             Button { presentation.isShowingActivity = true } label: { Label("Activity", systemImage: "list.bullet.rectangle") }.buttonStyle(.borderless)
             if let message = model.monitoringMessage {
                 Label("Monitor", systemImage: "exclamationmark.circle")
-                    .foregroundStyle(.orange).help(message)
+                    .foregroundStyle(MusicBrainzTheme.orange).help(message)
             }
             if model.isScanningLibrary {
                 Button("Cancel") { model.cancelLibraryRefresh() }
@@ -272,7 +272,7 @@ private struct GlassActionButton: View {
                 Button(action: action) {
                     buttonLabel
                 }
-                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
             } else {
                 Button(action: action) {
                     buttonLabel
@@ -301,7 +301,7 @@ private struct EmptyLibraryView: View {
             Text("Add a music folder as a library, or import files into this session.")
         } actions: {
             Button("Add Music Library…") { addLibraryAction() }
-                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
             Button("Import Audio…") { importAction() }.buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -357,7 +357,7 @@ private struct AlbumHeader: View {
                     Label("\(model.visibleFiles.count) tracks", systemImage: "music.note")
                     if model.hasUnsavedChanges {
                         Label("Unsaved changes", systemImage: "pencil.circle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(MusicBrainzTheme.orange)
                     }
                 }
                 .font(.caption)
@@ -476,7 +476,7 @@ private struct TrackDetailRow: View {
                     if file.isModified {
                         Image(systemName: "pencil.circle.fill")
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(MusicBrainzTheme.orange)
                             .accessibilityLabel("Unsaved changes")
                     }
                 }
@@ -517,10 +517,10 @@ private struct TrackStateBadge: View {
 
     private var tint: Color {
         switch state {
-        case .changed: return .orange
-        case .saved: return .green
-        case .failed, .unsupported: return .red
-        case .saving, .loading: return .blue
+        case .changed: return MusicBrainzTheme.orange
+        case .saved: return MusicBrainzTheme.success
+        case .failed, .unsupported: return MusicBrainzTheme.error
+        case .saving, .loading: return MusicBrainzTheme.purple
         default: return .secondary
         }
     }
@@ -714,7 +714,7 @@ struct ScriptView: View {
                 Button("Preview") { model.runScript(applying: false) }
                     .disabled(model.selectedFiles.isEmpty)
                 Button("Apply") { model.runScript(applying: true) }
-                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                     .disabled(model.selectedFiles.isEmpty)
             }
             .padding(14)

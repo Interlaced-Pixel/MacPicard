@@ -108,6 +108,8 @@ public enum SessionMigrator {
 public actor SessionStore {
     private let sessionURL: URL
     private let recoveryURL: URL
+    private var savedContent: [URL: Data] = [:]
+    public private(set) var writeCount = 0
 
     public init(sessionURL: URL, recoveryURL: URL) {
         self.sessionURL = sessionURL
@@ -131,12 +133,14 @@ public actor SessionStore {
     }
 
     public func removeRecovery() throws {
+        savedContent.removeValue(forKey: recoveryURL)
         guard FileManager.default.fileExists(atPath: recoveryURL.path) else {
             return
         }
 
         do {
             try FileManager.default.removeItem(at: recoveryURL)
+            savedContent.removeValue(forKey: recoveryURL)
         } catch {
             throw PicardError.sessionWrite(path: recoveryURL.path, reason: error.localizedDescription)
         }
@@ -169,12 +173,29 @@ public actor SessionStore {
         }
 
         do {
+            var normalized = document
+            normalized.savedAt = Date(timeIntervalSince1970: 0)
+            let content = try JSONEncoder.makeSessionEncoder().encode(normalized)
+            if savedContent[url] == nil, var previous = try? load(from: url) {
+                previous.savedAt = normalized.savedAt
+                savedContent[url] = try JSONEncoder.makeSessionEncoder().encode(previous)
+            }
+            if savedContent[url] == content, FileManager.default.fileExists(atPath: url.path) { return }
+            if url == recoveryURL {
+                if savedContent[sessionURL] == nil, var primary = try? load(from: sessionURL) {
+                    primary.savedAt = normalized.savedAt
+                    savedContent[sessionURL] = try JSONEncoder.makeSessionEncoder().encode(primary)
+                }
+                if savedContent[sessionURL] == content, FileManager.default.fileExists(atPath: sessionURL.path) { return }
+            }
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
             let data = try JSONEncoder.makeSessionEncoder().encode(document)
             try data.write(to: url, options: [.atomic])
+            savedContent[url] = content
+            writeCount += 1
         } catch let error as PicardError {
             throw error
         } catch {

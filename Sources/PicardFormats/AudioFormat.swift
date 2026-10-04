@@ -265,12 +265,18 @@ public actor FormatEngine {
         let directory = url.deletingLastPathComponent()
         let temporaryName = ".\(url.deletingPathExtension().lastPathComponent).\(UUID().uuidString).\(url.pathExtension)"
         let temporaryURL = directory.appendingPathComponent(temporaryName)
+        let originalIdentity = try AudioFileIdentity.capture(url: url)
         let originalDate = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         var targetURL = url
 
         do {
             try fileManager.copyItem(at: url, to: temporaryURL)
             let result = try registry.handler(for: format).write(url: temporaryURL, metadata: metadata, artwork: artwork)
+            guard try AudioFileIdentity.capture(url: url).matches(originalIdentity) else {
+                throw PicardError.fileSystem(path: url.path, operation: "commit audio tags",
+                    reason: "The source changed while tags were being written. It was not overwritten.")
+            }
+            try Task.checkCancellation()
             _ = try fileManager.replaceItemAt(url, withItemAt: temporaryURL)
 
             if options.preserveModificationDate, let originalDate {

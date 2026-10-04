@@ -3,6 +3,20 @@ import XCTest
 @testable import PicardFoundation
 
 final class PicardFoundationTests: XCTestCase {
+    func testIdentityDoesNotReuseCachedSizeOrInodeAfterTailChange() throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("identity.bin")
+        let initial = Data(repeating: 7, count: 16_384)
+        try initial.write(to: url)
+        let baseline = try AudioFileIdentity.capture(url: url)
+        var changed = initial; changed.append(8)
+        try changed.write(to: url, options: .atomic)
+        let actual = try AudioFileIdentity.capture(url: url)
+        XCTAssertEqual(actual.prefixHash, baseline.prefixHash)
+        XCTAssertEqual(actual.byteCount, 16_385)
+        XCTAssertFalse(actual.matches(baseline))
+    }
+
     func testAppPathsPrepareCreatesFoundationDirectories() throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -152,12 +166,14 @@ final class PicardFoundationTests: XCTestCase {
         let missingDocument = try await sessionStore.load()
         XCTAssertNil(missingDocument)
         try await sessionStore.save(document)
-        try await sessionStore.saveRecovery(document)
+        var recoveryDocument = document
+        recoveryDocument.selectedAlbumKey = "Unsaved selection"
+        try await sessionStore.saveRecovery(recoveryDocument)
 
         let loadedDocument = try await sessionStore.load()
         let loadedRecoveryDocument = try await sessionStore.loadRecovery()
         assertSessionDocument(loadedDocument, matches: document)
-        assertSessionDocument(loadedRecoveryDocument, matches: document)
+        assertSessionDocument(loadedRecoveryDocument, matches: recoveryDocument)
 
         try await sessionStore.removeRecovery()
         let removedRecoveryDocument = try await sessionStore.loadRecovery()

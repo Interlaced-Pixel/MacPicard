@@ -6,6 +6,165 @@ import XCTest
 @testable import MacPicard
 
 final class OrganizationModelTests: XCTestCase {
+    @MainActor func testManualRefreshCancellationPublishesNoPartialSnapshot() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let file = try audio("source.mp3", in: root)
+        let model = libraryModel(root, files: [file])
+        for index in 0..<50 { try FileManager.default.copyItem(at: file.url, to: root.appendingPathComponent("\(index).mp3")) }
+        let refresh = Task { @MainActor in await model.refreshLibrary() }
+        while !model.isScanningLibrary { await Task.yield() }
+        XCTAssertNotNil(model.progress)
+        model.cancelLibraryRefresh()
+        await refresh.value
+        XCTAssertEqual(model.files, [file])
+        XCTAssertEqual(model.statusMessage, "Library refresh cancelled.")
+        XCTAssertNil(model.progress)
+        XCTAssertFalse(model.isBusy)
+    }
+
+    @MainActor func testSaveHistoryPersistsPerFileResultsWithoutRetryingSuccesses() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let library = try folder("Library", in: root)
+        let source = library.appendingPathComponent("first.flac")
+        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "0.1", "-c:a", "flac", source.path]
+        process.standardOutput = Pipe(); process.standardError = Pipe(); try process.run(); process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+        let second = library.appendingPathComponent("second.flac")
+        try FileManager.default.copyItem(at: source, to: second)
+        let loader = AudioFileCoordinator()
+        var firstFile = try await loader.load(url: source), secondFile = try await loader.load(url: second)
+        var tags = firstFile.metadata; tags.setValue("Saved title", for: "title"); try firstFile.updateMetadata(tags)
+        tags = secondFile.metadata; tags.setValue("Failed draft", for: "title"); try secondFile.updateMetadata(tags)
+        let model = libraryModel(library, files: [firstFile, secondFile])
+        model.saveCoordinator = AudioSaveCoordinator()
+        let store = WorkspaceStore(directory: root.appendingPathComponent("Workspaces"))
+        let workspace = try XCTUnwrap(model.activeWorkspace)
+        _ = try await store.create(workspace, document: model.makeSessionDocument())
+        model.workspaceStore = store
+        model.sessionManager = SessionManager(store: await store.sessionStore(for: workspace.id))
+        model.operationHistoryDirectory = await store.operationDirectory(for: workspace.id)
+        // Replace only the owned fixture, exercising the external-change guard.
+        var bytes = try Data(contentsOf: second); bytes.append(0)
+        try bytes.write(to: second, options: .atomic)
+        await model.saveFiles(model.files)
+        XCTAssertEqual(model.lastSaveOutcomes.map(\.saved), [true, false])
+        let read = try await FormatEngine().read(url: source)
+        XCTAssertEqual(read.metadata.firstValue(for: "title"), "Saved title")
+        XCTAssertEqual(try Data(contentsOf: second), bytes)
+        let history = try await OperationHistoryStore().load(directory: try XCTUnwrap(model.operationHistoryDirectory), workspaceID: workspace.id)
+        let record = try XCTUnwrap(history.first)
+        XCTAssertEqual(record.state, .failed)
+        XCTAssertEqual(record.items.map(\.state), [.completed, .failed])
+        XCTAssertEqual(model.retryableSaveIDs(record), [secondFile.id])
+        let loaded = try await model.sessionManager?.loadBestAvailable()
+        XCTAssertEqual(loaded?.document.files.first?.state, .saved)
+        XCTAssertEqual(loaded?.document.files.last?.metadata.firstValue(for: "title"), "Failed draft")
+        XCTAssertFalse(model.isWritingAudio)
+        let restarted = libraryModel(library, files: try XCTUnwrap(loaded).document.files.map { AudioFile.restore(from: $0) })
+        restarted.activeWorkspaceID = workspace.id
+        XCTAssertEqual(restarted.retryableSaveIDs(record), [secondFile.id], "Retries must survive JSON date epoch round trips")
+        if let output = ProcessInfo.processInfo.environment["MACPICARD_PHASE9_GUI_DIRECTORY"] {
+            let guiRoot = URL(fileURLWithPath: output)
+            guard guiRoot.path.hasPrefix("/tmp/MacPicard-phase9-ui."), FileManager.default.fileExists(atPath: guiRoot.path) else {
+                return XCTFail("GUI validation needs an existing, owned temporary directory")
+            }
+            let guiLibrary = try folder("Audio", in: guiRoot)
+            var guiFiles: [AudioFile] = []
+            for file in model.files {
+                let target = guiLibrary.appendingPathComponent(file.url.lastPathComponent)
+                try FileManager.default.copyItem(at: file.url, to: target)
+                var copied = file; try copied.updateURL(target, identity: AudioFileIdentity.capture(url: target))
+                guiFiles.append(copied)
+            }
+            var guiWorkspace = MusicWorkspace(name: "Phase 9 Validation", kind: .library, directory: guiLibrary)
+            guiWorkspace.automaticallyRefreshes = true
+            let guiStore = WorkspaceStore(directory: guiRoot.appendingPathComponent("State/Workspaces"))
+            let guiDocument = SessionDocument(files: guiFiles.map { $0.sessionRecord() }, selectedFileIDs: [guiFiles[1].id])
+            _ = try await guiStore.create(guiWorkspace, document: guiDocument)
+            var guiRecord = FileOperationRecord(workspaceID: guiWorkspace.id, kind: .save, items: guiFiles.enumerated().map { offset, file in
+                var item = FileOperationItem(file: file)
+                item.state = offset == 0 ? .completed : .failed
+                item.result = offset == 0 ? file : nil
+                item.message = offset == 0 ? "Saved" : "The source changed outside MacPicard. It was not overwritten."
+                return item
+            })
+            guiRecord.state = .failed
+            try await OperationHistoryStore().save(guiRecord, directory: await guiStore.operationDirectory(for: guiWorkspace.id))
+        }
+    }
+
+    @MainActor func testRealNotificationsCoalesceIntoOneLibraryPublication() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let file = try audio("source.mp3", in: root)
+        let model = libraryModel(root, files: [file])
+        model.restartLibraryMonitoring()
+        defer { model.stopLibraryMonitoring() }
+        let nested = try folder("Artist/Album", in: root)
+        for index in 0..<20 {
+            try FileManager.default.copyItem(at: file.url, to: nested.appendingPathComponent("\(index).mp3"))
+        }
+        // Wait for the actual recursive event stream and debounce, not an
+        // injected notification. The invalid audio yields real per-file errors.
+        for _ in 0..<80 {
+            if model.files.count == 21 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(model.files.count, 21)
+        XCTAssertEqual(model.scanPublicationCount, 1)
+        XCTAssertEqual(model.file(id: file.id), file)
+        let publications = model.scanPublicationCount, indexUpdates = model.browserIndexUpdates
+        let activityCount = model.activity.count
+        for _ in 0..<3 { await model.refreshLibrary(automatic: true) }
+        XCTAssertEqual(model.scanPublicationCount, publications)
+        XCTAssertEqual(model.browserIndexUpdates, indexUpdates)
+        XCTAssertEqual(model.activity.count, activityCount, "Repeated failures must not flood Activity")
+    }
+
+    @MainActor func testMonitoringBurstCoalescesAndWaitsForEditsButManualRefreshWorks() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let file = try audio("source.mp3", in: root)
+        let model = libraryModel(root, files: [file])
+        defer { model.stopLibraryMonitoring(); model.sessionSaveTask?.cancel() }
+        let workspaceStore = WorkspaceStore(directory: root.appendingPathComponent("Workspaces"))
+        _ = try await workspaceStore.create(try XCTUnwrap(model.activeWorkspace), document: model.makeSessionDocument())
+        model.workspaceStore = workspaceStore
+        let sessionStore = await workspaceStore.sessionStore(for: try XCTUnwrap(model.activeWorkspaceID))
+        model.sessionManager = SessionManager(store: sessionStore)
+        let originalWrites = await sessionStore.writeCount
+        for _ in 0..<5 { await model.refreshLibrary(automatic: true) }
+        XCTAssertEqual(model.scanPublicationCount, 0)
+        XCTAssertEqual(model.browserIndexUpdates, 1)
+        let noOpWrites = await sessionStore.writeCount
+        XCTAssertEqual(noOpWrites, originalWrites)
+        for _ in 0..<100 { model.enqueueLibraryChanges(.init(paths: [file.url])) }
+        try await Task.sleep(for: .milliseconds(2300))
+        XCTAssertEqual(model.scanPublicationCount, 0)
+        model.setTagValues(["Pending"], for: "title")
+        let newURL = root.appendingPathComponent("new.mp3")
+        try FileManager.default.copyItem(at: file.url, to: newURL)
+        for _ in 0..<100 { model.enqueueLibraryChanges(.init(paths: [newURL])) }
+        try await Task.sleep(for: .milliseconds(2300))
+        XCTAssertEqual(model.files.count, 1, "Pending edits defer monitoring")
+        await model.refreshLibrary()
+        XCTAssertEqual(model.files.count, 2, "Manual refresh remains effective")
+        XCTAssertEqual(model.file(id: file.id)?.metadata.firstValue(for: "title"), "Pending")
+        XCTAssertFalse(model.isWorking)
+    }
+
+    @MainActor func testFailedSaveHistoryRetryRequiresUnchangedBaseline() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        var file = try audio("source.mp3", in: root)
+        var tags = file.metadata; tags.setValue("Draft", for: "title"); try file.updateMetadata(tags)
+        let model = libraryModel(root, files: [file])
+        var item = FileOperationItem(file: file); item.state = .failed
+        let record = FileOperationRecord(workspaceID: try XCTUnwrap(model.activeWorkspaceID), kind: .save, items: [item])
+        XCTAssertEqual(model.retryableSaveIDs(record), [file.id])
+        model.setTagValues(["Newer Draft"], for: "title")
+        XCTAssertTrue(model.retryableSaveIDs(record).isEmpty)
+        model.sessionSaveTask?.cancel()
+    }
+
     @MainActor
     func testLibraryDefaultsToItsRootAndNeitherPreviewNorUnconfirmedExecutionMovesFiles() async throws {
         let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }

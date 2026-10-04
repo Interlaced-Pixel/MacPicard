@@ -124,7 +124,7 @@ struct CompactMatchReviewPane: View {
                         local: local, remote: track, disc: review.disc(for: track.id))
                     Text(evidence.score, format: .percent.precision(.fractionLength(0)))
                         .foregroundStyle(
-                            evidence.score < model.configuration.editing.matchThreshold ? Color.orange : .secondary
+                            evidence.score < model.configuration.editing.matchThreshold ? MusicBrainzTheme.orange : .secondary
                         ).help(evidence.reasons.joined(separator: "\n"))
                 } else {
                     Text("—").foregroundStyle(.secondary)

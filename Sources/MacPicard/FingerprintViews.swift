@@ -15,13 +15,13 @@ struct FingerprintResultsView: View {
             }
             Text("No tags change during scanning. Choose a candidate to review its assignment and tag differences before applying.").font(.callout).foregroundStyle(.secondary)
             if let progress = model.progress { ProgressView(value: progress) }
-            if let error = model.errorMessage { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+            if let error = model.errorMessage { Text(error).foregroundStyle(MusicBrainzTheme.error).textSelection(.enabled) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     ForEach(model.fingerprintRun?.results ?? []) { item in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(item.baseline.url.lastPathComponent).font(.headline)
-                            if let error = item.error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                            if let error = item.error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(MusicBrainzTheme.orange) }
                             else if let fingerprint = item.fingerprint {
                                 Text("Fingerprint generated · \(fingerprint.durationInSeconds, format: .number.precision(.fractionLength(1))) seconds").font(.caption).foregroundStyle(.secondary)
                                 if model.fingerprintRun?.identifying == true && item.candidates.isEmpty { Text("No recording candidates found. Try a manual MusicBrainz lookup.").foregroundStyle(.secondary) }
@@ -82,7 +82,7 @@ struct FingerprintSubmissionView: View {
             }
             Toggle("I verified these recording mappings and consent to send this batch to AcoustID.", isOn: $consent).disabled(attempted)
             Text("Accepted submissions are not sent again. Check an uncertain result with AcoustID before retrying.").font(.caption).foregroundStyle(.secondary)
-            if let error = model.errorMessage { Text(error).foregroundStyle(.red) }
+            if let error = model.errorMessage { Text(error).foregroundStyle(MusicBrainzTheme.error) }
             HStack {
                 Button("Close") { dismiss() }.disabled(model.isBusy).keyboardShortcut(.cancelAction)
                 Spacer()

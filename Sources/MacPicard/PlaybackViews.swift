@@ -67,7 +67,7 @@ struct PlaybackBar: View {
                 if let error = playback.errorMessage {
                     HStack {
                         Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.red).lineLimit(2)
+                            .font(.caption).foregroundStyle(MusicBrainzTheme.error).lineLimit(2)
                         Spacer()
                         Button("Retry") { playback.togglePlayPause() }.buttonStyle(.plain)
                     }
@@ -91,7 +91,7 @@ struct PlaybackBar: View {
                     Image(systemName: playback.transportIsActive ? "pause.fill" : "play.fill")
                         .frame(width: 16)
                 }
-                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                 .help(playback.transportIsActive ? "Pause" : "Play")
                 .accessibilityLabel(playback.transportIsActive ? "Pause Playback" : "Play Playback")
                 Button { playback.next() } label: { Image(systemName: "forward.end.fill") }

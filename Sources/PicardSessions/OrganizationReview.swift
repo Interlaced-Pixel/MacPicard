@@ -146,7 +146,8 @@ extension FileOrganizationCoordinator {
                                   namingScript: namingScript, policy: policy, excludedIDs: excludedIDs, rows: rows)
     }
 
-    public func executeReview(_ review: OrganizationReview) throws -> OrganizationResult {
+    public func executeReview(_ review: OrganizationReview, journal: FileOperationRecord? = nil,
+                              journalURL: URL? = nil) throws -> OrganizationResult {
         guard review.canExecute else { throw SaveError.invalidName("Resolve conflicts and preview at least one move first.") }
         guard review.directory.resolvingSymlinksInPath().standardizedFileURL == review.resolvedDirectory,
               try Self.directoryIdentifier(review.directory) == review.directoryIdentifier,
@@ -165,7 +166,7 @@ extension FileOrganizationCoordinator {
             }
         }
         // Never overwrite. A late collision aborts and invokes the coordinator's rollback.
-        let report = try execute(review.plan, collisionPolicy: .fail)
+        let report = try execute(review.plan, collisionPolicy: .fail, journal: journal, journalURL: journalURL)
         var warnings: [String] = []
         let updated = try review.files.map { file in
             guard let destination = report.destinations[file.id] else { return file }
@@ -175,6 +176,14 @@ extension FileOrganizationCoordinator {
             catch { identity = nil; warnings.append("\(destination.lastPathComponent) moved, but its identity could not be read. Refresh before saving tags.") }
             try relocated.updateURL(destination, identity: identity)
             return relocated
+        }
+        if var journal, let journalURL {
+            for index in journal.items.indices {
+                journal.items[index].result = updated.first { $0.id == journal.items[index].id }
+                journal.items[index].state = report.movedFileIDs.contains(journal.items[index].id) ? .completed : .skipped
+            }
+            // Remains running until the owning workspace also commits new URLs.
+            try journal.persist(to: journalURL)
         }
         return OrganizationResult(files: updated, report: report, warnings: warnings)
     }

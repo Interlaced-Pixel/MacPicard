@@ -155,7 +155,7 @@ struct OrganizationView: View {
                 if let review = model.organizationReview {
                     Label("\(review.moveCount) ready", systemImage: "arrow.right.circle").foregroundStyle(.tint)
                     Text("\(review.rows.count { $0.status == .unchanged }) unchanged").foregroundStyle(.secondary)
-                    Text("\(review.blockedCount) blocked").foregroundStyle(review.blockedCount == 0 ? Color.secondary : .orange)
+                    Text("\(review.blockedCount) blocked").foregroundStyle(review.blockedCount == 0 ? Color.secondary : MusicBrainzTheme.orange)
                     Text("\(review.rows.count { $0.status == .excluded || $0.status == .skipped }) skipped").foregroundStyle(.secondary)
                 } else {
                     Text(model.isPreparingOrganization ? "Building preview…" : "File preview").foregroundStyle(.secondary)
@@ -204,7 +204,7 @@ struct OrganizationView: View {
         VStack(alignment: .leading, spacing: 10) {
             if model.organizationOutsideLibraryCount > 0 {
                 Label("\(model.organizationOutsideLibraryCount) files will leave the library folder. They remain linked here, but are no longer stored in it.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout).foregroundStyle(.orange)
+                    .font(.callout).foregroundStyle(MusicBrainzTheme.orange)
                 Toggle("I understand these files will move outside this Music Library.", isOn: $acknowledgesOutsideMove)
                     .toggleStyle(.checkbox).font(.caption).disabled(model.isWorking)
             }
@@ -213,7 +213,7 @@ struct OrganizationView: View {
                     Text(model.organizationError ?? "Move, not copy. Existing files are never overwritten. Tags and artwork remain unchanged on disk.")
                         .foregroundStyle(model.organizationError == nil ? Color.secondary : .red)
                     if model.organizationReview != nil && !model.organizationInputsAreCurrent {
-                        Text("The selection or files changed. Close and reopen Organize to review the latest files.").foregroundStyle(.orange)
+                        Text("The selection or files changed. Close and reopen Organize to review the latest files.").foregroundStyle(MusicBrainzTheme.orange)
                     }
                     if model.organizationFiles.contains(where: \.isModified) {
                         Text("Pending tags determine new filenames, but stay unsaved. Save Tags separately when ready.").foregroundStyle(.secondary)
@@ -223,7 +223,7 @@ struct OrganizationView: View {
                 Button("Move \(model.organizationReview?.moveCount ?? 0) Files…") {
                     confirmationReview = model.organizationReview
                     confirmsMove = true
-                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                     .disabled(!model.canExecuteOrganization || (model.organizationOutsideLibraryCount > 0 && !acknowledgesOutsideMove))
             }
         }.padding(18).background(.bar)
@@ -245,7 +245,7 @@ private struct OrganizationPathRow: View {
     private var color: Color {
         switch row.status {
         case .move: .accentColor
-        case .blocked: .orange
+        case .blocked: MusicBrainzTheme.orange
         case .unchanged, .skipped, .excluded: .secondary
         }
     }

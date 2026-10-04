@@ -73,8 +73,8 @@ struct LibraryMatchView: View {
     private func summary(_ run: AppModel.LibraryMatchRun) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 18) {
-                metric("Ready", value: run.highConfidence.count, color: .green)
-                metric("Review", value: run.needsReview.count, color: .orange)
+                metric("Ready", value: run.highConfidence.count, color: MusicBrainzTheme.success)
+                metric("Review", value: run.needsReview.count, color: MusicBrainzTheme.orange)
                 metric("Unresolved", value: run.unresolved.count, color: .secondary)
                 Spacer()
                 Picker("Results", selection: $proposalFilter) {
@@ -154,7 +154,7 @@ struct LibraryMatchView: View {
                     model.applyLibraryMatches(eligible)
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                 .disabled(eligible.isEmpty || model.isBusy)
                 Button("Resume") { model.startLibraryMatch(threshold: threshold, resume: true) }.disabled(model.isBusy)
                     .help("Continue unfinished albums and recheck stale matches")
@@ -162,7 +162,7 @@ struct LibraryMatchView: View {
                     .disabled(model.isBusy)
             } else {
                 Button("Start Library Match") { model.startLibraryMatch(threshold: threshold) }
-                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                     .disabled(model.isBusy)
             }
             if model.isWorking { Button("Stop Search") { model.cancelLibraryMatch() } }
@@ -184,10 +184,10 @@ struct LibraryMatchView: View {
 
     private func color(for status: AppModel.LibraryMatchProposalStatus) -> Color {
         switch status {
-        case .matched: .green
-        case .review: .orange
+        case .matched: MusicBrainzTheme.success
+        case .review: MusicBrainzTheme.orange
         case .noMatch: .secondary
-        case .failed: .red
+        case .failed: MusicBrainzTheme.error
         case .rejected, .applied: .secondary
         }
     }

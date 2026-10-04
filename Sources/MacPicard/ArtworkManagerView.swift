@@ -318,15 +318,15 @@ struct ArtworkManagerView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let error { Text(error).foregroundStyle(.red).font(.caption).textSelection(.enabled) }
-            if let validationError, embed { Text(validationError).foregroundStyle(.orange).font(.caption) }
+            if let error { Text(error).foregroundStyle(MusicBrainzTheme.error).font(.caption).textSelection(.enabled) }
+            if let validationError, embed { Text(validationError).foregroundStyle(MusicBrainzTheme.orange).font(.caption) }
             if let notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
             HStack {
                 if let activity { ProgressView().controlSize(.small); Text(activity).font(.caption); Button("Stop") { task?.cancel() } }
                 Spacer()
                 Button(embed ? "Cancel" : "Done") { task?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Review & Apply…") { isReviewingApply = true }
-                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).disabled(!embed || busy || model.isBusy || validationError != nil || (!changed && !replaceScope))
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill).disabled(!embed || busy || model.isBusy || validationError != nil || (!changed && !replaceScope))
             }
         }.padding(16)
     }
@@ -340,10 +340,10 @@ struct ArtworkManagerView: View {
                 VStack(alignment: .leading) {
                     Text(file.url.lastPathComponent)
                     Text("\(file.artwork.images.count) → \(proposed.count) images · \(proposed.map { $0.type.rawValue }.joined(separator: ", "))").font(.caption).foregroundStyle(.secondary)
-                    if FormatRegistry.format(forExtension: file.url.pathExtension) == .mp4 { Text("M4A descriptions are not stored.").font(.caption).foregroundStyle(.orange) }
+                    if FormatRegistry.format(forExtension: file.url.pathExtension) == .mp4 { Text("M4A descriptions are not stored.").font(.caption).foregroundStyle(MusicBrainzTheme.orange) }
                 }
             }
-            if let validationError { Text(validationError).foregroundStyle(.red).font(.caption) }
+            if let validationError { Text(validationError).foregroundStyle(MusicBrainzTheme.error).font(.caption) }
             if let activity { HStack { ProgressView().controlSize(.small); Text(activity).font(.caption); Button("Stop") { task?.cancel() } } }
             HStack {
                 Spacer(); Button("Back") { task?.cancel(); isReviewingApply = false }.keyboardShortcut(.cancelAction)
@@ -355,7 +355,7 @@ struct ArtworkManagerView: View {
                         catch { if !Task.isCancelled { self.error = error.localizedDescription; isReviewingApply = false } }
                         activity = nil
                     }
-                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).disabled(validationError != nil || model.isBusy || busy)
+                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill).disabled(validationError != nil || model.isBusy || busy)
             }
         }.padding(24).frame(width: 640, height: 470)
     }
@@ -384,7 +384,7 @@ struct ArtworkManagerView: View {
                             } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
                             activity = nil
                         }
-                    }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+                    }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                 }
             }
         }.padding(24).frame(width: 580, height: 400)

@@ -73,12 +73,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var configuration = AppConfiguration()
     @Published var errorMessage: String? { didSet { if let errorMessage { recordActivity(errorMessage) } } }
     @Published var statusMessage = "Ready" { didSet { recordActivity(statusMessage) } }
-    @Published var monitoringMessage: String? { didSet { if let monitoringMessage { recordActivity(monitoringMessage, background: true) } } }
+    @Published var monitoringMessage: String? { didSet { if oldValue != monitoringMessage, let monitoringMessage { recordActivity(monitoringMessage, background: true) } } }
     @Published var editHistoryRevision = 0
     let editUndoManager = UndoManager()
     var editHistoryNeedsReset = false
     @Published private(set) var isLoading = false
     @Published var isWorking = false
+    @Published var isWritingAudio = false
     @Published var isExportingArtwork = false
     @Published var progress: Double?
     @Published var files: [AudioFile] = [] {
@@ -189,6 +190,20 @@ final class AppModel: ObservableObject {
     var refreshTask: Task<Void, Never>?
     var libraryScanTask: Task<Void, Never>?
     var activeLibraryScan: Task<LibraryScanResult, Error>?
+    var libraryMonitor: LibraryDirectoryMonitor?
+    var monitoringDebounceTask: Task<Void, Never>?
+    var monitoringGeneration = UUID()
+    var pendingLibraryPaths = Set<URL>()
+    var monitoringNeedsFullScan = false
+    var activeLibraryScanID: UUID?
+    var cancelledLibraryScanID: UUID?
+    var scanPublicationCount = 0
+    @Published var isCommittingLibraryScan = false
+    let operationHistoryStore = OperationHistoryStore()
+    var operationHistoryDirectory: URL?
+    @Published var operationHistory: [FileOperationRecord] = []
+    @Published var checkingOperationID: UUID?
+    var recoveryCheckTask: Task<Void, Never>?
 
     init(musicBrainzClient: MusicBrainzClient? = nil, coverArtClient: CoverArtClient? = nil, audioCoordinator: AudioFileCoordinator? = nil) {
         self.musicBrainzClient = musicBrainzClient
@@ -405,6 +420,7 @@ final class AppModel: ObservableObject {
             return
         }
         isWorking = true
+        isWritingAudio = true
         progress = 0
         errorMessage = nil
         var imported = 0
@@ -415,6 +431,7 @@ final class AppModel: ObservableObject {
         var failures: [String] = []
         defer {
             isWorking = false
+            isWritingAudio = false
             progress = nil
         }
         let accessedRoots = urls.filter { $0.startAccessingSecurityScopedResource() }
@@ -422,11 +439,17 @@ final class AppModel: ObservableObject {
         let expandedURLs: [URL]
         do {
             expandedURLs = try await libraryScanner.expand(urls)
-            if !isLibrary { try await rememberImportAccess(urls) }
+            try await rememberImportAccess(urls)
         } catch { present(error); return }
+        var importJournal = FileOperationRecord(workspaceID: activeWorkspaceID ?? UUID(), kind: .importFiles,
+            items: expandedURLs.map { FileOperationItem(file: AudioFile(url: $0)) })
+        do { try await flushSession(); try await persistOperation(importJournal) }
+        catch { present(error); return }
         var knownPaths = Set(files.map { $0.url.resolvingSymlinksInPath().standardizedFileURL.path })
         var loadedFiles: [AudioFile] = []
         for (index, url) in expandedURLs.enumerated() {
+            importJournal.items[index].state = .inProgress
+            do { try await persistOperation(importJournal) } catch { present(error); cancelled = true; break }
             do {
                 try Task.checkCancellation()
                 let accessed = url.startAccessingSecurityScopedResource()
@@ -441,7 +464,11 @@ final class AppModel: ObservableObject {
                     if result.copied { copied += 1 } else { alreadyPresent += 1 }
                     if let path = LibraryPaths.relativePath(of: file.url, in: libraryRoot) { restoredPaths.insert(path) }
                 } else {
-                    if knownPaths.contains(url.resolvingSymlinksInPath().standardizedFileURL.path) { continue }
+                    if knownPaths.contains(url.resolvingSymlinksInPath().standardizedFileURL.path) {
+                        importJournal.items[index].state = .skipped
+                        try await persistOperation(importJournal)
+                        continue
+                    }
                     statusMessage = "Importing \(url.lastPathComponent)…"
                     file = try await audioCoordinator.load(url: url)
                 }
@@ -452,11 +479,24 @@ final class AppModel: ObservableObject {
                     loadedFiles.append(file)
                     imported += 1
                 }
+                importJournal.items[index].state = .completed
+                importJournal.items[index].destination = file.url
+                importJournal.items[index].result = file
+                // Commit each imported item rather than waiting for the batch.
+                if !files.contains(where: { $0.id == file.id }) { files.append(file) }
+                loadedFiles.removeAll { $0.id == file.id }
+                try await flushSession()
+                try await persistOperation(importJournal)
             } catch is CancellationError {
                 cancelled = true
                 break
             } catch {
                 failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                importJournal.items[index].message = error.localizedDescription
+                if importJournal.items[index].result == nil { importJournal.items[index].state = .failed }
+                do { try await persistOperation(importJournal) }
+                catch { present(error); cancelled = true; break }
+                if importJournal.items[index].result != nil { cancelled = true; break }
             }
             progress = Double(index + 1) / Double(expandedURLs.count)
         }
@@ -473,6 +513,10 @@ final class AppModel: ObservableObject {
         if selectedFileIDs.isEmpty {
             selectedFileIDs = Set(visibleFiles.prefix(1).map(\.id))
         }
+        importJournal.state = cancelled ? .interrupted : (failures.isEmpty ? .completed : .failed)
+        importJournal.finishedAt = Date()
+        do { try await flushSession(); try await persistOperation(importJournal) }
+        catch { present(error); statusMessage = "Files were imported, but the workspace could not be saved. Check Activity before importing again."; return }
         statusMessage = isLibrary
             ? "Copied \(copied) \(copied == 1 ? "file" : "files") into \(activeWorkspace?.name ?? "the library")."
             : "Imported \(imported) \(imported == 1 ? "file" : "files")."
@@ -482,7 +526,6 @@ final class AppModel: ObservableObject {
         if !failures.isEmpty {
             errorMessage = failures.prefix(3).joined(separator: "\n")
         }
-        await saveSession()
     }
 
     func selectAlbum(_ group: AlbumGroup) {
@@ -889,6 +932,7 @@ final class AppModel: ObservableObject {
             return
         }
         isWorking = true
+        isWritingAudio = true
         progress = 0
         statusMessage = "Writing metadata…"
         if let playingID = playback.currentTrack?.fileID, targets.contains(where: { $0.id == playingID }) {
@@ -896,30 +940,57 @@ final class AppModel: ObservableObject {
         }
         defer {
             isWorking = false
+            isWritingAudio = false
             progress = nil
         }
         var saved: [AudioFile] = []
         var failures: [String] = []
+        var journal = FileOperationRecord(workspaceID: activeWorkspaceID ?? UUID(), kind: .save,
+            items: targets.map { FileOperationItem(file: $0) })
+        do {
+            try await flushSession()
+            try await persistOperation(journal)
+        } catch { present(error); statusMessage = "Tags were not written because recovery information could not be saved."; return }
         for (index, file) in targets.enumerated() {
             if Task.isCancelled { break }
+            journal.items[index].state = .inProgress
+            do { try await persistOperation(journal) }
+            catch { present(error); break }
             do {
                 let result = try await saveCoordinator.save(file, options: AudioSaveOptions(
                     preserveModificationDate: configuration.preserveFileTimestamps
                 ))
                 saved.append(result)
+                replaceFiles([result])
+                journal.items[index].result = result
+                journal.items[index].state = .completed
                 lastSaveOutcomes.append(FileSaveOutcome(fileID: file.id, filename: file.url.lastPathComponent, saved: true, message: "Saved"))
             } catch {
+                journal.items[index].state = .failed
+                journal.items[index].message = error.localizedDescription
                 failures.append("\(file.url.lastPathComponent): \(error.localizedDescription)")
                 lastSaveOutcomes.append(FileSaveOutcome(fileID: file.id, filename: file.url.lastPathComponent, saved: false, message: error.localizedDescription))
+            }
+            // Every successful write is reflected in the workspace before the
+            // next file is attempted. A journal failure stops further writes.
+            do { try await flushSession(); try await persistOperation(journal) }
+            catch {
+                present(error)
+                statusMessage = "Tags were written, but recovery information could not be saved. Further writes stopped."
+                try? await sessionManager?.saveRecovery(makeSessionDocument())
+                return
             }
             progress = Double(index + 1) / Double(targets.count)
         }
         if !saved.isEmpty { clearEditHistory() }
         replaceFiles(saved)
         let remaining = targets.count - lastSaveOutcomes.count
+        journal.state = remaining > 0 ? .interrupted : (failures.isEmpty ? .completed : .failed)
+        journal.finishedAt = Date()
+        do { try await flushSession(); try await persistOperation(journal) }
+        catch { present(error); statusMessage = "Tag results could not be committed. Check Activity before trying again."; return }
         statusMessage = "Saved \(saved.count) \(saved.count == 1 ? "file" : "files")." + (remaining > 0 ? " Stopped; \(remaining) files were not written." : "")
         errorMessage = failures.isEmpty ? nil : failures.prefix(3).joined(separator: "\n")
-        await saveSession()
     }
 
     func runScript(applying: Bool) {
@@ -995,7 +1066,7 @@ final class AppModel: ObservableObject {
             createdAt: sessionCreatedAt,
             savedAt: Date(),
             files: files.map { $0.sessionRecord() },
-            selectedFileIDs: Array(selectedFileIDs),
+            selectedFileIDs: selectedFileIDs.sorted { $0.uuidString < $1.uuidString },
             expandedNodeIDs: [],
             selectedAlbumKey: selectedAlbumID,
             accessBookmarkKeys: accessBookmarkKeys

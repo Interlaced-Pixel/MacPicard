@@ -39,7 +39,7 @@ struct MetadataEditorView: View {
                     HStack {
                         if row.changed { Image(systemName: "pencil.circle").accessibilityLabel("Changed") }
                         Text(row.key)
-                    }.foregroundStyle(row.changed ? Color.orange : .primary)
+                    }.foregroundStyle(row.changed ? MusicBrainzTheme.orange : .primary)
                 }.width(min: 130, ideal: 175)
                 TableColumn("Original") { row in Text(row.original).textSelection(.enabled).help(row.original) }
                 TableColumn("New") { row in
@@ -79,7 +79,7 @@ struct MetadataEditorView: View {
                     .disabled(!model.editUndoManager.canRedo)
             }.padding(16).disabled(!model.canEditSelection)
             Text(model.errorMessage ?? "Copy uses the first selected file's values. Custom tags and multiple values depend on the audio container; rejected writes keep edits pending.")
-                .font(.caption).foregroundStyle(model.errorMessage == nil ? Color.secondary : .red)
+                .font(.caption).foregroundStyle(model.errorMessage == nil ? Color.secondary : MusicBrainzTheme.error)
                 .padding(.horizontal, 18).padding(.bottom, 14)
         }
         .sheet(item: $editing) { draft in TagEditorSheet(model: model, draft: draft) }
@@ -137,12 +137,12 @@ private struct TagEditorSheet: View {
                 }
             }.frame(minHeight: 100, maxHeight: 240)
             Button("Add Value", systemImage: "plus") { values.append(ValueRow(value: "")) }
-            if !isCurrent { Text("Files changed. Close and reopen this editor before applying.").foregroundStyle(.orange) }
+            if !isCurrent { Text("Files changed. Close and reopen this editor before applying.").foregroundStyle(MusicBrainzTheme.orange) }
             HStack {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Apply Values") { model.setTagValues(values.map(\.value), for: key); dismiss() }
-                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill).keyboardShortcut(.defaultAction)
                     .disabled(!isCurrent || !model.canEditSelection || key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || key.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("~") || key.contains(where: { $0.isNewline || $0 == "\0" }))
             }
         }.padding(22).frame(width: 520)
@@ -171,7 +171,7 @@ struct AudioFileDetailsView: View {
                 if let bits = properties.bitsPerSample { LabeledContent("Bit depth", value: "\(bits) bits") }
             }
             if let error { Text(error).foregroundStyle(.secondary).textSelection(.enabled) }
-            if let error = file.lastError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+            if let error = file.lastError { Text(error).foregroundStyle(MusicBrainzTheme.orange).textSelection(.enabled) }
         }.font(.caption)
         .task(id: file.url) {
             properties = nil; format = nil; error = nil

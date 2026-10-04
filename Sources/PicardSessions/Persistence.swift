@@ -167,7 +167,9 @@ public actor FileOrganizationCoordinator {
 
     public func execute(
         _ plan: FileMovePlan,
-        collisionPolicy: FileCollisionPolicy = .fail
+        collisionPolicy: FileCollisionPolicy = .fail,
+        journal: FileOperationRecord? = nil,
+        journalURL: URL? = nil
     ) throws -> FileMoveReport {
         let fileManager = FileManager.default
         let sourcePaths = Set(plan.operations.map { $0.source.standardizedFileURL.path })
@@ -207,7 +209,15 @@ public actor FileOrganizationCoordinator {
         var temporaryLocations: [(operation: FileMoveOperation, temporary: URL)] = []
         var completedMoves: [FileMoveOperation] = []
         var backups: [(destination: URL, backup: URL)] = []
+        var journal = journal
+        func checkpoint(_ operation: FileMoveOperation, temporary: URL?, state: FileOperationItemState) throws {
+            guard let url = journalURL, let index = journal?.items.firstIndex(where: { $0.id == operation.fileID }) else { return }
+            journal?.items[index].temporary = temporary
+            journal?.items[index].state = state
+            try journal?.persist(to: url)
+        }
         do {
+            if let journalURL { try journal?.persist(to: journalURL) }
             if collisionPolicy == .overwrite {
                 for operation in active where fileManager.fileExists(atPath: operation.destination.path)
                     && !sourcePaths.contains(operation.destination.standardizedFileURL.path) {
@@ -224,6 +234,9 @@ public actor FileOrganizationCoordinator {
                 let temporary = operation.source.deletingLastPathComponent().appendingPathComponent(
                     ".macpicard-move-\(UUID().uuidString)"
                 )
+                // Persist the exact intermediate path before the rename. A
+                // power loss between either step remains discoverable.
+                try checkpoint(operation, temporary: temporary, state: .inProgress)
                 try fileManager.moveItem(at: operation.source, to: temporary)
                 temporaryLocations.append((operation, temporary))
             }
@@ -246,6 +259,7 @@ public actor FileOrganizationCoordinator {
                 try fileManager.createDirectory(at: operation.destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try exclusiveMove(from: temporary, to: operation.destination, fileManager: fileManager)
                 completedMoves.append(operation)
+                try checkpoint(operation, temporary: temporary, state: .completed)
                 moved.append(operation.fileID)
                 destinations[operation.fileID] = operation.destination
             }
@@ -253,10 +267,16 @@ public actor FileOrganizationCoordinator {
             return FileMoveReport(movedFileIDs: moved, skippedFileIDs: skipped, destinations: destinations)
         } catch let error as SaveError {
             let recovery = rollback(completedMoves: completedMoves, temporaryLocations: temporaryLocations, backups: backups, fileManager: fileManager)
+            journal?.state = .interrupted
+            journal?.message = error.localizedDescription
+            if let journalURL { try? journal?.persist(to: journalURL) }
             if !recovery.isEmpty { throw SaveError.moveFailed(path: active.first?.source.path ?? "", reason: error.localizedDescription + " Recovery required: " + recovery.joined(separator: "; ")) }
             throw error
         } catch {
             let recovery = rollback(completedMoves: completedMoves, temporaryLocations: temporaryLocations, backups: backups, fileManager: fileManager)
+            journal?.state = .interrupted
+            journal?.message = error.localizedDescription
+            if let journalURL { try? journal?.persist(to: journalURL) }
             throw SaveError.moveFailed(path: active.first?.source.path ?? "", reason: error.localizedDescription + (recovery.isEmpty ? "" : " Recovery required: " + recovery.joined(separator: "; ")))
         }
     }
@@ -620,8 +640,12 @@ public actor SessionManager {
     }
 
     public func loadBestAvailable() async throws -> LoadedSession? {
-        let primary = try await store.load()
-        let recovery = try await store.loadRecovery()
+        var primary: SessionDocument?
+        var recovery: SessionDocument?
+        var readError: Error?
+        do { primary = try await store.load() } catch { readError = error }
+        do { recovery = try await store.loadRecovery() } catch { if readError == nil { readError = error } }
+        if primary == nil && recovery == nil, let readError { throw readError }
         switch (primary, recovery) {
         case (nil, nil): return nil
         case let (document?, nil): return LoadedSession(document: document, source: .primary)

@@ -121,9 +121,15 @@ extension AppModel {
             // Verify workspace persistence before changing any paths on disk.
             try await flushSession()
             guard organizationInputsAreCurrent else { throw SaveError.session("The files changed. Close and reopen Organize.") }
+            let journal = FileOperationRecord(workspaceID: activeWorkspaceID ?? UUID(), kind: .organize,
+                items: review.rows.filter { $0.status == .move }.compactMap { row in
+                    review.files.first { $0.id == row.id }.map { FileOperationItem(file: $0, destination: row.destination) }
+                })
+            try await persistOperation(journal)
+            let journalURL = operationHistoryDirectory?.appendingPathComponent(journal.id.uuidString).appendingPathExtension("json")
             if let playingID = playback.currentTrack?.fileID,
                review.plan.operations.contains(where: { $0.fileID == playingID }) { playback.stop() }
-            let result = try await organizationCoordinator.executeReview(review)
+            let result = try await organizationCoordinator.executeReview(review, journal: journal, journalURL: journalURL)
             clearEditHistory()
             let relocated = Dictionary(uniqueKeysWithValues: result.files.map { ($0.id, $0) })
             files = files.map { relocated[$0.id] ?? $0 }
@@ -141,16 +147,26 @@ extension AppModel {
             }
             cancelMatchReview()
             cancelOrganizationReview()
-            statusMessage = "Moved \(result.report.movedFileIDs.count) files. Tags and artwork were not written."
             errorMessage = warnings.isEmpty ? nil : warnings.joined(separator: "\n")
             do { try await flushSession() }
             catch {
                 // Disk moves completed: keep the new paths, never pretend the old locations still exist.
                 errorMessage = "Files moved, but the workspace could not be saved: \(error.localizedDescription)"
                 try? await sessionManager?.saveRecovery(makeSessionDocument())
+                await reloadOperationHistory()
+                return false
             }
+            // The coordinator's journal contains intermediate paths; retain it
+            // until all workspace changes above have reached disk.
+            await reloadOperationHistory()
+            if var completed = operationHistory.first(where: { $0.id == journal.id }) {
+                completed.state = .completed; completed.finishedAt = Date()
+                try await persistOperation(completed)
+            }
+            statusMessage = "Moved \(result.report.movedFileIDs.count) files. Tags and artwork were not written."
             return true
         } catch {
+            await reloadOperationHistory(markInterrupted: true)
             organizationReview = nil
             organizationError = error.localizedDescription + " Update the preview before trying again."
             statusMessage = "Organization did not complete. Review the error before retrying."

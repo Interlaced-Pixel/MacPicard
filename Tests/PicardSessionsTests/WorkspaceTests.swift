@@ -5,6 +5,86 @@ import XCTest
 @testable import PicardSessions
 
 final class WorkspaceTests: XCTestCase {
+    func testIncrementalScanReadsOnlyHintedFileAndPreservesUnambiguousRename() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = try makeFixture(in: root)
+        let other = root.appendingPathComponent("other.flac")
+        try FileManager.default.copyItem(at: first, to: other)
+        let scanner = LibraryScanner()
+        let initial = try await scanner.scan(directory: root, existing: [])
+        XCTAssertEqual(initial.metadataReadCount, 2)
+        let unchanged = try await scanner.scan(directory: root, existing: initial.files, affectedPaths: [first])
+        XCTAssertEqual(unchanged.inspectedFileCount, 1)
+        XCTAssertEqual(unchanged.metadataReadCount, 0)
+        XCTAssertEqual(Set(unchanged.files.map(\.id)), Set(initial.files.map(\.id)))
+        var pending = try XCTUnwrap(initial.files.first { $0.url == first })
+        var tags = pending.metadata; tags.setValue("Keep this draft", for: "title")
+        try pending.updateMetadata(tags)
+        let renamed = root.appendingPathComponent("renamed.flac")
+        try FileManager.default.moveItem(at: first, to: renamed)
+        let baseline = initial.files.map { $0.id == pending.id ? pending : $0 }
+        let report = try await scanner.scan(directory: root, existing: baseline, affectedPaths: [renamed])
+        XCTAssertEqual(report.files.count, 2)
+        let found = try XCTUnwrap(report.files.first { $0.id == pending.id })
+        XCTAssertEqual(found.url, renamed)
+        XCTAssertEqual(found.metadata.firstValue(for: "title"), "Keep this draft")
+        XCTAssertTrue(found.isModified)
+        XCTAssertEqual(report.metadataReadCount, 0)
+    }
+
+    func testScanDeltaCannotOverwriteNewerEditsImportsOrRemovals() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeFixture(in: root)
+        let scanner = LibraryScanner()
+        let initial = try await scanner.scan(directory: root, existing: [])
+        let baseline = initial.files
+        _ = try await FormatEngine().write(url: source, metadata: Metadata(fields: ["title": ["External"]]), artwork: ArtworkCollection())
+        let newURL = root.appendingPathComponent("new.flac")
+        try FileManager.default.copyItem(at: source, to: newURL)
+        let report = try await scanner.scan(directory: root, existing: baseline)
+        var current = baseline
+        var tags = current[0].metadata; tags.setValue("Newer local edit", for: "title")
+        try current[0].updateMetadata(tags)
+        var imported = try XCTUnwrap(report.files.first { $0.url == newURL })
+        tags = imported.metadata; tags.setValue("Imported draft", for: "title")
+        try imported.updateMetadata(tags); current.append(imported)
+        let merged = report.merging(baseline: baseline, current: current)
+        XCTAssertEqual(merged, current)
+        XCTAssertEqual(report.merging(baseline: baseline, current: [imported]), [imported], "Removed items must not be resurrected")
+    }
+
+    func testRepeatedMissingFileScanIsANoOpAndOfflineRootPreservesSnapshot() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeFixture(in: root)
+        let scanner = LibraryScanner()
+        let initial = try await scanner.scan(directory: root, existing: [])
+        try FileManager.default.removeItem(at: source)
+        let missing = try await scanner.scan(directory: root, existing: initial.files)
+        let repeated = try await scanner.scan(directory: root, existing: missing.files)
+        XCTAssertEqual(repeated.missingCount, 0)
+        XCTAssertEqual(repeated.files, missing.files)
+        do { _ = try await scanner.scan(directory: root.appendingPathComponent("offline"), existing: initial.files); XCTFail("Expected unavailable root") }
+        catch { XCTAssertEqual(initial.files.count, 1) }
+    }
+
+    func testRealRecursiveFilesystemNotification() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let received = expectation(description: "Recursive FSEvents change")
+        received.assertForOverFulfill = false
+        let monitor = try LibraryDirectoryMonitor(directory: root) { hint in
+            if hint.requiresFullScan || hint.paths.contains(where: { $0.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path) }) { received.fulfill() }
+        }
+        let nested = root.appendingPathComponent("Artist/Album")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try Data("change hint, not audio".utf8).write(to: nested.appendingPathComponent("track.mp3"))
+        await fulfillment(of: [received], timeout: 12)
+        withExtendedLifetime(monitor) {}
+    }
+
     func testIndependentWorkspaceDocumentsSurviveRestartAndRename() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
