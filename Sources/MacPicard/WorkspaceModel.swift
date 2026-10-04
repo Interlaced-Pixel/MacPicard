@@ -191,6 +191,7 @@ extension AppModel {
         await restoreWorkspaceAccess()
         if activeWorkspace?.kind == .library {
             libraryScanTask?.cancel()
+            activeLibraryScan?.cancel()
             libraryScanTask = Task { @MainActor [weak self] in
                 // Let the switch complete before starting its first refresh.
                 await Task.yield()
@@ -299,37 +300,71 @@ extension AppModel {
         catch { present(error) }
     }
 
-    func refreshLibrary() async {
+    func refreshLibrary(automatic: Bool = false) async {
         guard !isBusy, let workspace = activeWorkspace, workspace.kind == .library,
               let directory = workspaceAccess?.url ?? workspace.directory else { return }
-        isWorking = true
-        isScanningLibrary = true
-        progress = 0
-        errorMessage = nil
-        statusMessage = "Scanning \(workspace.name)…"
+        // Monitoring stays out of the foreground while the user is listening
+        // or performing another operation. Manual refresh remains explicit.
+        if automatic && playback.transportIsActive { return }
+        if !automatic {
+            isWorking = true
+            isScanningLibrary = true
+            progress = 0
+            errorMessage = nil
+            statusMessage = "Scanning \(workspace.name)…"
+        }
         defer {
-            isWorking = false
-            isScanningLibrary = false
+            if !automatic {
+                isWorking = false
+                isScanningLibrary = false
+            }
             activeLibraryScan = nil
-            progress = nil
+            if !automatic { progress = nil }
         }
         do {
             let existing = files
             let scanner = libraryScanner
-            let scan = Task { [weak self] in
-                try await scanner.scan(directory: directory, existing: existing, excludingRelativePaths: workspace.excludedRelativePaths) { [weak self] value in
-                    await self?.updateSaveProgress(value)
+            let workspaceID = workspace.id
+            let scan: Task<LibraryScanResult, Error>
+            if automatic {
+                scan = Task(priority: .utility) {
+                    try await scanner.scan(
+                        directory: directory,
+                        existing: existing,
+                        excludingRelativePaths: workspace.excludedRelativePaths,
+                        progress: nil
+                    )
+                }
+            } else {
+                scan = Task(priority: .userInitiated) { [weak self] in
+                    try await scanner.scan(
+                        directory: directory,
+                        existing: existing,
+                        excludingRelativePaths: workspace.excludedRelativePaths,
+                        progress: { [weak self] value in
+                            guard let self else { return }
+                            await self.updateSaveProgress(value)
+                        }
+                    )
                 }
             }
             activeLibraryScan = scan
             let report = try await scan.value
+            guard activeWorkspaceID == workspaceID else { return }
+            let changed = report.addedCount > 0 || report.updatedCount > 0 || report.missingCount > 0
+                || !report.conflicts.isEmpty || !report.failures.isEmpty
+            // Most monitoring passes are no-ops. Do not publish the same graph,
+            // touch the status bar, or autosave in that case.
+            if automatic && !changed { return }
             files = report.files
             selectedFileIDs.formIntersection(Set(files.map(\.id)))
             var updated = workspace
             updated.directory = directory
             updated.lastScannedAt = Date()
             if let workspaceStore { workspaces = try await workspaceStore.update(updated).workspaces }
-            statusMessage = "\(files.count) files · \(report.addedCount) added · \(report.updatedCount) refreshed"
+            statusMessage = automatic
+                ? "Library updated · \(report.addedCount) added · \(report.updatedCount) refreshed"
+                : "\(files.count) files · \(report.addedCount) added · \(report.updatedCount) refreshed"
             if report.missingCount > 0 { statusMessage += " · \(report.missingCount) unavailable" }
             let warnings = report.failures + report.conflicts.map {
                 "\($0) changed on disk; your pending edits were preserved."
@@ -337,10 +372,14 @@ extension AppModel {
             errorMessage = warnings.isEmpty ? nil : warnings.prefix(3).joined(separator: "\n")
             await saveSession()
         } catch is CancellationError {
-            statusMessage = "Library refresh cancelled."
+            if !automatic { statusMessage = "Library refresh cancelled." }
         } catch {
-            present(error)
-            statusMessage = "Library unavailable. Reconnect its folder and refresh."
+            if automatic {
+                statusMessage = "Library monitoring paused: \(error.localizedDescription)"
+            } else {
+                present(error)
+                statusMessage = "Library unavailable. Reconnect its folder and refresh."
+            }
         }
     }
 
@@ -348,11 +387,13 @@ extension AppModel {
 
     private func startLibraryRefresh() {
         refreshTask?.cancel()
-        refreshTask = Task { @MainActor [weak self] in
+        refreshTask = Task(priority: .utility) { @MainActor [weak self] in
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                do { try await Task.sleep(for: .seconds(300)) } catch { return }
                 guard let self, !Task.isCancelled else { return }
-                if self.activeWorkspace?.automaticallyRefreshes == true { await self.refreshLibrary() }
+                if self.activeWorkspace?.automaticallyRefreshes == true {
+                    await self.refreshLibrary(automatic: true)
+                }
             }
         }
     }
