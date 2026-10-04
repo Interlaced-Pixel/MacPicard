@@ -1,5 +1,7 @@
 import AppKit
+import PicardFormats
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
@@ -113,23 +115,40 @@ struct ContentView: View {
         .frame(minWidth: 1_180, minHeight: 760)
         .background(GlassBackdrop())
         .preferredColorScheme(model.configuration.editing.appearance == "dark" ? .dark : model.configuration.editing.appearance == "light" ? .light : nil)
-        .fileImporter(
-            isPresented: $presentation.isImporting,
-            allowedContentTypes: [.audio, .folder],
-            allowsMultipleSelection: true,
-            onCompletion: { result in Task { await model.importResult(result) } }
-        )
-        .fileImporter(isPresented: $presentation.isAddingLibrary,
-                      allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
-            if case let .success(urls) = result, let url = urls.first {
-                Task { await model.addLibrary(directory: url) }
-            } else if case let .failure(error) = result { model.present(error) }
+        .onReceive(NotificationCenter.default.publisher(for: NSText.didChangeNotification)) { _ in model.editHistoryRevision += 1 }
+        .onChange(of: presentation.isImporting) { _, importing in
+            guard importing else { return }
+            let panel = NSOpenPanel()
+            panel.title = "Import Audio"
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = true
+            panel.allowedContentTypes = AudioFormat.allCases.flatMap { format in
+                format.fileExtensions.sorted().compactMap { UTType(filenameExtension: $0) }
+            }
+            guard let window = NSApp.keyWindow else { presentation.isImporting = false; return }
+            let workspaceID = model.activeWorkspaceID
+            panel.beginSheetModal(for: window) { response in
+                presentation.isImporting = false
+                guard response == .OK, workspaceID == model.activeWorkspaceID else { return }
+                Task { await model.importResult(.success(panel.urls)) }
+            }
         }
-        .fileImporter(isPresented: $presentation.isRelinkingLibrary,
+        .background {
+            Color.clear.fileImporter(isPresented: $presentation.isAddingLibrary,
                       allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
-            if case let .success(urls) = result, let url = urls.first {
-                Task { await model.relinkLibrary(directory: url) }
-            } else if case let .failure(error) = result { model.present(error) }
+                if case let .success(urls) = result, let url = urls.first {
+                    Task { await model.addLibrary(directory: url) }
+                } else if case let .failure(error) = result { model.present(error) }
+            }
+        }
+        .background {
+            Color.clear.fileImporter(isPresented: $presentation.isRelinkingLibrary,
+                      allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
+                if case let .success(urls) = result, let url = urls.first {
+                    Task { await model.relinkLibrary(directory: url) }
+                } else if case let .failure(error) = result { model.present(error) }
+            }
         }
         .sheet(isPresented: $presentation.isShowingLookup) {
             LookupView(model: model)
@@ -150,6 +169,9 @@ struct ContentView: View {
         .sheet(isPresented: $presentation.isShowingSettings) {
             SettingsView(model: model)
                 .frame(minWidth: 720, idealWidth: 820, minHeight: 560, idealHeight: 650)
+        }
+        .sheet(isPresented: $presentation.isShowingMetadataEditor) {
+            MetadataEditorView(model: model).frame(minWidth: 850, minHeight: 570)
         }
         .sheet(isPresented: $presentation.isNamingSession) {
             NewSessionView(model: model, copying: presentation.copiesCurrentSession)

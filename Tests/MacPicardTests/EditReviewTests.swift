@@ -8,6 +8,114 @@ import XCTest
 
 final class EditReviewTests: XCTestCase {
     @MainActor
+    func testDisplaySummariesCannotFlattenDifferentValueListsAndMultiTagRemovalIsOneUndo() throws {
+        var first = try file("First", number: "1"), second = try file("Second", number: "2")
+        var tags = first.metadata; tags.setValues(["Rock; Soul"], for: "genre"); try first.updateMetadata(tags)
+        tags = second.metadata; tags.setValues(["Rock", "Soul"], for: "genre"); try second.updateMetadata(tags)
+        let model = AppModel(); model.files = [first, second]; model.selectedFileIDs = [first.id, second.id]
+        defer { model.sessionSaveTask?.cancel() }
+        XCTAssertEqual(model.metadataRows.first { $0.key == "genre" }?.current, "Multiple values")
+        model.deleteTags(["title", "artist"])
+        XCTAssertTrue(model.files.allSatisfy { $0.metadata.isDeleted("title") && $0.metadata.isDeleted("artist") })
+        model.undoMetadataEdit()
+        XCTAssertEqual(model.files, [first, second])
+    }
+
+    @MainActor
+    func testMultiValueEditUndoRedoAndPerTagRestorePreserveDistinctTitles() throws {
+        let first = try file("First", number: "1"), second = try file("Second", number: "2")
+        let model = AppModel(); model.files = [first, second]; model.selectedFileIDs = [first.id, second.id]
+        defer { model.sessionSaveTask?.cancel() }
+        model.setTagValues(["Rock", "Soul"], for: "genre")
+        XCTAssertEqual(model.file(id: first.id)?.metadata.values(for: "genre"), ["Rock", "Soul"])
+        XCTAssertEqual(model.file(id: second.id)?.metadata.firstValue(for: "title"), "Second")
+        model.undoMetadataEdit()
+        XCTAssertEqual(model.files, [first, second])
+        model.redoMetadataEdit()
+        XCTAssertEqual(model.file(id: second.id)?.metadata.values(for: "genre"), ["Rock", "Soul"])
+        model.deleteTag("artist")
+        XCTAssertTrue(model.file(id: first.id)?.metadata.isDeleted("artist") == true)
+        model.restoreTag("artist")
+        XCTAssertEqual(model.file(id: first.id)?.metadata.values(for: "artist"), ["Artist"])
+        XCTAssertEqual(model.file(id: first.id)?.metadata.values(for: "genre"), ["Rock", "Soul"])
+        XCTAssertTrue(model.metadataRows.first { $0.key == "genre" }?.changed == true)
+        XCTAssertEqual(model.metadataRows.first { $0.key == "title" }?.current, "Multiple values")
+    }
+
+    @MainActor
+    func testMixedMultiValuesAndEmptyAbsentDeletedAreDistinct() throws {
+        var first = try file("First", number: "1"), second = try file("Second", number: "2")
+        var tags = first.metadata; tags.setValues(["Artist", "Guest"], for: "artist"); try first.updateMetadata(tags)
+        tags = second.metadata; tags.setValue("", for: "comment"); try second.updateMetadata(tags)
+        let model = AppModel(); model.files = [first, second]; model.selectedFileIDs = [first.id, second.id]
+        defer { model.sessionSaveTask?.cancel() }
+        XCTAssertTrue(model.metadataValueIsMixed("artist"))
+        XCTAssertEqual(model.metadataRows.first { $0.key == "comment" }?.current, "Multiple values")
+        let before = model.files
+        _ = model.metadataRows
+        XCTAssertEqual(model.files, before)
+        model.selectedFileIDs = [second.id]
+        XCTAssertEqual(model.metadataRows.first { $0.key == "comment" }?.current, "Empty value")
+        model.deleteTag("comment")
+        XCTAssertEqual(model.metadataRows.first { $0.key == "comment" }?.current, "Deleted")
+        model.restoreTag("comment")
+        XCTAssertFalse(model.file(id: second.id)?.metadata.contains("comment") == true)
+    }
+
+    @MainActor
+    func testUndoCannotOverwriteNewerEditsOrASavedBaseline() throws {
+        let original = try file("Before", number: "1")
+        let model = AppModel(); model.files = [original]; model.selectedFileIDs = [original.id]
+        defer { model.sessionSaveTask?.cancel() }
+        model.setMetadata("title", value: "Staged")
+        var newer = try XCTUnwrap(model.files.first)
+        var tags = newer.metadata; tags.setValue("External newer", for: "title"); try newer.updateMetadata(tags)
+        model.files = [newer]
+        model.undoMetadataEdit()
+        XCTAssertEqual(model.files, [newer]); XCTAssertFalse(model.editUndoManager.canUndo)
+        model.setMetadata("title", value: "Saved")
+        var saved = try XCTUnwrap(model.files.first)
+        try saved.beginSaving(); try saved.finishSaving(identity: XCTUnwrap(saved.identity))
+        model.files = [saved]
+        model.undoMetadataEdit()
+        XCTAssertEqual(model.files, [saved]); XCTAssertFalse(model.editUndoManager.canRedo)
+    }
+
+    @MainActor
+    func testClipboardMergeAndScriptsAreGroupedUndoableEdits() throws {
+        let original = try file("Before", number: "1")
+        let model = AppModel(); model.files = [original]; model.selectedFileIDs = [original.id]
+        defer { model.sessionSaveTask?.cancel() }
+        try model.applyTagClipboard(TagClipboard(tags: ["artist": .init(values: ["Other"], deleted: false), "~length": .init(values: ["999"], deleted: false)]))
+        model.restoreTag("artist", merging: true)
+        XCTAssertEqual(model.files.first?.metadata.values(for: "artist"), ["Other", "Artist"])
+        XCTAssertFalse(model.files.first?.metadata.contains("~length") == true)
+        model.scriptSource = "$set(title,Scripted)$set(genre,Jazz)"
+        model.runScript(applying: true)
+        XCTAssertEqual(model.files.first?.metadata.firstValue(for: "title"), "Scripted")
+        model.undoMetadataEdit()
+        XCTAssertEqual(model.files.first?.metadata.firstValue(for: "title"), "Before")
+        XCTAssertFalse(model.files.first?.metadata.contains("genre") == true)
+        model.redoMetadataEdit()
+        XCTAssertEqual(model.files.first?.metadata.firstValue(for: "genre"), "Jazz")
+    }
+
+    @MainActor
+    func testPreservedTagsSurviveReviewedMusicBrainzApplication() async throws {
+        let original = try file("First", number: "1")
+        let model = try await reviewing([original])
+        var config = AppConfiguration(); config.autosaveEnabled = false; config.automaticCoverArt = false
+        config.editing.preservedTags = ["album", "artist"]
+        model.installConfiguration(config)
+        defer { model.refreshTask?.cancel(); model.sessionSaveTask?.cancel() }
+        XCTAssertTrue(model.applySelectedRelease())
+        XCTAssertEqual(model.files.first?.metadata.firstValue(for: "album"), "Before")
+        XCTAssertEqual(model.files.first?.metadata.firstValue(for: "musicbrainz_albumid"), "11111111-1111-1111-1111-111111111111")
+        model.undoMetadataEdit()
+        XCTAssertEqual(model.files.first?.metadata, original.metadata)
+    }
+
+    @MainActor
     func testDiscardConfirmationRestoresTagsDeletionsAndArtworkAndKeepsOtherEdits() async throws {
         var first = try file("First", number: "1")
         var second = try file("Second", number: "2")

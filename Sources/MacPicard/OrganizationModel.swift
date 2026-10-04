@@ -114,6 +114,7 @@ extension AppModel {
             if let playingID = playback.currentTrack?.fileID,
                review.plan.operations.contains(where: { $0.fileID == playingID }) { playback.stop() }
             let result = try await organizationCoordinator.executeReview(review)
+            clearEditHistory()
             let relocated = Dictionary(uniqueKeysWithValues: result.files.map { ($0.id, $0) })
             files = files.map { relocated[$0.id] ?? $0 }
             var warnings = result.warnings

@@ -69,6 +69,9 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var statusMessage = "Ready"
     @Published var monitoringMessage: String?
+    @Published var editHistoryRevision = 0
+    let editUndoManager = UndoManager()
+    var editHistoryNeedsReset = false
     @Published private(set) var isLoading = false
     @Published var isWorking = false
     @Published var progress: Double?
@@ -103,7 +106,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var matchReview: ReleaseMatchReview?
     @Published private(set) var libraryMatchRun: LibraryMatchRun?
     @Published private(set) var scriptOutput = ""
-    @Published var scriptSource = "$if2(%albumartist%,%artist%)/$if2(%album%,Unknown Album)/%tracknumber% %title%"
+    @Published var scriptSource = ""
     @Published var destinationDirectory: URL?
     @Published var organizationReview: OrganizationReview?
     @Published var organizationDirectory: URL?
@@ -150,6 +153,8 @@ final class AppModel: ObservableObject {
         self.musicBrainzClient = musicBrainzClient
         self.coverArtClient = coverArtClient
         self.audioCoordinator = audioCoordinator
+        editUndoManager.groupsByEvent = false
+        editUndoManager.levelsOfUndo = 80
     }
 
     private func rebuildBrowserIndex() {
@@ -249,8 +254,12 @@ final class AppModel: ObservableObject {
     }
 
     func metadataValueIsMixed(_ key: String) -> Bool {
-        let values = selectedFiles.map { $0.metadata.firstValue(for: key) ?? "" }
-        return Set(values).count > 1
+        guard let first = selectedFiles.first?.metadata else { return false }
+        return selectedFiles.contains {
+            $0.metadata.values(for: key) != first.values(for: key)
+                || $0.metadata.contains(key) != first.contains(key)
+                || $0.metadata.isDeleted(key) != first.isDeleted(key)
+        }
     }
 
     func bootstrap() async {
@@ -260,7 +269,11 @@ final class AppModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let runtime = try PicardRuntime.live()
+            let runtime: PicardRuntime
+            if let directory = ProcessInfo.processInfo.environment["MACPICARD_DATA_DIRECTORY"], directory.hasPrefix("/") {
+                // Isolated runtime validation and portable development workspaces.
+                runtime = PicardRuntime(paths: AppPaths(applicationSupportDirectory: URL(fileURLWithPath: directory, isDirectory: true)))
+            } else { runtime = try PicardRuntime.live() }
             let snapshot = try await runtime.start()
             let cache = MusicBrainzResponseCache(
                 directory: snapshot.paths.cacheDirectory.appendingPathComponent("MusicBrainz", isDirectory: true)
@@ -544,7 +557,7 @@ final class AppModel: ObservableObject {
                     applied += 1
                 }
             }
-            files = edited
+            commitStagedEdits(edited, action: "Apply library matches")
             statusMessage = "Applied metadata proposals to \(applied) files. Save Tags to write changes to disk."
             errorMessage = nil
             scheduleSessionSave()
@@ -566,28 +579,7 @@ final class AppModel: ObservableObject {
         scheduleSessionSave()
     }
 
-    func setMetadata(_ key: String, value: String) {
-        guard !selectedFiles.isEmpty, !isWorking else { return }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetIDs = Set(selectedFiles.map(\.id))
-        var edited = files
-        for index in edited.indices where targetIDs.contains(edited[index].id) {
-            var metadata = edited[index].metadata
-            if trimmed.isEmpty {
-                metadata.unset(key)
-            } else {
-                metadata.setValue(value, for: key)
-            }
-            do {
-                try edited[index].updateMetadata(metadata)
-            } catch {
-                present(error)
-            }
-        }
-        files = edited
-        statusMessage = "Updated \(key) for \(selectedFiles.count) \(selectedFiles.count == 1 ? "file" : "files")."
-        scheduleSessionSave()
-    }
+    func setMetadata(_ key: String, value: String) { setTagValues([value], for: key) }
 
     func lookup(albumTitle: String? = nil, albumArtist: String? = nil) async {
         guard canLookupSelection else {
@@ -753,12 +745,15 @@ final class AppModel: ObservableObject {
                 try edited[index].updateMetadata(metadata)
             }
         } catch { present(error); return false }
-        files = edited
+        commitStagedEdits(edited, action: "Apply reviewed matches")
         statusMessage = "Applied reviewed metadata to \(review.assignments.count) files; \(review.unmatchedFileIDs.count) left unchanged. Save Tags to write to disk."
         errorMessage = nil
         cancelMatchReview()
         scheduleSessionSave()
-        if configuration.automaticCoverArt { Task { await self.downloadCoverArt() } }
+        if configuration.automaticCoverArt {
+            let ids = selectedFileIDs
+            Task { guard self.selectedFileIDs == ids else { return }; await self.downloadCoverArt() }
+        }
         return true
     }
 
@@ -795,6 +790,7 @@ final class AppModel: ObservableObject {
             files = edited
             cancelMatchReview()
             try await flushSession()
+            clearEditHistory()
             errorMessage = nil
             statusMessage = "Discarded pending tag and artwork changes for \(count) files. Audio files were not modified."
         } catch {
@@ -819,6 +815,8 @@ final class AppModel: ObservableObject {
         isWorking = true
         statusMessage = "Downloading cover art…"
         let targets = selectedFileIDs
+        let targetVersions = selectedFiles
+        let targetWorkspace = activeWorkspaceID
         defer { isWorking = false }
         do {
             let release = try await coverArtClient.release(identifier: releaseIdentifier)
@@ -827,6 +825,9 @@ final class AppModel: ObservableObject {
                 return
             }
             let artwork = try await coverArtClient.download(image, size: CoverArtImageSize(rawValue: configuration.editing.coverArtSize) ?? .thumbnail1200)
+            guard activeWorkspaceID == targetWorkspace, targetVersions.allSatisfy({ self.file(id: $0.id) == $0 }) else {
+                statusMessage = "Files changed while artwork was downloading. Download again to update them."; return
+            }
             var edited = files
             for index in edited.indices where targets.contains(edited[index].id) {
                 var collection = edited[index].artwork
@@ -836,7 +837,7 @@ final class AppModel: ObservableObject {
                 collection.append(artwork)
                 try edited[index].updateArtwork(collection)
             }
-            files = edited
+            commitStagedEdits(edited, action: "Download artwork")
             statusMessage = "Downloaded cover art for \(selectedFiles.count) files."
             scheduleSessionSave()
         } catch {
@@ -878,6 +879,7 @@ final class AppModel: ObservableObject {
             } catch { failures.append("\(file.url.lastPathComponent): \(error.localizedDescription)") }
             progress = Double(index + 1) / Double(targets.count)
         }
+        if !saved.isEmpty { clearEditHistory() }
         replaceFiles(saved)
         statusMessage = "Saved \(saved.count) \(saved.count == 1 ? "file" : "files")."
         errorMessage = failures.isEmpty ? nil : failures.prefix(3).joined(separator: "\n")
@@ -903,7 +905,7 @@ final class AppModel: ObservableObject {
             }
             scriptOutput = outputs.joined(separator: "\n")
             if applying {
-                files = edited
+                commitStagedEdits(edited, action: "Apply script")
                 statusMessage = "Applied script output to \(selectedFiles.count) files."
                 scheduleSessionSave()
             } else {
@@ -976,12 +978,17 @@ final class AppModel: ObservableObject {
     }
 
     func installConfiguration(_ value: AppConfiguration) {
+        let previous = configuration
         configuration = value
         if let snapshot {
             self.snapshot = RuntimeSnapshot(paths: snapshot.paths, configuration: value, diagnostics: snapshot.diagnostics)
         }
-        organizationNamingScript = value.editing.namingPattern
-        scriptSource = value.editing.defaultTagScript
+        if organizationNamingScript == previous.editing.namingPattern || previous.editing.namingPattern != value.editing.namingPattern {
+            organizationNamingScript = value.editing.namingPattern
+        }
+        if scriptSource == previous.editing.defaultTagScript || previous.editing.defaultTagScript != value.editing.defaultTagScript {
+            scriptSource = value.editing.defaultTagScript
+        }
         autosaveTask?.cancel()
         if value.autosaveEnabled { startAutosave(interval: value.autosaveIntervalSeconds) }
         restartLibraryMonitoring()

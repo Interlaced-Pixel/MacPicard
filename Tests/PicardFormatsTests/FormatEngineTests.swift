@@ -70,6 +70,8 @@ final class FormatEngineTests: XCTestCase {
 
             var metadata = readResult.metadata
             metadata.setValue("Jane Doe", for: "composer")
+            metadata.setValues(["Rock", "Soul"], for: "genre")
+            metadata.setValue("Custom value", for: "macpicard_custom")
             metadata.setValue("87e36ab4-6914-44ab-b740-7abb37678040", for: "musicbrainz_trackid")
             metadata.setValue("0c30e8e9-8368-4f2f-ab95-d6f9549eb54f", for: "musicbrainz_releasetrackid")
             let artwork = ArtworkCollection(images: [
@@ -87,10 +89,20 @@ final class FormatEngineTests: XCTestCase {
 
             let reopened = try await engine.read(url: url)
             XCTAssertEqual(reopened.metadata.firstValue(for: "composer"), "Jane Doe")
+            XCTAssertEqual(reopened.metadata.values(for: "genre"), ["Rock", "Soul"], fixture.extensionName)
+            XCTAssertEqual(reopened.metadata.firstValue(for: "macpicard_custom"), "Custom value", fixture.extensionName)
+            XCTAssertEqual(reopened.metadata.firstValue(for: "title"), "Original Title", fixture.extensionName)
             XCTAssertEqual(reopened.metadata.firstValue(for: "musicbrainz_trackid"), "87e36ab4-6914-44ab-b740-7abb37678040", fixture.extensionName)
             XCTAssertEqual(reopened.metadata.firstValue(for: "musicbrainz_releasetrackid"), "0c30e8e9-8368-4f2f-ab95-d6f9549eb54f", fixture.extensionName)
             XCTAssertEqual(reopened.artwork.images.count, 1, fixture.extensionName)
             XCTAssertEqual(reopened.artwork.images[0].data, Self.pngData)
+            var deleted = reopened.metadata
+            deleted.delete("genre"); deleted.delete("macpicard_custom")
+            _ = try await engine.write(url: url, metadata: deleted, artwork: reopened.artwork)
+            let afterDeletion = try await engine.read(url: url)
+            XCTAssertFalse(afterDeletion.metadata.contains("genre"), fixture.extensionName)
+            XCTAssertFalse(afterDeletion.metadata.contains("macpicard_custom"), fixture.extensionName)
+            XCTAssertEqual(afterDeletion.metadata.firstValue(for: "composer"), "Jane Doe", fixture.extensionName)
         }
 
         if executedFixtures == 0 {

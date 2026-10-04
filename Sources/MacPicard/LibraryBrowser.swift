@@ -10,6 +10,7 @@ final class AppPresentation: ObservableObject {
     @Published var isShowingLookup = false
     @Published var isShowingScript = false
     @Published var isShowingSettings = false
+    @Published var isShowingMetadataEditor = false
     @Published var isAddingLibrary = false
     @Published var isRelinkingLibrary = false
     @Published var isNamingSession = false

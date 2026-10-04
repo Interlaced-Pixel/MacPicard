@@ -343,7 +343,7 @@ private struct AlbumWorkspace: View {
                 TrackListView(model: model, presentation: presentation)
                     .frame(minWidth: 440, idealWidth: 560)
                 if presentation.showsInspector {
-                    MetadataInspector(model: model)
+                    MetadataInspector(model: model, presentation: presentation)
                         .frame(minWidth: 390, idealWidth: 460)
                 }
             }
@@ -577,6 +577,7 @@ private struct TrackStateBadge: View {
 
 private struct MetadataInspector: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var presentation: AppPresentation
     private let identityFields = [
         ("Title", "title"),
         ("Artist", "artist"),
@@ -605,14 +606,15 @@ private struct MetadataInspector: View {
                     Text("Editing \(model.selectedFiles.count) selected \(model.selectedFiles.count == 1 ? "track" : "tracks") · \(model.selectedFormatSummary)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Button("All Tags & Changes…", systemImage: "tablecells") { presentation.isShowingMetadataEditor = true }
+                        .buttonStyle(.glass).disabled(!model.canEditSelection)
                     MetadataFieldGroup(title: "Identity", fields: identityFields, model: model)
                     MetadataFieldGroup(title: "Release", fields: releaseFields, model: model)
                     MetadataFieldGroup(title: "Numbering", fields: numberingFields, model: model)
                     ArtworkInspector(model: model)
                     if let file = model.primarySelectedFile {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("File").font(.subheadline.weight(.semibold))
-                            Text(file.url.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            AudioFileDetailsView(file: file)
                             Button("Reveal in Finder") { model.revealSelection() }
                         }.padding(.top, 10)
                     }

@@ -71,7 +71,12 @@ struct MacPicardCommands: Commands {
                 .keyboardShortcut("f", modifiers: .command)
         }
 
-        CommandGroup(after: .undoRedo) {
+        CommandGroup(replacing: .undoRedo) {
+            Button("Undo") { model.undoUserEdit() }.keyboardShortcut("z", modifiers: .command)
+                .disabled(model.isBusy || !model.canUndoUserEdit)
+            Button("Redo") { model.redoUserEdit() }.keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(model.isBusy || !model.canRedoUserEdit)
+            Divider()
             Button("Discard Selected Changes…") {
                 presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID)
             }.keyboardShortcut("z", modifiers: [.command, .option])
@@ -170,6 +175,9 @@ struct MacPicardCommands: Commands {
         }
 
         CommandMenu("Metadata") {
+            Button("All Tags & Changes…") { presentation.isShowingMetadataEditor = true }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+                .disabled(!model.canEditSelection)
             Button("Look Up on MusicBrainz…") {
                 presentation.isShowingLookup = true
                 Task { await model.lookup() }
