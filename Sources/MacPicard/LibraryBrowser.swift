@@ -12,6 +12,7 @@ final class AppPresentation: ObservableObject {
     @Published var isShowingSettings = false
     @Published var isShowingMetadataEditor = false
     @Published var isShowingActivity = false
+    @Published var isShowingFingerprints = false
     @Published var showsMatchComparison = false
     @Published var isRegrouping = false
     @Published var isAddingLibrary = false

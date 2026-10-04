@@ -83,7 +83,7 @@ Extend the current modules rather than replace their working format engines or A
 
 ## 5. Delivery phases
 
-Implementation and verification evidence for improvements 1–3 is recorded in [IMPROVEMENT_PROGRESS.md](IMPROVEMENT_PROGRESS.md). Phases 1 and 2 are committed; phase 3 is implemented and automated checks pass, but final interactive acceptance is pending because the Mac locked during runtime verification. These statuses refer to this improvement roadmap, not the original bootstrap phases in README.
+Implementation and verification evidence for improvements 1–6 is recorded in [IMPROVEMENT_PROGRESS.md](IMPROVEMENT_PROGRESS.md). Phases 4–6 deliver collection navigation, reviewed/resumable matching, and fingerprint workflows. Phase-3 import and multi-value add/undo/redo checks were subsequently verified in an isolated native app; its broader acceptance checklist remains documented. Phases 7–10 remain future work, including comprehensive accessibility and production delivery validation. These statuses refer to this improvement roadmap, not the original bootstrap phases in README.
 
 Each phase ends with working UI, relevant automated verification, manual checks of its actual flows, updated documentation, and a separate commit. Record completed evidence against this plan. Do not declare a phase complete while its required behavior is missing or its runtime checks remain unverified.
 

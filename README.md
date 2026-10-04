@@ -113,7 +113,7 @@ Phase 5 adds the MusicBrainz integration and matching engine:
 
 Phase 6 adds scripts and automatic identification:
 
-Fingerprint generation and AcoustID clients in this historical phase are backend capabilities. The user-facing Scan and submission workflows are scheduled in the active improvement roadmap; they are not currently available as application actions.
+The active improvement roadmap now connects fingerprint generation and AcoustID clients to the application. See [Fingerprinting](docs/FINGERPRINTING.md) for calculator setup, identification/review, offline generation, and optional consent-based submissions.
 
 - `PicardScripts` parses and evaluates nested Picard-style expressions without stringly-typed shortcuts.
 - Script execution reads and mutates the existing multi-value `Metadata` model, including unset/delete semantics.

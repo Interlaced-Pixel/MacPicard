@@ -180,6 +180,8 @@ private struct ActionBar: View {
                 .help("Choose selected files or the entire library, then review paths before moving.")
                 Menu {
                     Button("Look Up…") { presentation.showsMatchComparison = true; Task { await model.lookup() } }.disabled(!model.canLookupSelection)
+                    Button("Scan Selected Audio…") { model.startFingerprintScan(); presentation.isShowingFingerprints = true }.disabled(model.isBusy || model.selectedFiles.isEmpty)
+                    Button("Fingerprint Results…") { presentation.isShowingFingerprints = true }
                     Button("Download Cover Art") { Task { await model.downloadCoverArt() } }.disabled(model.isBusy || !model.canDownloadCoverArt)
                     Button("Edit Script…") { isShowingScript = true }.disabled(!model.canEditSelection)
                     Button("Discard Selected Changes…") { presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID) }.disabled(!model.canPerform(.discard))

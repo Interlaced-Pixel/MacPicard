@@ -126,6 +126,18 @@ final class AppModel: ObservableObject {
     var reviewCheckpointTask: Task<Void, Never>?
     var reviewCheckpointURL: URL?
     var currentLibraryReviewID: String?
+    @Published var fingerprintRun: FingerprintRun?
+    @Published var fingerprintSubmissionReview: FingerprintSubmissionReview?
+    @Published var fingerprintSubmissionOutcomes: [UUID: String] = [:]
+    @Published var fingerprintReviewScores: [UUID: Double] = [:]
+    var verifiedRecordingMappings: [UUID: String] = [:]
+    var fingerprintTask: Task<Void, Never>?
+    @Published var fingerprintJobIsScheduled = false
+    var fingerprintProviderOverride: (any AudioFingerprintProviding)?
+    var acoustIDClientOverride: AcoustIDClient?
+    var fingerprintCacheDirectory: URL?
+    var fingerprintLedgerURL: URL?
+    var submissionTokenOverride: String?
     @Published private(set) var scriptOutput = ""
     @Published var scriptSource = ""
     @Published var destinationDirectory: URL?
@@ -493,6 +505,8 @@ final class AppModel: ObservableObject {
     }
 
     func resetWorkspaceSelection() {
+        fingerprintTask?.cancel()
+        fingerprintRun = nil; fingerprintSubmissionReview = nil; verifiedRecordingMappings.removeAll(); fingerprintReviewScores.removeAll()
         libraryMatchTask?.cancel()
         currentLibraryReviewID = nil
         cancelOrganizationReview()
@@ -533,6 +547,7 @@ final class AppModel: ObservableObject {
         var edited = files
         let indices = Dictionary(uniqueKeysWithValues: edited.enumerated().map { ($0.element.id, $0.offset) })
         var applied = 0
+        var verified: [UUID: String] = [:]
         do {
             for proposal in proposals {
                 guard isEligibleLibraryProposal(proposal), let release = proposal.release, let result = proposal.result else { continue }
@@ -542,10 +557,12 @@ final class AppModel: ObservableObject {
                           let track = release.tracks.first(where: { $0.id == match.releaseTrackID }) else { continue }
                     guard let metadata = metadata(for: edited[fileIndex], release: release, track: track) else { continue }
                     try edited[fileIndex].updateMetadata(metadata)
+                    if let recording = track.recordingID { verified[edited[fileIndex].id] = recording }
                     applied += 1
                 }
             }
             commitStagedEdits(edited, action: "Apply library matches")
+            verifiedRecordingMappings.merge(verified) { _, new in new }
             for proposal in proposals where isEligibleLibraryProposal(proposal, validateBaseline: false) { setProposalStatus(proposal.id, .applied) }
             statusMessage = "Applied metadata proposals to \(applied) files. Save Tags to write changes to disk."
             errorMessage = nil
@@ -616,7 +633,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func chooseMatch(_ result: ReleaseMatchResult) async {
+    func chooseMatch(_ result: ReleaseMatchResult, recordingEvidence: [UUID: String] = [:]) async {
         guard let musicBrainzClient, canLookupSelection else { return }
         isWorking = true
         errorMessage = nil
@@ -638,7 +655,12 @@ final class AppModel: ObservableObject {
                 if duration == nil {
                     duration = try? await lookupAudioEngine.read(url: file.url).audioProperties?.lengthInMilliseconds
                 }
-                candidates.append(Self.localCandidate(file, duration: duration))
+                let local = Self.localCandidate(file, duration: duration)
+                if let recording = recordingEvidence[file.id] {
+                    candidates.append(LocalTrackCandidate(id: local.id, title: local.title, artist: local.artist,
+                        durationInMilliseconds: local.durationInMilliseconds, trackNumber: local.trackNumber, discNumber: local.discNumber,
+                        recordingID: recording, isrcs: local.isrcs))
+                } else { candidates.append(local) }
             }
             guard generation == lookupGeneration, targets == selectedFileIDs,
                   originals.allSatisfy({ file(id: $0.id) == $0 }) else { return }
@@ -680,6 +702,7 @@ final class AppModel: ObservableObject {
     }
 
     func cancelMatchReview() {
+        fingerprintReviewScores.removeAll()
         lookupGeneration = UUID()
         selectedRelease = nil; selectedReleaseFileIDs.removeAll()
         matchReview = nil; reviewFiles.removeAll()
@@ -736,6 +759,9 @@ final class AppModel: ObservableObject {
             }
         } catch { present(error); return false }
         commitStagedEdits(edited, action: "Apply reviewed matches")
+        for (fileID, trackID) in review.assignments {
+            if let recording = review.release.tracks.first(where: { $0.id == trackID })?.recordingID { verifiedRecordingMappings[fileID] = recording }
+        }
         if let currentLibraryReviewID { setProposalStatus(currentLibraryReviewID, .applied) }
         statusMessage = "Applied reviewed metadata to \(review.assignments.count) files; \(review.unmatchedFileIDs.count) left unchanged. Save Tags to write to disk."
         errorMessage = nil

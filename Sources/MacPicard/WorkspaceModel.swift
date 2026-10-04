@@ -58,7 +58,7 @@ extension AppModel {
     }
 
     var workspaceFilesCount: Int { files.count }
-    var isBusy: Bool { isWorking || isSwitchingWorkspace || isLoading || isPreparingOrganization }
+    var isBusy: Bool { isWorking || isSwitchingWorkspace || isLoading || isPreparingOrganization || fingerprintJobIsScheduled }
     var canEditSelection: Bool {
         !isBusy && !selectedFiles.isEmpty && selectedFiles.allSatisfy {
             [.ready, .changed, .saved].contains($0.state)

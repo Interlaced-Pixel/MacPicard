@@ -223,6 +223,9 @@ private struct LocalMatchRow: View {
             }.pickerStyle(.menu).labelsHidden().disabled(model.isBusy)
                 .accessibilityLabel("MusicBrainz assignment for \(file.url.lastPathComponent)")
             if let assigned {
+                if let confidence = model.fingerprintReviewScores[file.id] {
+                    Text("Fingerprint confidence: \(confidence, format: .percent.precision(.fractionLength(0)))").font(.caption.weight(.medium))
+                }
                 let evidence = TrackMatcher().evidence(local: local, remote: assigned, disc: review.disc(for: assigned.id))
                 Text("\(review.manualFileIDs.contains(file.id) ? "Manual match" : evidence.exact ? "Identifier match" : "Suggested match") · \(evidence.score, format: .percent.precision(.fractionLength(0))) similarity")
                     .font(.caption.weight(.medium)).foregroundStyle(.tint)

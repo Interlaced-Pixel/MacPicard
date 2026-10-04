@@ -1,4 +1,4 @@
-# Improvement phases 1–3: delivery evidence
+# Improvement delivery evidence
 
 This records implementation of `IMPROVEMENT_PLAN.md`, not the original bootstrap phases. No stub controls or placeholder implementations were added.
 
@@ -10,6 +10,8 @@ Committed as `abf33a5`.
 - One recognizable Organize menu exposes selected files and the entire library. Review headings identify the actual scope.
 - Monitoring has independent status, a five-minute default interval, and corrected menu/help/documentation. A passive no-op scan does not replace foreground status or selection.
 - Unreachable fingerprint identification/submission UI is documented as future phase 6, not claimed as delivered.
+
+This is the phase-1 historical state; improvement phase 6 below supersedes the fingerprint UI limitation.
 
 Verification: OrganizationModelTests exercises entire-library organization with filtered selection and no-op monitoring. Native build passed. Existing organization execution/collision/recovery tests remain passing.
 
@@ -60,12 +62,37 @@ The isolated data directory is `/tmp/MacPicard-phase123.BjNsiH/State`, selected 
 
 ## Phase 4 — Scalable collection workspace
 
+Committed as `6d50db6`.
+
 Implemented native sortable/customizable track table, persistent sort/columns/optional toolbar buttons, overflow actions, sidebar destinations and collapsed artist grouping, album navigation independent of edit selection, debounced indexed multi-value search, affected-entry updates, and an openable bounded activity history. Playback remains independent.
 
 Verification on October 4, 2026: 10 Browser/CollectionWorkspace tests passed; Xcode native build passed. The generated 2,000-file fixture verified that one genre edit updates only one index entry and leaves album groups/navigation intact. Preference round-trip and latest-query-wins debounce are tested. In the isolated native app (`/tmp/MacPicard-phase456.GD77Co/State`), FLAC import enabled Open and populated the table; sorting and Activity opened correctly. The prior phase-3 custom two-value add/undo/redo was also verified on screen. Full VoiceOver/accessibility-setting combinations and hardware-scale profiling are not claimed by these smoke checks.
 
 ## Phase 5 — Matching and review workspace
 
+Committed as `c8ffd3c`.
+
 Delivered inline/focused release comparison, detailed release information and score components, secure release URL/ID loading, explicit staged regrouping, two-way assignment drag/drop with accessible menus, result confidence/state filters, rejection/review-next, checkpointed/cancellable whole-library reads, and resumed baseline validation. Ready batch application rejects incomplete/ambiguous/conflicting/stale proposals regardless of score; 85% remains the default. Read/ranking work does not apply tags; full-release ranking runs off the main actor.
 
 Verification: Browser/EditReview/MatchingWorkspace tests cover guarded staging, one-to-one assignments, missing/extras/multi-disc tracks, URL validation, checkpoint restore/resume, rejected proposals, cancellation, stale baselines and undo. Native Xcode build passed. The isolated app loaded the real Lukas Graham release `5e0abf8a-c77a-4826-b435-b3c23b22c0b1` through the secure MusicBrainz client and displayed country/date/barcode/archive availability and unmatched/missing-track counts. Its synthetic four-second audio remained unmatched; no tags were applied from the live lookup. Live lookup is read-only; no live AcoustID submissions are part of validation.
+
+## Phase 6 — Audio fingerprint identification
+
+Delivered selected/album/entire-library scans, selected/entire-collection offline generation, cancellable bounded processing, identity/calculator-version caching, AcoustID recording-to-MusicBrainz release resolution, normal assignment/tag review, and separately labeled fingerprint/release/track confidence. Missing tools and invalid audio have actionable/per-file errors. Generation and read jobs do not stage metadata. Explicitly approved mappings authorize submission; imported identifiers alone do not. The submission sheet requires batch consent, rechecks tag/disk baselines, and journals intent atomically before each non-idempotent write. Accepted/uncertain/interrupted attempts are not automatically resent, including after relaunch. No live submissions were made.
+
+The packaged app requires a configured external official `fpcalc`; it does not bundle or silently install Chromaprint/FFmpeg. The official arm64 1.6.1 calculator was exercised with generated audio in a disposable directory. [FINGERPRINTING.md](FINGERPRINTING.md) documents setup, limits, credentials, privacy, and journal recovery cautions.
+
+During native verification an inactive-folder-picker conflict was reproduced: a selectable FLAC could leave Open disabled. Folder selection now uses an on-demand native panel, preventing inactive folder importers from reconfiguring Import Audio. This supports the actual scan workflow instead of relying only on model fixtures.
+
+Verification on October 4, 2026:
+
+- Strict-concurrency full suite: **183 tests selected, 178 passed, 5 opt-in skips, 0 failures** across eight targets. Skips are native Trash, mounted cross-volume, live MusicBrainz, and two live Cover Art Archive checks; none are claimed as passing.
+- Real official fpcalc 1.6.1 was exercised through the production provider on generated MP3, FLAC, M4A/AAC, Ogg Vorbis, Ogg Opus, and WAV audio, plus corrupt-audio rejection. Cache identity/version/corruption, calculator cancellation, diagnostic redaction, and durable journal behavior are tested.
+- Application fixtures cover bounded/cached read-only generation, incorrect/untagged candidate resolution and explicit review, missing-tool/per-file failures, service-read cancellation, consent/verification/stale guards, and one-attempt uncertain submission behavior. No production credentials are loaded in these tests.
+- Native Xcode app build succeeded. In the isolated app, the rebuilt picker enabled Open for FLAC and imported it, offline generation/re-generation displayed its measured 30-second result, accessible manual assignment exposed low similarity and 16 previewed tag differences, Apply staged those changes, and the current fingerprint batch opened a consent sheet with Submit disabled. Consent was not granted and no live write was made. The generated audio's SHA-256 remained unchanged through review/application/generation.
+- Read-only live MusicBrainz release loading succeeded. No live AcoustID identification was attempted without an application key, and no live submission was made. Identification/submission response handling is covered by controlled transports.
+- Full VoiceOver/mouse-drag combinations, all accessibility preferences, hardware-scale profiling, signing/notarization, and distribution remain future phase-10 validation; these smoke checks do not certify them.
+
+The native staged application was undone with Command-Z: original title/artist/album returned and the fixture became Ready. The final rebuilt inspector was checked switching between both generated files; path, duration, size, and save availability followed the selection. Closing the isolated main window terminated its process after workspace persistence.
+
+Logs: `/tmp/macpicard-phase456-final-tests.log`, `/tmp/macpicard-phase456-final-build.log`. Final native validation uses `/tmp/MacPicard-phase456.GD77Co/State`; only generated audio and this disposable workspace were changed. A selectable file-path label also now refreshes its native identity when the selected file changes, preventing stale path text in the inspector.

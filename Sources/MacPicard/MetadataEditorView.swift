@@ -159,7 +159,7 @@ struct AudioFileDetailsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("File Details").font(.subheadline.weight(.semibold))
-            Text(file.url.path).font(.caption).textSelection(.enabled)
+            Text(file.url.path).font(.caption).textSelection(.enabled).id(file.url)
             LabeledContent("State", value: file.state.rawValue.capitalized)
             if let identity = file.identity { LabeledContent("Size", value: ByteCountFormatter.string(fromByteCount: identity.byteCount, countStyle: .file)) }
             if let duration = file.durationInMilliseconds { LabeledContent("Duration", value: String(format: "%.2f seconds", Double(duration) / 1_000)) }

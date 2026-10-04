@@ -170,6 +170,9 @@ private struct MetadataContextActions: View {
             presentation.isShowingLookup = true
             Task { await model.lookup() }
         }.disabled(!model.canLookUp(ids))
+        Button("Scan Audio Fingerprints…", systemImage: "waveform") {
+            model.startFingerprintScan(scope: .items(ids)); presentation.isShowingFingerprints = true
+        }.disabled(model.isBusy || ids.isEmpty)
         Button("Download Cover Art", systemImage: "photo.on.rectangle") {
             model.selectionChanged(ids)
             Task { await model.downloadCoverArt() }

@@ -122,7 +122,7 @@ struct SettingsView: View {
                     Button(testingTool ? "Checking…" : "Check Tool") { checkTool() }.disabled(testingTool)
                 }
                 if let toolResult { Text(toolResult).font(.caption).textSelection(.enabled) }
-                Text("An empty path allows standard tool discovery. Identification actions are part of the later fingerprinting phase.").font(.caption)
+                Text("MacPicard requires an external official Chromaprint fpcalc executable. An empty path checks standard installation locations. Generate Fingerprints works offline; Scan uses the AcoustID application key. Submission additionally needs a user token and explicit batch consent.").font(.caption)
             }
             Section("Service credentials") {
                 if editingCredentials {

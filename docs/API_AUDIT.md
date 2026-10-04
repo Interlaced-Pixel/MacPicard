@@ -30,6 +30,8 @@ The optimized release bundle passed property-list and code-signature validation 
 
 ## Primary references
 
+October 4 improvement phase 6 adds a read-only recording-to-release browse path (`/ws/2/release?recording={UUID}`), bounded candidate resolution, and consent/journal controls around existing AcoustID requests. Its current verification and setup requirements are recorded in [Fingerprinting](FINGERPRINTING.md) and [Improvement progress](IMPROVEMENT_PROGRESS.md); the numeric audit results above are historical, not the current test count.
+
 - [MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API)
 - [MusicBrainz search](https://musicbrainz.org/doc/MusicBrainz_API/Search)
 - [MusicBrainz rate limits and User-Agent](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting)

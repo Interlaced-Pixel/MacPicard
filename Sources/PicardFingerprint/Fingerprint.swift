@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import PicardMusicBrainz
 import PicardFoundation
 
@@ -51,7 +52,7 @@ public enum ChromaprintDecoder {
         do {
             let response = try JSONDecoder().decode(FpcalcResponse.self, from: data)
             guard let fingerprint = response.fingerprint, !fingerprint.isEmpty,
-                  let duration = response.duration, duration > 0 else {
+                  let duration = response.duration, duration.isFinite, duration > 0, duration < Double(Int32.max) / 1_000 else {
                 throw FingerprintError.invalidOutput("The JSON response did not contain a fingerprint and positive duration.")
             }
             return AudioFingerprint(
@@ -67,7 +68,11 @@ public enum ChromaprintDecoder {
     }
 }
 
-public actor ChromaprintFingerprintProvider {
+public protocol AudioFingerprintProviding: Sendable {
+    func fingerprint(url: URL) async throws -> AudioFingerprint
+}
+
+public actor ChromaprintFingerprintProvider: AudioFingerprintProviding {
     public static let defaultExecutableCandidates: [URL] = [
         URL(fileURLWithPath: "/opt/homebrew/bin/fpcalc"),
         URL(fileURLWithPath: "/usr/local/bin/fpcalc"),
@@ -82,7 +87,7 @@ public actor ChromaprintFingerprintProvider {
         })
     }
 
-    public func fingerprint(url: URL) throws -> AudioFingerprint {
+    public func fingerprint(url: URL) async throws -> AudioFingerprint {
         guard FileManager.default.isReadableFile(atPath: url.path) else {
             throw FingerprintError.invalidInput("The audio file is not readable: \(url.path)")
         }
@@ -90,28 +95,74 @@ public actor ChromaprintFingerprintProvider {
             throw FingerprintError.unavailable("Install Chromaprint's fpcalc command-line tool.")
         }
 
-        let output = Pipe()
-        let errors = Pipe()
-        let process = Process()
-        process.executableURL = executableURL
-        process.arguments = ["-json", url.path]
+        let run = FingerprintProcess(executable: executableURL, arguments: ["-algorithm", "2", "-length", "120", "-json", url.path], timeoutSeconds: 120)
+        let task = Task.detached(priority: .utility) { try run.execute() }
+        return try await withTaskCancellationHandler {
+            let data = try await task.value
+            try Task.checkCancellation()
+            return try ChromaprintDecoder.decode(data)
+        } onCancel: { run.cancel(); task.cancel() }
+    }
+
+    public static func version(executableURL: URL) async throws -> String {
+        guard FileManager.default.isExecutableFile(atPath: executableURL.path) else { throw FingerprintError.unavailable("Choose an executable fpcalc in Settings.") }
+        let run = FingerprintProcess(executable: executableURL, arguments: ["-version"], timeoutSeconds: 5)
+        let task = Task.detached(priority: .utility) { try run.execute() }
+        return try await withTaskCancellationHandler {
+            let text = String(decoding: try await task.value, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            try Task.checkCancellation()
+            guard text.lowercased().contains("fpcalc") else { throw FingerprintError.unavailable("The selected executable did not identify itself as fpcalc.") }
+            return text
+        } onCancel: { run.cancel(); task.cancel() }
+    }
+}
+
+/// Process is protected by the lock; pipe draining happens only on a utility worker.
+private final class FingerprintProcess: @unchecked Sendable {
+    private let lock = NSLock()
+    private let process = Process()
+    private let output = Pipe()
+    private var cancelled = false
+    private var timedOut = false
+    private let timeoutSeconds: Double
+    init(executable: URL, arguments: [String], timeoutSeconds: Double) {
+        self.timeoutSeconds = timeoutSeconds
+        process.executableURL = executable
+        process.arguments = arguments
         process.standardOutput = output
-        process.standardError = errors
-
+        // Tool diagnostics can contain private paths or fingerprints; never relay them to logs/UI.
+        process.standardError = FileHandle.nullDevice
+    }
+    func cancel(timedOut: Bool = false) {
+        lock.lock(); cancelled = true; self.timedOut = self.timedOut || timedOut
+        if process.isRunning { process.terminate() }
+        lock.unlock()
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5) { [self] in
+            lock.lock(); defer { lock.unlock() }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
+    }
+    func execute() throws -> Data {
+        lock.lock()
+        if cancelled { lock.unlock(); throw CancellationError() }
+        do { try process.run() } catch { lock.unlock(); throw FingerprintError.unavailable("The configured fpcalc executable could not be started.") }
+        lock.unlock()
+        let timeout = DispatchWorkItem { [self] in cancel(timedOut: true) }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeoutSeconds, execute: timeout)
+        defer { timeout.cancel() }
+        var data = Data()
         do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            throw FingerprintError.unavailable(error.localizedDescription)
-        }
-
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let errorMessage = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard process.terminationStatus == 0 else {
-            throw FingerprintError.processFailed(process.terminationStatus, errorMessage)
-        }
-        return try ChromaprintDecoder.decode(data)
+            while let chunk = try output.fileHandleForReading.read(upToCount: 8_192), !chunk.isEmpty {
+                data.append(chunk)
+                if data.count > 1_048_576 { cancel(); throw FingerprintError.invalidOutput("Calculator output exceeded the safety limit.") }
+            }
+        } catch { cancel(); process.waitUntilExit(); throw error }
+        process.waitUntilExit()
+        lock.lock(); let wasCancelled = cancelled; let didTimeOut = timedOut; lock.unlock()
+        if didTimeOut { throw FingerprintError.unavailable("The calculator timed out. Check the executable and audio file, then retry explicitly.") }
+        if wasCancelled { throw CancellationError() }
+        guard process.terminationStatus == 0 else { throw FingerprintError.processFailed(process.terminationStatus, "Check that this audio file is valid and supported by fpcalc.") }
+        return data
     }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import PicardFoundation
+import PicardFingerprint
 import PicardScripts
 
 enum ServiceCredential: String, CaseIterable {
@@ -59,25 +60,11 @@ extension AppModel {
 }
 
 actor FingerprintToolInspector {
-    func version(path: String) throws -> String {
-        guard path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) else {
-            throw PicardError.invalidConfiguration("Select an executable fpcalc file first.")
+    func version(path: String) async throws -> String {
+        let executable = path.isEmpty ? ChromaprintFingerprintProvider.defaultExecutableCandidates.first { FileManager.default.isExecutableFile(atPath: $0.path) } : URL(fileURLWithPath: path)
+        guard let executable, path.isEmpty || path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: executable.path) else {
+            throw PicardError.invalidConfiguration("Install the official fpcalc calculator or select its executable file.")
         }
-        let process = Process(), output = Pipe()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = ["-version"]
-        process.standardOutput = output
-        process.standardError = output
-        try process.run()
-        // Read before wait to avoid filling the pipe. A timeout prevents a bad tool from hanging Settings.
-        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5, execute: timeout)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        timeout.cancel()
-        guard process.terminationStatus == 0, let text = String(data: data, encoding: .utf8), text.lowercased().contains("fpcalc") else {
-            throw PicardError.invalidConfiguration("The selected tool did not report a valid fpcalc version.")
-        }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await ChromaprintFingerprintProvider.version(executableURL: executable)
     }
 }

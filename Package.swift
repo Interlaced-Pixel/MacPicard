@@ -71,6 +71,7 @@ let package = Package(
                 "PicardSessions"
             ],
             path: "Sources/MacPicard",
+            exclude: ["Resources"],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-strict-concurrency=complete"])

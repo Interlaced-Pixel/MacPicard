@@ -217,6 +217,16 @@ public actor MusicBrainzClient {
         return response.release()
     }
 
+    public func releasesForRecording(id: String, limit: Int = 25) async throws -> [MusicBrainzReleaseSummary] {
+        guard let uuid = UUID(uuidString: id) else { throw MusicBrainzError.invalidIdentifier("A recording UUID is required.") }
+        let response: MusicBrainzSearchResponse = try await get(path: "release", queryItems: [
+            URLQueryItem(name: "recording", value: uuid.uuidString.lowercased()),
+            URLQueryItem(name: "limit", value: String(max(1, min(limit, 100)))),
+            URLQueryItem(name: "inc", value: "artist-credits labels release-groups media")
+        ])
+        return response.releases.map { $0.summary() }
+    }
+
     private func get<Response: Decodable>(
         path: String,
         queryItems: [URLQueryItem]

@@ -28,6 +28,8 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
             return .terminateCancel
         }
         model.playback.stop(clearQueue: true)
+        model.cancelFingerprintOperation()
+        model.cancelLibraryMatch()
         Task { @MainActor in
             do {
                 try await model.flushSession()
@@ -134,21 +136,13 @@ struct ContentView: View {
                 Task { await model.importResult(.success(panel.urls)) }
             }
         }
-        .background {
-            Color.clear.fileImporter(isPresented: $presentation.isAddingLibrary,
-                      allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
-                if case let .success(urls) = result, let url = urls.first {
-                    Task { await model.addLibrary(directory: url) }
-                } else if case let .failure(error) = result { model.present(error) }
-            }
+        .onChange(of: presentation.isAddingLibrary) { _, choosing in
+            guard choosing else { return }
+            chooseLibraryDirectory(relinking: false)
         }
-        .background {
-            Color.clear.fileImporter(isPresented: $presentation.isRelinkingLibrary,
-                      allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
-                if case let .success(urls) = result, let url = urls.first {
-                    Task { await model.relinkLibrary(directory: url) }
-                } else if case let .failure(error) = result { model.present(error) }
-            }
+        .onChange(of: presentation.isRelinkingLibrary) { _, choosing in
+            guard choosing else { return }
+            chooseLibraryDirectory(relinking: true)
         }
         .sheet(isPresented: $presentation.isShowingLookup) {
             LookupView(model: model)
@@ -174,6 +168,8 @@ struct ContentView: View {
             MetadataEditorView(model: model).frame(minWidth: 850, minHeight: 570)
         }
         .sheet(isPresented: $presentation.isShowingActivity) { ActivityView(model: model) }
+        .sheet(isPresented: $presentation.isShowingFingerprints) { FingerprintResultsView(model: model, presentation: presentation) }
+        .sheet(item: $model.fingerprintSubmissionReview) { review in FingerprintSubmissionView(model: model, review: review) }
         .sheet(isPresented: $presentation.isRegrouping) { RegroupView(model: model) }
         .sheet(isPresented: $presentation.isNamingSession) {
             NewSessionView(model: model, copying: presentation.copiesCurrentSession)
@@ -196,6 +192,27 @@ struct ContentView: View {
             Text(request.trash
                  ? "\(request.fileIDs.count) library files will be moved to the recoverable Trash. External originals stay untouched. Pending edits on these items will be discarded."
                  : "\(request.fileIDs.count) items will be removed from this workspace; all audio files stay on disk. Removed library items stay hidden during refresh until re-imported or restored. Pending edits on these items will be discarded.")
+        }
+    }
+
+    private func chooseLibraryDirectory(relinking: Bool) {
+        // Inactive SwiftUI folder importers can reconfigure the shared native
+        // open panel while Import Audio is visible. Configure only on demand.
+        let panel = NSOpenPanel()
+        panel.title = relinking ? "Reconnect Music Library" : "Add Music Library"
+        panel.canChooseFiles = false; panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false; panel.allowedContentTypes = [.folder]
+        guard let window = NSApp.keyWindow else {
+            presentation.isAddingLibrary = false; presentation.isRelinkingLibrary = false; return
+        }
+        let workspaceID = model.activeWorkspaceID
+        panel.beginSheetModal(for: window) { response in
+            presentation.isAddingLibrary = false; presentation.isRelinkingLibrary = false
+            guard response == .OK, let directory = panel.url, workspaceID == model.activeWorkspaceID else { return }
+            Task {
+                if relinking { await model.relinkLibrary(directory: directory) }
+                else { await model.addLibrary(directory: directory) }
+            }
         }
     }
 

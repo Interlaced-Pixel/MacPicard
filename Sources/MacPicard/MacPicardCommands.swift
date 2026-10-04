@@ -175,6 +175,20 @@ struct MacPicardCommands: Commands {
         }
 
         CommandMenu("Metadata") {
+            Menu("Audio Fingerprints") {
+                Button("Scan Selected…") { scan(.selection) }.disabled(model.isBusy || model.selectedFiles.isEmpty)
+                Button("Scan Album…") {
+                    if let album = model.albumGroups.first(where: { $0.id == model.selectedAlbumID }) { scan(.items(Set(album.fileIDs))) }
+                }.disabled(model.isBusy || model.selectedAlbumID == nil)
+                Button("Scan Entire Library…") { scan(.library) }.disabled(model.isBusy || model.activeWorkspace?.kind != .library || model.files.isEmpty)
+                Divider()
+                Button("Generate Selected Offline…") { scan(.selection, identify: false) }.disabled(model.isBusy || model.selectedFiles.isEmpty)
+                Button("Generate Entire Collection Offline…") { scan(.items(Set(model.files.map(\.id))), identify: false) }.disabled(model.isBusy || model.files.isEmpty)
+                Button("Show Fingerprint Results…") { presentation.isShowingFingerprints = true }
+                Divider()
+                Button("Submit Verified Selected AcoustIDs…") { model.prepareFingerprintSubmission() }.disabled(model.isBusy || model.fingerprintRun == nil || model.selectedFiles.isEmpty)
+                Button("Submit Verified Library AcoustIDs…") { model.prepareFingerprintSubmission(scope: .library) }.disabled(model.isBusy || model.fingerprintRun == nil || model.activeWorkspace?.kind != .library)
+            }
             Button("Show Release Comparison") { presentation.showsMatchComparison.toggle() }.disabled(!model.canEditSelection)
             Button("Regroup Selected Files…") { presentation.isRegrouping = true }.disabled(!model.canEditSelection)
             Button("All Tags & Changes…") { presentation.isShowingMetadataEditor = true }
@@ -211,6 +225,11 @@ struct MacPicardCommands: Commands {
         CommandGroup(replacing: .help) {
             Button("MacPicard Guide") { presentation.isShowingGuide = true }
         }
+    }
+
+    private func scan(_ scope: WorkspaceScope, identify: Bool = true) {
+        model.startFingerprintScan(scope: scope, identify: identify)
+        presentation.isShowingFingerprints = true
     }
 }
 
