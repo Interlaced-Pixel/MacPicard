@@ -35,6 +35,37 @@ final class CollectionWorkspaceTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(250))
         XCTAssertEqual(model.appliedSearchQuery, "second")
     }
+
+    @MainActor
+    func testSearchAtTenThousandTracksStaysWithinInteractiveBudget() throws {
+        let model = AppModel()
+        model.files = try (0..<10_000).map { index in
+            var file = AudioFile(url: URL(fileURLWithPath: "/tmp/scale-\(index).flac"))
+            try file.beginLoading()
+            try file.finishLoading(
+                metadata: Metadata(fields: [
+                    "title": ["Track \(index)"],
+                    "artist": ["Artist \(index % 100)"],
+                    "album": ["Album \(index / 10)"],
+                    "genre": [index == 9_999 ? "Needle" : "Pop"]
+                ]),
+                identity: AudioFileIdentity(resourceIdentifier: nil, byteCount: 1, modificationDate: nil, prefixHash: "fixture")
+            )
+            return file
+        }
+
+        model.searchQuery = "Needle"
+        let clock = ContinuousClock()
+        let start = clock.now
+        model.applyBrowserSearch()
+        let elapsed = start.duration(to: clock.now)
+
+        XCTAssertLessThan(elapsed, .milliseconds(300), "Indexed search exceeded the interactive search budget")
+        XCTAssertEqual(model.visibleFiles.count, 1)
+        XCTAssertEqual(model.visibleFiles.first?.metadata.firstValue(for: "title"), "Track 9999")
+        model.sessionSaveTask?.cancel()
+        model.searchTask?.cancel()
+    }
     @MainActor
     func testColumnSortAndToolbarPreferencesRoundTrip() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

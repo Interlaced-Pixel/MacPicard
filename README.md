@@ -6,7 +6,7 @@ MacPicard is a native macOS app for identifying, editing, and organizing music f
 
 Review matches before applying them, stage metadata and artwork changes safely, preview file moves, and save only when the result looks right. Your original files stay untouched during import, and important actions remain explicit and reversible.
 
-![MacPicard library workspace](docs/screenshots/01-library-browser.png)
+![MacPicard music library](docs/screenshots/01-library-browser.png)
 
 ### What it does
 

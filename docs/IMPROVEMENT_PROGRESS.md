@@ -215,6 +215,18 @@ Final logs: `/tmp/macpicard-phase9-final-tests.log`, `/tmp/macpicard-phase9-fina
 - Catalog schema 2 migrates older session entries into Music Libraries while retaining IDs, names, edits, artwork, history, exclusions, bookmarks and file paths. New owned music folders receive future imports; existing session originals are neither moved nor copied during migration and stay ineligible for library Trash. The saved-document format and storage paths remain compatible. Migration is idempotent and rejects invalid catalogs without replacing them. Graphify's foundation graph and current-source review guided reuse of the existing saved-document/bookmark services and import engine.
 - Removing the last library retains music and saved/recovery documents, clears playback/navigation/monitoring, and shows the create/open screen. An intentionally empty catalog stays empty after restart; it does not recreate a session or re-import the original single-document installation.
 
+## Phase 10 — Production validation and delivery — 2026-10-04
+
+Phase 10 is complete for the first public release candidate. The repository is clean, the native Xcode project and Swift package both build under strict Swift 6 concurrency, and the packaged application is validated before publication.
+
+- Production hardening closed the remaining release-text and metadata gaps: the release is versioned `1.0.0`/build `100`, the toolbar options control describes its actual scope, the README uses library terminology, and release notes identify the six supported formats and the ad-hoc signing limitation.
+- Added a deterministic 10,000-track indexed-search gate. Search is measured independently from fixture construction and must remain under the documented 300 ms interactive budget while returning the exact match.
+- The source audit traced library state through `AppModel`, `WorkspaceStore`, `SessionManager`, bookmarks, monitoring, matching, organization, API clients, playback, and update installation. No user-facing dead controls, placeholder actions, or unhandled release-only fallback paths were found in the audited primary workflow.
+- Strict Swift 6 package tests passed with zero failures; opt-in tests remain explicitly identified when they require native Trash, a mounted cross-volume volume, or live read-only services. The Xcode Release scheme is also built and tested from a fresh derived-data location.
+- Runtime validation uses disposable data and the packaged app. It covers launch, empty-library behavior, managed import, six-format fingerprint/playback resources, window-close termination, and deep signature/resource checks. No user catalog or audio files are used.
+
+Known distribution limitation: the local artifact is ad-hoc signed and not notarized because no Developer ID/notary credentials are available in the release environment. Accessibility preference and hardware-scale acceptance still require a human release operator on the target macOS setup; they are documented as manual gates rather than claimed from compilation alone.
+
 Validation:
 
 - Swift 6 strict-concurrency suite: **232 selected, 227 passed, 5 opt-in skips, zero failures**. The same external/live checks remain skipped. **36 focused Release tests passed without skips or failures**. Added migration tests check unchanged audio and primary/recovery document bytes, preserved pending edits/bookmark keys/exclusions and IDs, idempotence and invalid-catalog rejection. App tests cover single-document migration, managed imports, no-library import rejection and removal/restart behavior.

@@ -209,7 +209,7 @@ private struct ActionBar: View {
                 Toggle("Inspector", isOn: $presentation.showsInspector).disabled(presentation.showsMatchComparison)
                 Button("Clear Selection") { model.clearSelection() }.disabled(model.selectedFiles.isEmpty)
             } label: { Image(systemName: "slider.horizontal.3") }
-                .menuIndicator(.hidden).buttonStyle(.bordered).help("Workspace options")
+                .menuIndicator(.hidden).buttonStyle(.bordered).help("Library and view options")
         }
         .controlSize(.small)
         .tint(.primary)
