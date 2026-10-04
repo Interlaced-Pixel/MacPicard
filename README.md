@@ -40,6 +40,12 @@ The File, Edit, View, Library, and Metadata menus share their actions and enable
 
 Menu placement and persistent folder access follow Apple's [command groups](https://developer.apple.com/documentation/swiftui/commandgroupplacement) and [security-scoped URL access](https://developer.apple.com/documentation/foundation/url/startaccessingsecurityscopedresource()) APIs.
 
+## Collection workspace
+
+The track table supports native keyboard navigation, multi-selection, sortable headers, and column visibility/order customization from the header context menu. Sort and column choices are saved across launches. Sidebar destinations jump to changed, unidentified, unavailable, or artwork-missing files; optional artist groups start collapsed. Clicking an album navigates without selecting every song for editing—use Select All or its batch context actions deliberately.
+
+Search is debounced by 180 ms and uses cached per-file text including multi-value tags. Ordinary non-grouping edits update affected search entries instead of rebuilding the album tree. Playback and metadata editing retain independent selections. Essential Import/Save/Organize actions stay visible; other actions remain in the overflow menu at narrower widths. Overflow → Toolbar Items saves which optional buttons appear. Activity opens from the status bar and shows a bounded history of foreground outcomes and separate background warnings.
+
 ## Review file organization
 
 **Organize** (⇧⌘O), its Metadata menu item and track/album context actions always open a read-only review. Music Libraries default to their own folder; Sessions ask for a destination (or reuse the last chosen one). Library workspaces also provide **Organize Entire Library…**, which reviews every indexed audio file regardless of the current selection. Choosing a folder does **not** start moving files. Pick an artist/album/track naming preset, artist/title layout, original filenames, or a custom Picard naming pattern. Naming is separate from metadata scripts and uses the current pending tags without saving them. The library preset pads track numbers, prefixes multi-disc tracks, sanitizes unsafe tag characters, and falls back to filenames and unknown artist/album folders.

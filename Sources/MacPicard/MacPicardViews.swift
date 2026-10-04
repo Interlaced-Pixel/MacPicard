@@ -87,7 +87,7 @@ struct WorkspaceView: View {
                 AlbumWorkspace(model: model, presentation: presentation)
             }
             PlaybackBar(playback: model.playback, presentation: presentation)
-            WorkspaceStatusBar(model: model)
+            WorkspaceStatusBar(model: model, presentation: presentation)
         }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted) { providers in
             model.importDroppedProviders(providers)
@@ -131,28 +131,36 @@ private struct ActionBar: View {
                 .help(model.activeWorkspace?.kind == .library
                       ? "Copy audio into the library and organize by artist and album; keep originals."
                       : "Import audio references into this session without moving files.")
+                if model.browserPreferences.toolbarActions.contains("lookup") && !isCompact {
                 GlassActionButton("Look Up", systemImage: "magnifyingglass", compact: isCompact) {
                     isShowingLookup = true
                     Task { await model.lookup() }
                 }
                 .disabled(!model.canLookupSelection)
+                }
+                if model.browserPreferences.toolbarActions.contains("artwork") && !isCompact {
                 GlassActionButton("Cover Art", systemImage: "photo.on.rectangle", compact: isCompact) {
                     Task { await model.downloadCoverArt() }
                 }
                 .disabled(model.isBusy || !model.canDownloadCoverArt)
+                }
+                if model.browserPreferences.toolbarActions.contains("script") && !isCompact {
                 GlassActionButton("Script", systemImage: "chevron.left.forwardslash.chevron.right", compact: isCompact) {
                     isShowingScript = true
                 }
                 .disabled(!model.canEditSelection)
+                }
                 GlassActionButton("Save", systemImage: "square.and.arrow.down", compact: isCompact) {
                     Task { await model.saveSelected() }
                 }
                 .disabled(!model.canPerform(.save))
+                if model.browserPreferences.toolbarActions.contains("discard") && !isCompact {
                 GlassActionButton("Discard", systemImage: "arrow.uturn.backward", compact: isCompact) {
                     presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID)
                 }
                 .disabled(!model.canDiscardChanges(model.selectedFileIDs))
                 .help("Discard pending tags and artwork; keep audio files unchanged.")
+                }
                 Menu {
                     Button("Organize Selected Files…") {
                         model.requestOrganizationReview()
@@ -170,6 +178,23 @@ private struct ActionBar: View {
                 }
                 .buttonStyle(.glass)
                 .help("Choose selected files or the entire library, then review paths before moving.")
+                Menu {
+                    Button("Look Up…") { isShowingLookup = true; Task { await model.lookup() } }.disabled(!model.canLookupSelection)
+                    Button("Download Cover Art") { Task { await model.downloadCoverArt() } }.disabled(model.isBusy || !model.canDownloadCoverArt)
+                    Button("Edit Script…") { isShowingScript = true }.disabled(!model.canEditSelection)
+                    Button("Discard Selected Changes…") { presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID) }.disabled(!model.canPerform(.discard))
+                    Button("All Tags & Changes…") { presentation.isShowingMetadataEditor = true }.disabled(!model.canEditSelection)
+                    Button("Activity…") { presentation.isShowingActivity = true }
+                    Divider()
+                    Menu("Toolbar Items") {
+                        ForEach(["lookup", "artwork", "script", "discard"], id: \.self) { key in
+                            Toggle(key.capitalized, isOn: Binding(get: { model.browserPreferences.toolbarActions.contains(key) }, set: {
+                                if $0 { model.browserPreferences.toolbarActions.insert(key) } else { model.browserPreferences.toolbarActions.remove(key) }
+                                model.saveBrowserPreferences()
+                            }))
+                        }
+                    }
+                } label: { Image(systemName: "ellipsis") }.buttonStyle(.glass).accessibilityLabel("More actions and toolbar customization")
 
                 Button { presentation.showsInspector.toggle() } label: {
                     Image(systemName: "sidebar.right")
@@ -234,6 +259,7 @@ private struct ActionBar: View {
 
 private struct WorkspaceStatusBar: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var presentation: AppPresentation
 
     var body: some View {
         HStack(spacing: 8) {
@@ -247,6 +273,7 @@ private struct WorkspaceStatusBar: View {
                 .lineLimit(2)
                 .help(model.errorMessage ?? model.statusMessage)
             Spacer(minLength: 8)
+            Button { presentation.isShowingActivity = true } label: { Label("Activity", systemImage: "list.bullet.rectangle") }.buttonStyle(.borderless)
             if let message = model.monitoringMessage {
                 Label("Monitor", systemImage: "exclamationmark.circle")
                     .foregroundStyle(.orange).help(message)
@@ -479,20 +506,7 @@ private struct TrackListView: View {
                                        description: Text("Try another search or filter."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-            List(selection: $model.selectedFileIDs) {
-                ForEach(Array(model.visibleFiles.enumerated()), id: \.element.id) { offset, file in
-                    TrackDetailRow(file: file, position: offset + 1, isSelected: model.selectedFileIDs.contains(file.id), playback: model.playback)
-                        .tag(file.id)
-                        .contextMenu {
-                            TrackContextMenu(model: model, presentation: presentation, fileID: file.id)
-                        }
-                        .onTapGesture(count: 2) { model.playTrack(file.id) }
-                }
-            }
-            .listStyle(.inset)
-            .onChange(of: model.selectedFileIDs) { _, ids in
-                model.selectionChanged(ids)
-            }
+            CollectionTrackTable(model: model, presentation: presentation)
             }
         }
         .background(.thinMaterial)

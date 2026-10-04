@@ -78,10 +78,12 @@ final class BrowserTests: XCTestCase {
         model.selectAlbum(try XCTUnwrap(model.albumGroups.first(where: { $0.title == "One" })))
         XCTAssertEqual(model.visibleFiles.map(\.id), [first.id])
         model.searchQuery = "bob edited"
+        model.applyBrowserSearch()
         XCTAssertEqual(model.visibleFiles.map(\.id), [second.id], "Search must span every album")
         XCTAssertEqual(model.browserAlbumGroups.map(\.title), ["Two"])
         XCTAssertTrue(model.selectedFiles.isEmpty, "Search must not leave hidden tracks selected for editing")
         model.searchQuery = ""
+        model.applyBrowserSearch()
         model.browseAllTracks()
         model.browserFilter = .modified
         XCTAssertEqual(model.visibleFiles.map(\.id), [second.id])

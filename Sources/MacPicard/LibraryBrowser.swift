@@ -11,6 +11,7 @@ final class AppPresentation: ObservableObject {
     @Published var isShowingScript = false
     @Published var isShowingSettings = false
     @Published var isShowingMetadataEditor = false
+    @Published var isShowingActivity = false
     @Published var isAddingLibrary = false
     @Published var isRelinkingLibrary = false
     @Published var isNamingSession = false
@@ -93,6 +94,13 @@ struct LibrarySidebar: View {
                     }
                     .buttonStyle(.plain)
 
+                    ForEach([BrowserFilter.modified, .unidentified, .unavailable, .missingArtwork]) { destination in
+                        Button { model.browseDestination(destination) } label: {
+                            Label(destination.rawValue, systemImage: destination.symbol).frame(maxWidth: .infinity, alignment: .leading)
+                        }.buttonStyle(.plain).padding(8)
+                    }
+                    Toggle("Group by Artist", isOn: $model.groupsByArtist).padding(8)
+
                     HStack {
                         Text("ALBUMS")
                             .font(.caption2.weight(.semibold))
@@ -105,8 +113,20 @@ struct LibrarySidebar: View {
                     .padding(.horizontal, 10)
                     .padding(.top, 8)
 
-                    ForEach(model.browserAlbumGroups) { group in
-                        AlbumBrowserRow(model: model, presentation: presentation, group: group)
+                    if model.groupsByArtist {
+                        ForEach(Array(Set(model.browserAlbumGroups.map(\.artist))).sorted(), id: \.self) { artist in
+                            DisclosureGroup {
+                                ForEach(model.browserAlbumGroups.filter { $0.artist == artist }) { group in
+                                    AlbumBrowserRow(model: model, presentation: presentation, group: group)
+                                }
+                            } label: {
+                                Button(artist) { model.browseArtist(artist) }.buttonStyle(.plain)
+                            }.padding(.horizontal, 8)
+                        }
+                    } else {
+                        ForEach(model.browserAlbumGroups) { group in
+                            AlbumBrowserRow(model: model, presentation: presentation, group: group)
+                        }
                     }
 
                     if model.browserAlbumGroups.isEmpty {
@@ -317,7 +337,7 @@ private struct AlbumBrowserRow: View {
                 .accessibilityLabel("\(isExpanded ? "Collapse" : "Expand") \(group.title)")
                 .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
 
-                Button { model.selectAlbum(group) } label: {
+                Button { model.navigateAlbum(group) } label: {
                     HStack(spacing: 8) {
                         ArtworkThumbnail(artwork: group.fileIDs.first.flatMap { model.file(id: $0)?.artwork.first(of: .front) })
                             .frame(width: 34, height: 34)

@@ -173,6 +173,7 @@ struct ContentView: View {
         .sheet(isPresented: $presentation.isShowingMetadataEditor) {
             MetadataEditorView(model: model).frame(minWidth: 850, minHeight: 570)
         }
+        .sheet(isPresented: $presentation.isShowingActivity) { ActivityView(model: model) }
         .sheet(isPresented: $presentation.isNamingSession) {
             NewSessionView(model: model, copying: presentation.copiesCurrentSession)
         }

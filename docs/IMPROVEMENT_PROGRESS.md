@@ -57,3 +57,9 @@ The Mac locked during the isolated GUI run, and computer control reported that a
 4. Finish keyboard and VoiceOver checks of the new Settings/tag-editor controls. Comprehensive accessibility validation and large-library profiling remain part of later phases as well.
 
 The isolated data directory is `/tmp/MacPicard-phase123.BjNsiH/State`, selected with `MACPICARD_DATA_DIRECTORY`; the audio fixture is `/tmp/MacPicard-phase123.BjNsiH/first.flac`. This test instance does not load the user's normal workspace catalog. No real music files were changed.
+
+## Phase 4 — Scalable collection workspace
+
+Implemented native sortable/customizable track table, persistent sort/columns/optional toolbar buttons, overflow actions, sidebar destinations and collapsed artist grouping, album navigation independent of edit selection, debounced indexed multi-value search, affected-entry updates, and an openable bounded activity history. Playback remains independent.
+
+Verification on October 4, 2026: 10 Browser/CollectionWorkspace tests passed; Xcode native build passed. The generated 2,000-file fixture verified that one genre edit updates only one index entry and leaves album groups/navigation intact. Preference round-trip and latest-query-wins debounce are tested. In the isolated native app (`/tmp/MacPicard-phase456.GD77Co/State`), FLAC import enabled Open and populated the table; sorting and Activity opened correctly. The prior phase-3 custom two-value add/undo/redo was also verified on screen. Full VoiceOver/accessibility-setting combinations and hardware-scale profiling are not claimed by these smoke checks.

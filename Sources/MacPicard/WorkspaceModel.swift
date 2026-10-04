@@ -76,7 +76,7 @@ extension AppModel {
     }
 
     var browsingAllTracks: Bool {
-        selectedAlbumID == nil || !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        selectedAlbumID == nil || !appliedSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var displayedAlbum: AlbumGroup? {
@@ -85,6 +85,7 @@ extension AppModel {
 
     var browserTitle: String {
         if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Search Results" }
+        if let selectedArtist { return selectedArtist }
         return displayedAlbum?.title ?? activeWorkspace?.name ?? "All Tracks"
     }
 
@@ -97,12 +98,7 @@ extension AppModel {
 
     func matchesBrowser(_ file: AudioFile) -> Bool {
         guard passesFilter(file) else { return false }
-        let tokens = searchQuery.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard !tokens.isEmpty else { return true }
-        let text = [file.url.lastPathComponent, "title", "artist", "album", "albumartist", "genre"]
-            .enumerated().map { index, key in index == 0 ? key : file.metadata.firstValue(for: key) ?? "" }
-            .joined(separator: " ")
-        return tokens.allSatisfy { text.localizedStandardContains($0) }
+        return indexedSearchMatches(file.id)
     }
 
     func passesFilter(_ file: AudioFile) -> Bool {
@@ -117,6 +113,7 @@ extension AppModel {
 
     func browseAllTracks() {
         selectedAlbumID = nil
+        selectedArtist = nil
         clearSelection()
         scheduleSessionSave()
     }

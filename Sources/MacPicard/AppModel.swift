@@ -66,9 +66,9 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var snapshot: RuntimeSnapshot?
     @Published private(set) var configuration = AppConfiguration()
-    @Published var errorMessage: String?
-    @Published var statusMessage = "Ready"
-    @Published var monitoringMessage: String?
+    @Published var errorMessage: String? { didSet { if let errorMessage { recordActivity(errorMessage) } } }
+    @Published var statusMessage = "Ready" { didSet { recordActivity(statusMessage) } }
+    @Published var monitoringMessage: String? { didSet { if let monitoringMessage { recordActivity(monitoringMessage, background: true) } } }
     @Published var editHistoryRevision = 0
     let editUndoManager = UndoManager()
     var editHistoryNeedsReset = false
@@ -81,8 +81,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var albumGroups: [AlbumGroup] = []
     @Published var searchQuery = "" {
         didSet {
-            rebuildBrowserMatches()
-            if oldValue != searchQuery { keepSelectionInSearchResults() }
+            searchTask?.cancel()
+            searchTask = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
+                guard let self else { return }
+                self.applyBrowserSearch()
+            }
         }
     }
     @Published var browserFilter = BrowserFilter.all {
@@ -100,6 +104,14 @@ final class AppModel: ObservableObject {
     @Published var isScanningLibrary = false
     @Published var selectedFileIDs = Set<UUID>()
     @Published var selectedAlbumID: String?
+    @Published var selectedArtist: String?
+    @Published var groupsByArtist = false
+    @Published var activity: [ActivityEntry] = []
+    @Published var browserPreferences = BrowserPreferences()
+    var browserPreferencesURL: URL?
+    var searchTask: Task<Void, Never>?
+    var appliedSearchQuery = ""
+    var browserIndexUpdates = 0
     @Published var lookupResults: [MusicBrainzReleaseSummary] = []
     @Published var matchResults: [ReleaseMatchResult] = []
     @Published private(set) var selectedRelease: MusicBrainzRelease?
@@ -138,6 +150,7 @@ final class AppModel: ObservableObject {
     private var lookupGeneration = UUID()
     private let lookupAudioEngine = FormatEngine()
     private var filesByID: [UUID: AudioFile] = [:]
+    private var browserEntries: [UUID: BrowserEntry] = [:]
     var workspaceStore: WorkspaceStore?
     let playback = PlaybackController()
     let libraryScanner = LibraryScanner()
@@ -158,7 +171,16 @@ final class AppModel: ObservableObject {
     }
 
     private func rebuildBrowserIndex() {
+        let changed = files.filter { filesByID[$0.id] != $0 }
+        let incomingIDs = Set(files.map(\.id))
+        let removed = Set(filesByID.keys).subtracting(incomingIDs)
+        guard !changed.isEmpty || !removed.isEmpty else { return }
+        let regroup = !removed.isEmpty || changed.contains { browserEntries[$0.id]?.grouping != BrowserEntry($0).grouping }
         filesByID = Dictionary(files.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        for id in removed { browserEntries.removeValue(forKey: id); matchingFileIDs.remove(id) }
+        for file in changed { browserEntries[file.id] = BrowserEntry(file) }
+        browserIndexUpdates += changed.count
+        if regroup {
         var grouped: [String: (title: String, artist: String, ids: [UUID])] = [:]
         for file in files {
             let title = file.metadata.firstValue(for: "album")?.trimmedNonEmpty ?? "Unmatched files"
@@ -185,12 +207,28 @@ final class AppModel: ObservableObject {
             if $0.title == $1.title { return $0.artist.localizedStandardCompare($1.artist) == .orderedAscending }
             return $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
-        rebuildBrowserMatches()
+        }
+        var matches = matchingFileIDs
+        for file in changed {
+            if matchesBrowser(file) { matches.insert(file.id) } else { matches.remove(file.id) }
+        }
+        if matches != matchingFileIDs { matchingFileIDs = matches }
         playback.updateTracks(files)
     }
 
     private func rebuildBrowserMatches() {
         matchingFileIDs = Set(files.filter { matchesBrowser($0) }.map(\.id))
+    }
+
+    func applyBrowserSearch() {
+        appliedSearchQuery = searchQuery
+        rebuildBrowserMatches()
+        keepSelectionInSearchResults()
+    }
+
+    func indexedSearchMatches(_ id: UUID) -> Bool {
+        let tokens = appliedSearchQuery.split(whereSeparator: \.isWhitespace).map(String.init)
+        return tokens.allSatisfy { browserEntries[id]?.searchText.localizedStandardContains($0) == true }
     }
 
     private func keepSelectionInSearchResults() {
@@ -200,13 +238,13 @@ final class AppModel: ObservableObject {
 
     var visibleFiles: [AudioFile] {
         let candidates: [AudioFile]
-        if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        if appliedSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let group = albumGroups.first(where: { $0.id == selectedAlbumID }) {
             candidates = group.fileIDs.compactMap { filesByID[$0] }
         } else {
             candidates = orderedAlbumGroups.flatMap { $0.fileIDs.compactMap { filesByID[$0] } }
         }
-        return candidates.filter { matchingFileIDs.contains($0.id) }
+        return candidates.filter { matchingFileIDs.contains($0.id) && (selectedArtist == nil || BrowserEntry($0).artist == selectedArtist) }
     }
 
     var selectedFiles: [AudioFile] {
@@ -290,6 +328,8 @@ final class AppModel: ObservableObject {
 
             self.runtime = runtime
             self.snapshot = snapshot
+            browserPreferencesURL = snapshot.paths.applicationSupportDirectory.appendingPathComponent("browser.json")
+            loadBrowserPreferences()
             installConfiguration(snapshot.configuration)
             self.audioCoordinator = audio
             self.musicBrainzClient = musicBrainz
@@ -416,6 +456,8 @@ final class AppModel: ObservableObject {
 
     func selectAlbum(_ group: AlbumGroup) {
         searchQuery = ""
+        applyBrowserSearch()
+        selectedArtist = nil
         selectedAlbumID = group.id
         selectedFileIDs = Set(group.fileIDs).intersection(matchingFileIDs)
         selectedRelease = nil
@@ -444,6 +486,7 @@ final class AppModel: ObservableObject {
         cancelOrganizationReview()
         selectedFileIDs.removeAll()
         selectedAlbumID = nil
+        selectedArtist = nil
         selectedRelease = nil
         selectedReleaseFileIDs.removeAll()
         matchReview = nil
