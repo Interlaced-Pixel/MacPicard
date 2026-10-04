@@ -7,156 +7,143 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		03B1CAF6A25A7307A5EFF294D770D814 /* PicardScripts in Frameworks */ = {isa = PBXBuildFile; productRef = 223C965F8A13804E5A4A6DE368744C62 /* PicardScripts */; };
-		0AE90BBA58EC02190B9E91819B2DED4F /* PicardCoverArt in Frameworks */ = {isa = PBXBuildFile; productRef = 109D8BD2013D483F95252B20AEABD5DA /* PicardCoverArt */; };
+		07B64403448A86A661DEC162EDF32A36 /* LibraryMatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CE457620EC2A4052AC09CD77573A8 /* LibraryMatchView.swift */; };
 		0BD2F15A1E82FE65731EC05BDD0FC984 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
 		0F93C4542234DF02D2FD3E278490B075 /* PlaybackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0BC5DA8C6C6A50045E6D24A56ED4E74 /* PlaybackTests.swift */; };
 		111C8D99D58D6F87419745BEE72FB2E2 /* ScriptEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C97CD2326158061606D21B1D2AC8CC4 /* ScriptEngineTests.swift */; };
 		15D423BE6F5234E6086830A5F6F1BC25 /* CoverArtTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55951FBD61BF8773859B356254A3B1EA /* CoverArtTests.swift */; };
-		1974153D15CBA48E2028AFB7BB381E6D /* LibraryActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5F060874F143A6E60BCF9A90FE26264 /* LibraryActions.swift */; };
 		19CF54895023D9DDA879C121AE571176 /* OrganizationModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A79AFD04461CC831E16606F59C95F9C /* OrganizationModelTests.swift */; };
 		19D07DC99602406C5EE4D139E647530A /* MatchReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D551B9247E7498CF882CF7278401B492 /* MatchReviewTests.swift */; };
-		1F3C19653ADE38E008685EDDBF69C3A0 /* OrganizationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F7C0880DEBD22151684A341DFB9E191 /* OrganizationModel.swift */; };
+		1A2D85E748C6BFB79FB54CB68895906D /* LibraryActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0ED814FACD5AE864B2B2A81635BE444 /* LibraryActions.swift */; };
+		1C2EE24F5D276627ECB72421115B09D2 /* PicardSessions in Frameworks */ = {isa = PBXBuildFile; productRef = 536DDB530C60793DD0BB1107E2AD76D2 /* PicardSessions */; };
+		22ABFADCC64E40FE970B2EAAC3C7B7F8 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC372F36BF0CE41E616857A17E11FE7A /* AppModel.swift */; };
 		23123D9B04563A12B7449CA86C2976EE /* APIRequestPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3E5311B9A1E8369B9B6C17B7B161FC /* APIRequestPolicyTests.swift */; };
 		2BCF325DE316C7A99E7FFAC459E075F5 /* PersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 035347608A4740322059107FECBD05AC /* PersistenceTests.swift */; };
 		2FDC5B20FA962DDD1ED5EBD2C60E1F10 /* HardeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381B9B0C1045E622E6C09125BAC54B69 /* HardeningTests.swift */; };
+		319E8B90965EB568D501FC29D340AD26 /* PlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C49C7A0D9C883EEA2C480F6E7DAFDBF /* PlaybackController.swift */; };
+		3375350CDC3CEF30A4F39F6F54BFDD8C /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47175FE2686649122C736845930C135D /* LibraryBrowser.swift */; };
 		34B6C2369CA184D287A1C6E3D52AF2B7 /* PicardFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 464D82CD8AD41A45992E60047EB97644 /* PicardFoundation */; };
 		3840D76EDE02A9B972A0679B65FDF959 /* EditReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F70F2431B1FDBD2B8DC217AFB90FE4 /* EditReviewTests.swift */; };
-		39EA334605BEC4DB781C282342B9D13F /* OrganizationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80066FA41560ACFA95EE03BEBBF6B4B1 /* OrganizationViews.swift */; };
 		3D74BAC4B5BD0C68B6B45E9CF68C8ABD /* LibraryManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FAC06E85F3CBBF6559CBD80B85469CC /* LibraryManagementTests.swift */; };
 		48B99CC446439594DB45C9569672F6F2 /* FingerprintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55F8F2E3709CD959F9C7CE91EFC5BD68 /* FingerprintTests.swift */; };
+		492FAAE20AEEF0880F2E0C07334A0775 /* PlaybackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EC755D86F04726B4F5DBF437E9CDC03 /* PlaybackViews.swift */; };
 		493B17CBED7BE5547F576AAC5F54886C /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
+		4A6A129E7249A1A9B04A0DE667F8FF4B /* PicardFormats in Frameworks */ = {isa = PBXBuildFile; productRef = 1B857BF63423E75FFA18B5418BDAC152 /* PicardFormats */; };
 		4E574E96561FDB9AEFC11B4FACA44813 /* HardeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2166C460049D4B0D509DD1E12840301 /* HardeningTests.swift */; };
-		50D8D4F98970C50E8D7340A8EA00A415 /* PicardMusicBrainz in Frameworks */ = {isa = PBXBuildFile; productRef = D5663FD0CC7D030A3F9E2E0FFDD47658 /* PicardMusicBrainz */; };
+		53B5847EB6A2BE8E7C1C4CBD41E1C066 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
 		5A9DC8547B246BEC9E3203A497E75FBA /* PicardSessions in Frameworks */ = {isa = PBXBuildFile; productRef = 8E0C739EDF564B5DAB5EED71F1083285 /* PicardSessions */; };
+		5D6D9720B2685F98AEB11A6F320B5424 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A9A41DE731D4D07800A4036C6B1D4125 /* Localizable.strings */; };
+		5DD6B3BE106EC1D91126672A0D451AF4 /* MacPicardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A903A5172F603D6282F6D88FD6BD7868 /* MacPicardViews.swift */; };
 		6006063F51F3D54D81C78E132927314C /* OrganizationReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBFF400DCBAB354E7D799FC1601CA322 /* OrganizationReviewTests.swift */; };
-		6275603D0B21DE8D98789FAA90274A3D /* PicardFingerprint in Frameworks */ = {isa = PBXBuildFile; productRef = 838FC8C22A5EB415F24BECF25518523E /* PicardFingerprint */; };
 		64F1BC5CCF680998A16B2E9DB4F7282A /* PicardFingerprint in Frameworks */ = {isa = PBXBuildFile; productRef = 75345D0AEA87AE58A3196A87997AFB13 /* PicardFingerprint */; };
 		67D42C49008ACCCD40566E82C2EA9AF5 /* WorkspaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99DB20F9F66C6C08A4DBE7CA6BFA64B1 /* WorkspaceTests.swift */; };
 		6B5D0774EC7FC305BA392F71B999A279 /* PicardScripts in Frameworks */ = {isa = PBXBuildFile; productRef = 97EF2E67075023A199A4840534009B57 /* PicardScripts */; };
+		6E09202AB7AED26C21CA60FDEDBE0F83 /* PicardFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 9F3D205D3B1302738619A68521CC6333 /* PicardFoundation */; };
 		71A366A207EBF90603BC099351F56C0B /* HardeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD2C2B49719D303B90104B244190F918 /* HardeningTests.swift */; };
 		733B75DCC65ABC0B1E7907CFB84C0086 /* MusicBrainzTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F908CEC25C95DC7DDFA86EFA13F8AF /* MusicBrainzTests.swift */; };
-		818D4DEEE3FEC692CD48317E14818CCC /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DFFFF0BB9AE80DCC0B4D010B74D9F6C /* AppModel.swift */; };
+		787932D5202151A18A6E462F5EAA4240 /* OrganizationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F3AECF1377C6C70B07AF153475E718 /* OrganizationViews.swift */; };
 		82FB37B4A2554431C121DD4B4C061CD8 /* LibraryImportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9105704589B2D3C50ADCAD509F84EB8 /* LibraryImportTests.swift */; };
 		83579A152563A3219FDDF095086384A1 /* PicardFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 9BAB54C7D0DC927EF965414F0FB24232 /* PicardFoundation */; };
 		8AE910B94B8BB5557B1790EA666EB741 /* PicardFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = F316AA9196C5DA97B17A8F4A3EF5A9C7 /* PicardFoundation */; };
-		91E016E56E0C64118909BB61D8502D84 /* PlaybackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A46B639478EF34DA329D0E4A30813ED /* PlaybackViews.swift */; };
+		8D93BD7CC3A99E85BC6A5DD8245714EB /* MacPicardCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58A532A70A972BBBFEA41CE7099128FA /* MacPicardCommands.swift */; };
+		93C3866EDBD30DE076FFF06C3ADD13AB /* MacPicardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4180566AB3B184BC65D065C634C0DF1 /* MacPicardApp.swift */; };
 		951D2EE8F2CB416309E9CF4535A81371 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
 		97E93A04DEC5F858E9023E81CF3997B6 /* PicardMusicBrainz in Frameworks */ = {isa = PBXBuildFile; productRef = 8172878BDA6BEE37CF6E9F76AD432EE9 /* PicardMusicBrainz */; };
 		9AF5483B083857E802B4FD1F9AEF8925 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
 		9DC8BD9EB542722D65CBB89F67FD24C1 /* PicardFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 122F893ABFBD28F85259855E6E58DF62 /* PicardFoundation */; };
-		A0F322959774C9F595D11AF5159D6182 /* WorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25034B7F58E1B72B373EE55395E9A3F /* WorkspaceModel.swift */; };
 		A2730CA24BF2999D210B4C91AD39F26B /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
+		A58BB596C797DB586A5E36619665880D /* MatchReviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E91AC9354CEA02C077541DC8D7D9EDB /* MatchReviewViews.swift */; };
 		A77D17A5BD6F61FF76CBF790876F8F74 /* PicardFormats in Frameworks */ = {isa = PBXBuildFile; productRef = 4A9845EB4A049BDF077BAA5D1A79C887 /* PicardFormats */; };
-		A8D23C201EC9E0A929B8FBBE33B397F9 /* MacPicardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BE8F216E2BB2D9DABC8A140A64DD6EE /* MacPicardApp.swift */; };
 		AC798064C07AC883898CDBF62749E6F1 /* BrowserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE0B190420A24548D77201A0C2B4E11 /* BrowserTests.swift */; };
-		AEA1CBEA4CEE723440DEC4CB9BFB0FA2 /* PicardFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 4D24F03DA076E4B884A2B4A6EC3E3526 /* PicardFoundation */; };
 		B6A94192B7CAE9DFA648EAA3FF373A5E /* PicardFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 288CBF5874AACE7779E30B1DFB1EAB5B /* PicardFoundation */; };
-		BB6FC966A88C35791D7CEFE6C94B8658 /* PlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE33ACA107B95554B194220E8F5DE795 /* PlaybackController.swift */; };
 		BCDD5400273B6607E6DB30B75988E26E /* PicardFormats in Frameworks */ = {isa = PBXBuildFile; productRef = 6AA0048AFEEF5DB8E6CE416914B4D2D1 /* PicardFormats */; };
-		BFFE5AA4DE52F2265743BA223280480D /* MacPicardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6AF0CEA58D65EA56C70E8EAFF5A2896 /* MacPicardViews.swift */; };
-		C1444A006CCC27A35DEA4E28D2ADEE83 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BE7C63C0C32C9CB175358DB1DCA5229A /* Localizable.strings */; };
-		CD415C4A7C768FC3181F894BCA2098B2 /* MacPicardCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = B31EE7C0AA2CF32F10E81B4685049E10 /* MacPicardCommands.swift */; };
+		C2BB4E2F54AB9AA8089EB94CC8C0527A /* TrackActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD5D0FBD7FB3C658D7C8F7ED5F2C957 /* TrackActions.swift */; };
+		CCCA1FD14AA828AAEA50510AE75825BA /* OrganizationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F496A1F77E90AD0FC82CFF4B82CAFBF4 /* OrganizationModel.swift */; };
 		D3034668D9792D40151050B03AB18213 /* PicardMusicBrainz in Frameworks */ = {isa = PBXBuildFile; productRef = 8D926A995DDDE26F0B3773AB0EE51BA7 /* PicardMusicBrainz */; };
-		D99AE698A1F43F473FC2BD81B21893BA /* PicardFormats in Frameworks */ = {isa = PBXBuildFile; productRef = A50F5C6410A4F9EA56D6CE844E7884EF /* PicardFormats */; };
 		DB28F29EB710EB83E219AE85C545DAE7 /* PicardFoundationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 446872F8F2708BC4E97C80BEC08F0322 /* PicardFoundationTests.swift */; };
-		DB9D8C0E71CD1DF4A01B29167DA0264D /* TrackActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6245C278352C5195F9B3BED290AEFCFB /* TrackActions.swift */; };
 		DC20D306D49917D0C184271784718DAB /* FormatEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37773E256A575FEF4D1DED254AA0DE9E /* FormatEngineTests.swift */; };
 		DD3DCEE9DB7709CA461D38431B6F01A6 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
+		DDBD65C75EEBA158AA44C1B18185EBF2 /* WorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53E2DB4D1DA66725062A9E7FAF7BC787 /* WorkspaceModel.swift */; };
 		E0903FAE3F4DE4B3C47E260E4E0D22D1 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
-		E0BA96FEE8224A597D7A6EE49DE2030D /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
+		E7AC5CD61ADCA7A60465162C144CB83B /* PicardMusicBrainz in Frameworks */ = {isa = PBXBuildFile; productRef = 032D5944AD6FE2E7FC8883D2B3ECEE6A /* PicardMusicBrainz */; };
 		E806D37CCE94349E2B26DB91F829B076 /* PicardCoverArt in Frameworks */ = {isa = PBXBuildFile; productRef = 32CC45EFBB673B9DEFEE04C8B1D1FBE3 /* PicardCoverArt */; };
-		E9F0AC6FA54737DDFD01414175EFBCF3 /* PicardSessions in Frameworks */ = {isa = PBXBuildFile; productRef = 09B476F7ACF2797CD519229DCE137D27 /* PicardSessions */; };
-		F7B8624FA76914E2FEA4F70A1443E36F /* MatchReviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E452F26B84E1382F970718A0A5AEAA26 /* MatchReviewViews.swift */; };
+		EAB18A95251F32965A19F750756C6D65 /* PicardScripts in Frameworks */ = {isa = PBXBuildFile; productRef = 497A925153149BE5844CC41DDA0AB621 /* PicardScripts */; };
+		EDD9C043F11EF0B9D54A305FF57F3238 /* PicardCoverArt in Frameworks */ = {isa = PBXBuildFile; productRef = 981071AA3DB5BFD2F8973E03710A210C /* PicardCoverArt */; };
+		F67F89043EFA94F1E4CFA2C8C7D461BB /* PicardFingerprint in Frameworks */ = {isa = PBXBuildFile; productRef = 980A5852DF750F0FFFB99C4E49A271A6 /* PicardFingerprint */; };
 		FC6D9433980DAD1BBA4D175BD552EF0A /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */; };
-		FD6BB813484080F2F495BBE83824C7A4 /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68879647573392CB88D229BBFF8DEB4A /* LibraryBrowser.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		38F1F08EA3FE017EF7F373A69FB33A96 /* PBXContainerItemProxy */ = {
+		CAC50299FC57914CD17C877614EECE81 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 5F166D669F1CB516D326FABFC8D8735F /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = F659DFE83DF6555708899C8E3B96F344;
+			remoteGlobalIDString = 34B060D74B65C6F1A972B0000476D070;
 			remoteInfo = MacPicard;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		020849F29B3649891A328EF702762BA7 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		035347608A4740322059107FECBD05AC /* PersistenceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PersistenceTests.swift; sourceTree = "<group>"; };
-		0A46B639478EF34DA329D0E4A30813ED /* PlaybackViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaybackViews.swift; sourceTree = "<group>"; };
 		1DFAD0E52C4B08214124CD938CD0B976 /* MacPicardTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacPicardTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1EC755D86F04726B4F5DBF437E9CDC03 /* PlaybackViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaybackViews.swift; sourceTree = "<group>"; };
 		1FAC06E85F3CBBF6559CBD80B85469CC /* LibraryManagementTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryManagementTests.swift; sourceTree = "<group>"; };
 		37773E256A575FEF4D1DED254AA0DE9E /* FormatEngineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FormatEngineTests.swift; sourceTree = "<group>"; };
 		381B9B0C1045E622E6C09125BAC54B69 /* HardeningTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HardeningTests.swift; sourceTree = "<group>"; };
-		3BE8F216E2BB2D9DABC8A140A64DD6EE /* MacPicardApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacPicardApp.swift; sourceTree = "<group>"; };
+		39AB88EC3B2198A4F0001AF4E7803D8D /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		3C97CD2326158061606D21B1D2AC8CC4 /* ScriptEngineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScriptEngineTests.swift; sourceTree = "<group>"; };
 		3DD6ED74BB3BF56CDA59DD5896715CF8 /* PicardFingerprintTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PicardFingerprintTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		41893AEFBAA13817730BB40DE07F788C /* en */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		3E91AC9354CEA02C077541DC8D7D9EDB /* MatchReviewViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MatchReviewViews.swift; sourceTree = "<group>"; };
 		446872F8F2708BC4E97C80BEC08F0322 /* PicardFoundationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PicardFoundationTests.swift; sourceTree = "<group>"; };
+		47175FE2686649122C736845930C135D /* LibraryBrowser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryBrowser.swift; sourceTree = "<group>"; };
 		4758348737DC03B6EB93D4D27C06AAF0 /* RELEASE_CHECKLIST.md */ = {isa = PBXFileReference; includeInIndex = 1; path = RELEASE_CHECKLIST.md; sourceTree = "<group>"; };
 		4BEFA045B0E9396F272C37A267172984 /* PicardCoverArtTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PicardCoverArtTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4C49C7A0D9C883EEA2C480F6E7DAFDBF /* PlaybackController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaybackController.swift; sourceTree = "<group>"; };
 		4C767C170B543EB827E82FF3187BE7C2 /* build-app-icon.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = "build-app-icon.sh"; sourceTree = "<group>"; };
-		4DFFFF0BB9AE80DCC0B4D010B74D9F6C /* AppModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		53E2DB4D1DA66725062A9E7FAF7BC787 /* WorkspaceModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkspaceModel.swift; sourceTree = "<group>"; };
 		55951FBD61BF8773859B356254A3B1EA /* CoverArtTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CoverArtTests.swift; sourceTree = "<group>"; };
 		55F8F2E3709CD959F9C7CE91EFC5BD68 /* FingerprintTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FingerprintTests.swift; sourceTree = "<group>"; };
 		562BE73B74E42F3F458A3098141B764D /* PicardFoundationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PicardFoundationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		5F7C0880DEBD22151684A341DFB9E191 /* OrganizationModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OrganizationModel.swift; sourceTree = "<group>"; };
-		6245C278352C5195F9B3BED290AEFCFB /* TrackActions.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TrackActions.swift; sourceTree = "<group>"; };
+		58A532A70A972BBBFEA41CE7099128FA /* MacPicardCommands.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacPicardCommands.swift; sourceTree = "<group>"; };
+		5CD5D0FBD7FB3C658D7C8F7ED5F2C957 /* TrackActions.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TrackActions.swift; sourceTree = "<group>"; };
 		62F908CEC25C95DC7DDFA86EFA13F8AF /* MusicBrainzTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MusicBrainzTests.swift; sourceTree = "<group>"; };
 		672C54C9AFA944DA79B9FD24564E97C5 /* README.md */ = {isa = PBXFileReference; includeInIndex = 1; path = README.md; sourceTree = "<group>"; };
-		68879647573392CB88D229BBFF8DEB4A /* LibraryBrowser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryBrowser.swift; sourceTree = "<group>"; };
 		7531E4C0B484AF0F6DAD8D4AF3B21C26 /* API_AUDIT.md */ = {isa = PBXFileReference; includeInIndex = 1; path = API_AUDIT.md; sourceTree = "<group>"; };
+		771CE457620EC2A4052AC09CD77573A8 /* LibraryMatchView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryMatchView.swift; sourceTree = "<group>"; };
 		7FE0B190420A24548D77201A0C2B4E11 /* BrowserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserTests.swift; sourceTree = "<group>"; };
-		80066FA41560ACFA95EE03BEBBF6B4B1 /* OrganizationViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OrganizationViews.swift; sourceTree = "<group>"; };
-		8A3936A5668C71F15E9185C855491946 /* AppIcon.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = AppIcon.png; sourceTree = "<group>"; };
 		8A79AFD04461CC831E16606F59C95F9C /* OrganizationModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OrganizationModelTests.swift; sourceTree = "<group>"; };
 		8BEEF27DB985536BCB8D899F3C4B5D27 /* PicardMusicBrainzTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PicardMusicBrainzTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		99D206B1D70BDCA98AE32F9384478006 /* ACCESSIBILITY_AUDIT.md */ = {isa = PBXFileReference; includeInIndex = 1; path = ACCESSIBILITY_AUDIT.md; sourceTree = "<group>"; };
 		99DB20F9F66C6C08A4DBE7CA6BFA64B1 /* WorkspaceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkspaceTests.swift; sourceTree = "<group>"; };
 		9D0550DF854F36892717B045C822514F /* LOCALIZATION.md */ = {isa = PBXFileReference; includeInIndex = 1; path = LOCALIZATION.md; sourceTree = "<group>"; };
 		A2F70F2431B1FDBD2B8DC217AFB90FE4 /* EditReviewTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditReviewTests.swift; sourceTree = "<group>"; };
+		A4180566AB3B184BC65D065C634C0DF1 /* MacPicardApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacPicardApp.swift; sourceTree = "<group>"; };
 		A58D344D796840C764176116DCB66012 /* PicardFormatsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PicardFormatsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A903A5172F603D6282F6D88FD6BD7868 /* MacPicardViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacPicardViews.swift; sourceTree = "<group>"; };
 		AA3E5311B9A1E8369B9B6C17B7B161FC /* APIRequestPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APIRequestPolicyTests.swift; sourceTree = "<group>"; };
-		B31EE7C0AA2CF32F10E81B4685049E10 /* MacPicardCommands.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacPicardCommands.swift; sourceTree = "<group>"; };
 		B32D0DB2B7039391D540F7A39F39507E /* generate-xcode-project.rb */ = {isa = PBXFileReference; includeInIndex = 1; path = "generate-xcode-project.rb"; sourceTree = "<group>"; };
-		B5F060874F143A6E60BCF9A90FE26264 /* LibraryActions.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryActions.swift; sourceTree = "<group>"; };
+		B42F3B491F8645EE455E395CD06A27ED /* en */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		BC372F36BF0CE41E616857A17E11FE7A /* AppModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		BD2C2B49719D303B90104B244190F918 /* HardeningTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HardeningTests.swift; sourceTree = "<group>"; };
+		BDB7C2649E7675F844834E405D994A77 /* AppIcon.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = AppIcon.png; sourceTree = "<group>"; };
 		C38E20243C7748148A4656F122B45F39 /* MacPicard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacPicard.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		C6AF0CEA58D65EA56C70E8EAFF5A2896 /* MacPicardViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacPicardViews.swift; sourceTree = "<group>"; };
 		C9105704589B2D3C50ADCAD509F84EB8 /* LibraryImportTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryImportTests.swift; sourceTree = "<group>"; };
 		CD03A0AAB74E073F9CAED1B84CAF0BE7 /* .gitignore */ = {isa = PBXFileReference; includeInIndex = 1; path = .gitignore; sourceTree = "<group>"; };
 		CD13A92A5C7D0A2028A0CCC2B86821E2 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
-		CE33ACA107B95554B194220E8F5DE795 /* PlaybackController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaybackController.swift; sourceTree = "<group>"; };
-		D25034B7F58E1B72B373EE55395E9A3F /* WorkspaceModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkspaceModel.swift; sourceTree = "<group>"; };
+		D2F3AECF1377C6C70B07AF153475E718 /* OrganizationViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OrganizationViews.swift; sourceTree = "<group>"; };
 		D551B9247E7498CF882CF7278401B492 /* MatchReviewTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MatchReviewTests.swift; sourceTree = "<group>"; };
 		E0BC5DA8C6C6A50045E6D24A56ED4E74 /* PlaybackTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaybackTests.swift; sourceTree = "<group>"; };
 		E2075E8F4FD3A1A9EC5B50A7F09B8BF6 /* PicardSessionsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PicardSessionsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E31FF9CAA4A792AB4DFF0D511689D519 /* package-macpicard.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = "package-macpicard.sh"; sourceTree = "<group>"; };
-		E452F26B84E1382F970718A0A5AEAA26 /* MatchReviewViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MatchReviewViews.swift; sourceTree = "<group>"; };
+		F0ED814FACD5AE864B2B2A81635BE444 /* LibraryActions.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LibraryActions.swift; sourceTree = "<group>"; };
 		F2166C460049D4B0D509DD1E12840301 /* HardeningTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HardeningTests.swift; sourceTree = "<group>"; };
+		F496A1F77E90AD0FC82CFF4B82CAFBF4 /* OrganizationModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OrganizationModel.swift; sourceTree = "<group>"; };
 		F581CA54A20D2FFA0D13545EC6252187 /* Package.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		F920ACBCC1E5C124641415A34D5EDCB9 /* PicardScriptsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PicardScriptsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FBFF400DCBAB354E7D799FC1601CA322 /* OrganizationReviewTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OrganizationReviewTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		0719D2DF87231FAF7ED3952DC82E4061 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E0BA96FEE8224A597D7A6EE49DE2030D /* Cocoa.framework in Frameworks */,
-				0AE90BBA58EC02190B9E91819B2DED4F /* PicardCoverArt in Frameworks */,
-				6275603D0B21DE8D98789FAA90274A3D /* PicardFingerprint in Frameworks */,
-				D99AE698A1F43F473FC2BD81B21893BA /* PicardFormats in Frameworks */,
-				AEA1CBEA4CEE723440DEC4CB9BFB0FA2 /* PicardFoundation in Frameworks */,
-				50D8D4F98970C50E8D7340A8EA00A415 /* PicardMusicBrainz in Frameworks */,
-				03B1CAF6A25A7307A5EFF294D770D814 /* PicardScripts in Frameworks */,
-				E9F0AC6FA54737DDFD01414175EFBCF3 /* PicardSessions in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		07EC9B5755AF9C5C3EC68064BBC86548 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -181,6 +168,21 @@
 			files = (
 				FC6D9433980DAD1BBA4D175BD552EF0A /* Cocoa.framework in Frameworks */,
 				9DC8BD9EB542722D65CBB89F67FD24C1 /* PicardFoundation in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3C83D663C9700DA4407AFC83F99B53A3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				53B5847EB6A2BE8E7C1C4CBD41E1C066 /* Cocoa.framework in Frameworks */,
+				EDD9C043F11EF0B9D54A305FF57F3238 /* PicardCoverArt in Frameworks */,
+				F67F89043EFA94F1E4CFA2C8C7D461BB /* PicardFingerprint in Frameworks */,
+				4A6A129E7249A1A9B04A0DE667F8FF4B /* PicardFormats in Frameworks */,
+				6E09202AB7AED26C21CA60FDEDBE0F83 /* PicardFoundation in Frameworks */,
+				E7AC5CD61ADCA7A60465162C144CB83B /* PicardMusicBrainz in Frameworks */,
+				EAB18A95251F32965A19F750756C6D65 /* PicardScripts in Frameworks */,
+				1C2EE24F5D276627ECB72421115B09D2 /* PicardSessions in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -249,6 +251,29 @@
 			path = docs;
 			sourceTree = "<group>";
 		};
+		2A91BFFF4B74C5A7468F77CB2775F2B8 /* MacPicard */ = {
+			isa = PBXGroup;
+			children = (
+				BC372F36BF0CE41E616857A17E11FE7A /* AppModel.swift */,
+				F0ED814FACD5AE864B2B2A81635BE444 /* LibraryActions.swift */,
+				47175FE2686649122C736845930C135D /* LibraryBrowser.swift */,
+				771CE457620EC2A4052AC09CD77573A8 /* LibraryMatchView.swift */,
+				A4180566AB3B184BC65D065C634C0DF1 /* MacPicardApp.swift */,
+				58A532A70A972BBBFEA41CE7099128FA /* MacPicardCommands.swift */,
+				A903A5172F603D6282F6D88FD6BD7868 /* MacPicardViews.swift */,
+				3E91AC9354CEA02C077541DC8D7D9EDB /* MatchReviewViews.swift */,
+				F496A1F77E90AD0FC82CFF4B82CAFBF4 /* OrganizationModel.swift */,
+				D2F3AECF1377C6C70B07AF153475E718 /* OrganizationViews.swift */,
+				4C49C7A0D9C883EEA2C480F6E7DAFDBF /* PlaybackController.swift */,
+				1EC755D86F04726B4F5DBF437E9CDC03 /* PlaybackViews.swift */,
+				5CD5D0FBD7FB3C658D7C8F7ED5F2C957 /* TrackActions.swift */,
+				53E2DB4D1DA66725062A9E7FAF7BC787 /* WorkspaceModel.swift */,
+				71FFE4A38FF4D8F52CC21931866398AD /* Resources */,
+			);
+			name = MacPicard;
+			path = Sources/MacPicard;
+			sourceTree = "<group>";
+		};
 		59338660158BB5DA7A95504B4411454B /* PicardFormatsTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -269,7 +294,7 @@
 				CD03A0AAB74E073F9CAED1B84CAF0BE7 /* .gitignore */,
 				7B5AEB585639BBC8DD1DC6457F9E5106 /* Scripts */,
 				0704B06101D17EEA62ACEBCA172C3FC5 /* Documentation */,
-				EA07600954683D1D33EFD9D24079A19C /* MacPicard */,
+				2A91BFFF4B74C5A7468F77CB2775F2B8 /* MacPicard */,
 				9845B496C932D3C7472EA80FDAF6313B /* Tests */,
 			);
 			sourceTree = "<group>";
@@ -289,6 +314,17 @@
 			);
 			name = PicardCoverArtTests;
 			path = PicardCoverArtTests;
+			sourceTree = "<group>";
+		};
+		71FFE4A38FF4D8F52CC21931866398AD /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				39AB88EC3B2198A4F0001AF4E7803D8D /* Info.plist */,
+				BDB7C2649E7675F844834E405D994A77 /* AppIcon.png */,
+				A9A41DE731D4D07800A4036C6B1D4125 /* Localizable.strings */,
+			);
+			name = Resources;
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		7B5AEB585639BBC8DD1DC6457F9E5106 /* Scripts */ = {
@@ -360,17 +396,6 @@
 			path = PicardFoundationTests;
 			sourceTree = "<group>";
 		};
-		B8D2857AB9B2D0D07A0D18F9E1A0C35D /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				020849F29B3649891A328EF702762BA7 /* Info.plist */,
-				8A3936A5668C71F15E9185C855491946 /* AppIcon.png */,
-				BE7C63C0C32C9CB175358DB1DCA5229A /* Localizable.strings */,
-			);
-			name = Resources;
-			path = Resources;
-			sourceTree = "<group>";
-		};
 		CDBECF55CABF1A6F2F2605BB89759EB5 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -408,28 +433,6 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
-		EA07600954683D1D33EFD9D24079A19C /* MacPicard */ = {
-			isa = PBXGroup;
-			children = (
-				4DFFFF0BB9AE80DCC0B4D010B74D9F6C /* AppModel.swift */,
-				B5F060874F143A6E60BCF9A90FE26264 /* LibraryActions.swift */,
-				68879647573392CB88D229BBFF8DEB4A /* LibraryBrowser.swift */,
-				3BE8F216E2BB2D9DABC8A140A64DD6EE /* MacPicardApp.swift */,
-				B31EE7C0AA2CF32F10E81B4685049E10 /* MacPicardCommands.swift */,
-				C6AF0CEA58D65EA56C70E8EAFF5A2896 /* MacPicardViews.swift */,
-				E452F26B84E1382F970718A0A5AEAA26 /* MatchReviewViews.swift */,
-				5F7C0880DEBD22151684A341DFB9E191 /* OrganizationModel.swift */,
-				80066FA41560ACFA95EE03BEBBF6B4B1 /* OrganizationViews.swift */,
-				CE33ACA107B95554B194220E8F5DE795 /* PlaybackController.swift */,
-				0A46B639478EF34DA329D0E4A30813ED /* PlaybackViews.swift */,
-				6245C278352C5195F9B3BED290AEFCFB /* TrackActions.swift */,
-				D25034B7F58E1B72B373EE55395E9A3F /* WorkspaceModel.swift */,
-				B8D2857AB9B2D0D07A0D18F9E1A0C35D /* Resources */,
-			);
-			name = MacPicard;
-			path = Sources/MacPicard;
-			sourceTree = "<group>";
-		};
 		EE94E0903D50980BD86BD2EEE5F2EDA4 /* PicardMusicBrainzTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -462,12 +465,39 @@
 			buildRules = (
 			);
 			dependencies = (
-				B7DDDA6ADDF4BA7B8A0D001A17F401E9 /* PBXTargetDependency */,
+				99C68BDFEB080736B0D65A365697C4B5 /* PBXTargetDependency */,
 			);
 			name = MacPicardTests;
 			productName = MacPicardTests;
 			productReference = 1DFAD0E52C4B08214124CD938CD0B976 /* MacPicardTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		34B060D74B65C6F1A972B0000476D070 /* MacPicard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F3B55179504C0D6AAE952FB6D2631BB4 /* Build configuration list for PBXNativeTarget "MacPicard" */;
+			buildPhases = (
+				8AD63B2674BF86A7A2DD6C4DF568F158 /* Sources */,
+				3C83D663C9700DA4407AFC83F99B53A3 /* Frameworks */,
+				6A714613439E79975F399E5F007BC5EB /* Resources */,
+				6AA8DA0932EDC8C93C45A2306F6057BA /* Build App Icon */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MacPicard;
+			packageProductDependencies = (
+				981071AA3DB5BFD2F8973E03710A210C /* PicardCoverArt */,
+				980A5852DF750F0FFFB99C4E49A271A6 /* PicardFingerprint */,
+				1B857BF63423E75FFA18B5418BDAC152 /* PicardFormats */,
+				9F3D205D3B1302738619A68521CC6333 /* PicardFoundation */,
+				032D5944AD6FE2E7FC8883D2B3ECEE6A /* PicardMusicBrainz */,
+				497A925153149BE5844CC41DDA0AB621 /* PicardScripts */,
+				536DDB530C60793DD0BB1107E2AD76D2 /* PicardSessions */,
+			);
+			productName = MacPicard;
+			productReference = C38E20243C7748148A4656F122B45F39 /* MacPicard.app */;
+			productType = "com.apple.product-type.application";
 		};
 		59967A50C0674E5793FD0CBE5895BBB1 /* PicardMusicBrainzTests */ = {
 			isa = PBXNativeTarget;
@@ -595,33 +625,6 @@
 			productReference = F920ACBCC1E5C124641415A34D5EDCB9 /* PicardScriptsTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		F659DFE83DF6555708899C8E3B96F344 /* MacPicard */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 4960FDDAD8F91665434FB4D8DFBBB34B /* Build configuration list for PBXNativeTarget "MacPicard" */;
-			buildPhases = (
-				8C1E5F166E46334BB63F512E276C6B1A /* Sources */,
-				0719D2DF87231FAF7ED3952DC82E4061 /* Frameworks */,
-				C17DB8C31B3C324EC11A81892B9E9AAB /* Resources */,
-				A5E848D659BA8851EA383CF2D5716DAA /* Build App Icon */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = MacPicard;
-			packageProductDependencies = (
-				109D8BD2013D483F95252B20AEABD5DA /* PicardCoverArt */,
-				838FC8C22A5EB415F24BECF25518523E /* PicardFingerprint */,
-				A50F5C6410A4F9EA56D6CE844E7884EF /* PicardFormats */,
-				4D24F03DA076E4B884A2B4A6EC3E3526 /* PicardFoundation */,
-				D5663FD0CC7D030A3F9E2E0FFDD47658 /* PicardMusicBrainz */,
-				223C965F8A13804E5A4A6DE368744C62 /* PicardScripts */,
-				09B476F7ACF2797CD519229DCE137D27 /* PicardSessions */,
-			);
-			productName = MacPicard;
-			productReference = C38E20243C7748148A4656F122B45F39 /* MacPicard.app */;
-			productType = "com.apple.product-type.application";
-		};
 		F681A01C2DFD3A88C27DF7FC7467AEE4 /* PicardFormatsTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 3053DDCDBCDA4B1887278FB978F173B4 /* Build configuration list for PBXNativeTarget "PicardFormatsTests" */;
@@ -652,7 +655,7 @@
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					0DC0A00A92093A880DC086D24ABEA58C = {
-						TestTargetID = F659DFE83DF6555708899C8E3B96F344;
+						TestTargetID = 34B060D74B65C6F1A972B0000476D070;
 					};
 				};
 			};
@@ -667,14 +670,14 @@
 			mainGroup = 5BFE02B58C039C2A785D144D7CA90F80;
 			minimizedProjectReferenceProxies = 0;
 			packageReferences = (
-				498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */,
+				834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CDBECF55CABF1A6F2F2605BB89759EB5 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				F659DFE83DF6555708899C8E3B96F344 /* MacPicard */,
+				34B060D74B65C6F1A972B0000476D070 /* MacPicard */,
 				0DC0A00A92093A880DC086D24ABEA58C /* MacPicardTests */,
 				A81BFEC0091B7B48022A0BE13355AE94 /* PicardCoverArtTests */,
 				C0E425DEA5C59BC86915BF6D50E9F857 /* PicardFingerprintTests */,
@@ -716,18 +719,18 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6A714613439E79975F399E5F007BC5EB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5D6D9720B2685F98AEB11A6F320B5424 /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		71BB03D5F82A439479FF1A95F1329605 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		C17DB8C31B3C324EC11A81892B9E9AAB /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				C1444A006CCC27A35DEA4E28D2ADEE83 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -755,7 +758,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		A5E848D659BA8851EA383CF2D5716DAA /* Build App Icon */ = {
+		6AA8DA0932EDC8C93C45A2306F6057BA /* Build App Icon */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -822,23 +825,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		8C1E5F166E46334BB63F512E276C6B1A /* Sources */ = {
+		8AD63B2674BF86A7A2DD6C4DF568F158 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				818D4DEEE3FEC692CD48317E14818CCC /* AppModel.swift in Sources */,
-				1974153D15CBA48E2028AFB7BB381E6D /* LibraryActions.swift in Sources */,
-				FD6BB813484080F2F495BBE83824C7A4 /* LibraryBrowser.swift in Sources */,
-				A8D23C201EC9E0A929B8FBBE33B397F9 /* MacPicardApp.swift in Sources */,
-				CD415C4A7C768FC3181F894BCA2098B2 /* MacPicardCommands.swift in Sources */,
-				BFFE5AA4DE52F2265743BA223280480D /* MacPicardViews.swift in Sources */,
-				F7B8624FA76914E2FEA4F70A1443E36F /* MatchReviewViews.swift in Sources */,
-				1F3C19653ADE38E008685EDDBF69C3A0 /* OrganizationModel.swift in Sources */,
-				39EA334605BEC4DB781C282342B9D13F /* OrganizationViews.swift in Sources */,
-				BB6FC966A88C35791D7CEFE6C94B8658 /* PlaybackController.swift in Sources */,
-				91E016E56E0C64118909BB61D8502D84 /* PlaybackViews.swift in Sources */,
-				DB9D8C0E71CD1DF4A01B29167DA0264D /* TrackActions.swift in Sources */,
-				A0F322959774C9F595D11AF5159D6182 /* WorkspaceModel.swift in Sources */,
+				22ABFADCC64E40FE970B2EAAC3C7B7F8 /* AppModel.swift in Sources */,
+				1A2D85E748C6BFB79FB54CB68895906D /* LibraryActions.swift in Sources */,
+				3375350CDC3CEF30A4F39F6F54BFDD8C /* LibraryBrowser.swift in Sources */,
+				07B64403448A86A661DEC162EDF32A36 /* LibraryMatchView.swift in Sources */,
+				93C3866EDBD30DE076FFF06C3ADD13AB /* MacPicardApp.swift in Sources */,
+				8D93BD7CC3A99E85BC6A5DD8245714EB /* MacPicardCommands.swift in Sources */,
+				5DD6B3BE106EC1D91126672A0D451AF4 /* MacPicardViews.swift in Sources */,
+				A58BB596C797DB586A5E36619665880D /* MatchReviewViews.swift in Sources */,
+				CCCA1FD14AA828AAEA50510AE75825BA /* OrganizationModel.swift in Sources */,
+				787932D5202151A18A6E462F5EAA4240 /* OrganizationViews.swift in Sources */,
+				319E8B90965EB568D501FC29D340AD26 /* PlaybackController.swift in Sources */,
+				492FAAE20AEEF0880F2E0C07334A0775 /* PlaybackViews.swift in Sources */,
+				C2BB4E2F54AB9AA8089EB94CC8C0527A /* TrackActions.swift in Sources */,
+				DDBD65C75EEBA158AA44C1B18185EBF2 /* WorkspaceModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -878,19 +882,19 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		B7DDDA6ADDF4BA7B8A0D001A17F401E9 /* PBXTargetDependency */ = {
+		99C68BDFEB080736B0D65A365697C4B5 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = MacPicard;
-			target = F659DFE83DF6555708899C8E3B96F344 /* MacPicard */;
-			targetProxy = 38F1F08EA3FE017EF7F373A69FB33A96 /* PBXContainerItemProxy */;
+			target = 34B060D74B65C6F1A972B0000476D070 /* MacPicard */;
+			targetProxy = CAC50299FC57914CD17C877614EECE81 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
-		BE7C63C0C32C9CB175358DB1DCA5229A /* Localizable.strings */ = {
+		A9A41DE731D4D07800A4036C6B1D4125 /* Localizable.strings */ = {
 			isa = PBXVariantGroup;
 			children = (
-				41893AEFBAA13817730BB40DE07F788C /* en */,
+				B42F3B491F8645EE455E395CD06A27ED /* en */,
 			);
 			name = Localizable.strings;
 			sourceTree = "<group>";
@@ -898,29 +902,6 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		0BAD40CA0E6C00538634D7FEA70A72A2 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEFINES_MODULE = YES;
-				ENABLE_APP_SANDBOX = NO;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Sources/MacPicard/Resources/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.interlacedpixel.MacPicard;
-				PRODUCT_NAME = MacPicard;
-				SDKROOT = macosx;
-				SKIP_INSTALL = NO;
-				SWIFT_OBJC_INTEROP_MODE = objcxx;
-			};
-			name = Release;
-		};
 		1CE37138F7F9FA8663CDD490DBC6FC1A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1053,7 +1034,23 @@
 			};
 			name = Debug;
 		};
-		3255C981CF9155DED501ED7149493840 /* Debug */ = {
+		37DAC1F48D521331E4D0519409D85197 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.interlacedpixel.PicardCoverArtTests;
+				SDKROOT = macosx;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+			};
+			name = Debug;
+		};
+		3E3F20C388646E284483709BE7108C58 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -1077,22 +1074,6 @@
 			};
 			name = Debug;
 		};
-		37DAC1F48D521331E4D0519409D85197 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@loader_path/../Frameworks",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.interlacedpixel.PicardCoverArtTests;
-				SDKROOT = macosx;
-				SWIFT_OBJC_INTEROP_MODE = objcxx;
-			};
-			name = Debug;
-		};
 		43EAAC440B8C766A6B6D946898852333 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1105,6 +1086,29 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.interlacedpixel.PicardMusicBrainzTests;
 				SDKROOT = macosx;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+			};
+			name = Release;
+		};
+		72C66013168453106C90AACE3AFC57DB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEFINES_MODULE = YES;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/MacPicard/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.interlacedpixel.MacPicard;
+				PRODUCT_NAME = MacPicard;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
 				SWIFT_OBJC_INTEROP_MODE = objcxx;
 			};
 			name = Release;
@@ -1357,15 +1361,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4960FDDAD8F91665434FB4D8DFBBB34B /* Build configuration list for PBXNativeTarget "MacPicard" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				0BAD40CA0E6C00538634D7FEA70A72A2 /* Release */,
-				3255C981CF9155DED501ED7149493840 /* Debug */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		6B9B54882BC6F8738D717D6215DE31CA /* Build configuration list for PBXNativeTarget "PicardMusicBrainzTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1429,114 +1424,123 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		F3B55179504C0D6AAE952FB6D2631BB4 /* Build configuration list for PBXNativeTarget "MacPicard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72C66013168453106C90AACE3AFC57DB /* Release */,
+				3E3F20C388646E284483709BE7108C58 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */ = {
+		834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = .;
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		09B476F7ACF2797CD519229DCE137D27 /* PicardSessions */ = {
+		032D5944AD6FE2E7FC8883D2B3ECEE6A /* PicardMusicBrainz */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
-			productName = PicardSessions;
-		};
-		109D8BD2013D483F95252B20AEABD5DA /* PicardCoverArt */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
-			productName = PicardCoverArt;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
+			productName = PicardMusicBrainz;
 		};
 		122F893ABFBD28F85259855E6E58DF62 /* PicardFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardFoundation;
 		};
-		223C965F8A13804E5A4A6DE368744C62 /* PicardScripts */ = {
+		1B857BF63423E75FFA18B5418BDAC152 /* PicardFormats */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
-			productName = PicardScripts;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
+			productName = PicardFormats;
 		};
 		288CBF5874AACE7779E30B1DFB1EAB5B /* PicardFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardFoundation;
 		};
 		32CC45EFBB673B9DEFEE04C8B1D1FBE3 /* PicardCoverArt */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardCoverArt;
 		};
 		464D82CD8AD41A45992E60047EB97644 /* PicardFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardFoundation;
+		};
+		497A925153149BE5844CC41DDA0AB621 /* PicardScripts */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
+			productName = PicardScripts;
 		};
 		4A9845EB4A049BDF077BAA5D1A79C887 /* PicardFormats */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardFormats;
 		};
-		4D24F03DA076E4B884A2B4A6EC3E3526 /* PicardFoundation */ = {
+		536DDB530C60793DD0BB1107E2AD76D2 /* PicardSessions */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
-			productName = PicardFoundation;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
+			productName = PicardSessions;
 		};
 		6AA0048AFEEF5DB8E6CE416914B4D2D1 /* PicardFormats */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardFormats;
 		};
 		75345D0AEA87AE58A3196A87997AFB13 /* PicardFingerprint */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardFingerprint;
 		};
 		8172878BDA6BEE37CF6E9F76AD432EE9 /* PicardMusicBrainz */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardMusicBrainz;
-		};
-		838FC8C22A5EB415F24BECF25518523E /* PicardFingerprint */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
-			productName = PicardFingerprint;
 		};
 		8D926A995DDDE26F0B3773AB0EE51BA7 /* PicardMusicBrainz */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardMusicBrainz;
 		};
 		8E0C739EDF564B5DAB5EED71F1083285 /* PicardSessions */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardSessions;
 		};
 		97EF2E67075023A199A4840534009B57 /* PicardScripts */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardScripts;
+		};
+		980A5852DF750F0FFFB99C4E49A271A6 /* PicardFingerprint */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
+			productName = PicardFingerprint;
+		};
+		981071AA3DB5BFD2F8973E03710A210C /* PicardCoverArt */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
+			productName = PicardCoverArt;
 		};
 		9BAB54C7D0DC927EF965414F0FB24232 /* PicardFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardFoundation;
 		};
-		A50F5C6410A4F9EA56D6CE844E7884EF /* PicardFormats */ = {
+		9F3D205D3B1302738619A68521CC6333 /* PicardFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
-			productName = PicardFormats;
-		};
-		D5663FD0CC7D030A3F9E2E0FFDD47658 /* PicardMusicBrainz */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
-			productName = PicardMusicBrainz;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
+			productName = PicardFoundation;
 		};
 		F316AA9196C5DA97B17A8F4A3EF5A9C7 /* PicardFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 498097BC32BDC69DAC1F842F684B71AA /* XCLocalSwiftPackageReference "." */;
+			package = 834A811AD168B7F87B74CC67960868CD /* XCLocalSwiftPackageReference "." */;
 			productName = PicardFoundation;
 		};
 /* End XCSwiftPackageProductDependency section */

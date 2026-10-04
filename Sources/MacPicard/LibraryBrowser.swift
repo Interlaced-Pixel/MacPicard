@@ -6,6 +6,7 @@ import SwiftUI
 final class AppPresentation: ObservableObject {
     @Published var isImporting = false
     @Published var isShowingOrganization = false
+    @Published var isShowingLibraryMatch = false
     @Published var isShowingLookup = false
     @Published var isShowingScript = false
     @Published var isShowingSettings = false
@@ -200,6 +201,13 @@ struct LibrarySidebar: View {
                     .help("Refresh library from disk")
                     .accessibilityLabel("Refresh Library")
                     .disabled(model.isBusy)
+                    Button { presentation.isShowingLibraryMatch = true } label: {
+                        Image(systemName: "wand.and.stars")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Match metadata across this library")
+                    .accessibilityLabel("Match Entire Library")
+                    .disabled(model.isBusy || model.albumGroups.isEmpty)
                 }
             }
         }

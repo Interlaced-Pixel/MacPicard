@@ -21,6 +21,49 @@ final class AppModel: ObservableObject {
         }
     }
 
+    enum LibraryMatchProposalStatus: String, Sendable {
+        case matched
+        case review
+        case noMatch
+        case failed
+
+        var title: String {
+            switch self {
+            case .matched: "High confidence"
+            case .review: "Review recommended"
+            case .noMatch: "No match"
+            case .failed: "Lookup failed"
+            }
+        }
+    }
+
+    struct LibraryMatchProposal: Identifiable, Sendable {
+        let id: String
+        let albumTitle: String
+        let artist: String
+        let fileIDs: [UUID]
+        let result: ReleaseMatchResult?
+        let release: MusicBrainzRelease?
+        let status: LibraryMatchProposalStatus
+        let errorMessage: String?
+
+        var score: Double { result?.score.total ?? 0 }
+        var trackMatchCount: Int { result?.trackMatches.count(where: { $0.releaseTrackID != nil }) ?? 0 }
+        var ambiguousTrackCount: Int { result?.trackMatches.count(where: { $0.decision == .ambiguous }) ?? 0 }
+    }
+
+    struct LibraryMatchRun: Sendable {
+        let proposals: [LibraryMatchProposal]
+        let autoApplyThreshold: Double
+        let completedAt: Date
+
+        var highConfidence: [LibraryMatchProposal] { proposals.filter { $0.status == .matched } }
+        var needsReview: [LibraryMatchProposal] { proposals.filter { $0.status == .review } }
+        var unresolved: [LibraryMatchProposal] {
+            proposals.filter { $0.status == .noMatch || $0.status == .failed }
+        }
+    }
+
     @Published private(set) var snapshot: RuntimeSnapshot?
     @Published var errorMessage: String?
     @Published var statusMessage = "Ready"
@@ -56,6 +99,7 @@ final class AppModel: ObservableObject {
     @Published var matchResults: [ReleaseMatchResult] = []
     @Published private(set) var selectedRelease: MusicBrainzRelease?
     @Published private(set) var matchReview: ReleaseMatchReview?
+    @Published private(set) var libraryMatchRun: LibraryMatchRun?
     @Published private(set) var scriptOutput = ""
     @Published var scriptSource = "$if2(%albumartist%,%artist%)/$if2(%album%,Unknown Album)/%tracknumber% %title%"
     @Published var destinationDirectory: URL?
@@ -393,6 +437,115 @@ final class AppModel: ObservableObject {
         browserFilter = .all
         expandedAlbumIDs.removeAll()
         destinationDirectory = nil
+        libraryMatchRun = nil
+    }
+
+    /// Searches, resolves, and scores every album in the active library. The
+    /// operation only creates proposals; it never changes metadata. The normal
+    /// MusicBrainz client rate limiter and response cache remain in the path.
+    func matchEntireLibrary(autoApplyThreshold: Double = 0.75) async {
+        guard let musicBrainzClient, activeWorkspace?.kind == .library else {
+            statusMessage = "Open a Music Library before matching the whole library."
+            return
+        }
+        guard !isBusy else { return }
+
+        let groups = orderedAlbumGroups
+        guard !groups.isEmpty else {
+            statusMessage = "The library has no albums to match."
+            return
+        }
+
+        isWorking = true
+        progress = 0
+        errorMessage = nil
+        libraryMatchRun = nil
+        var proposals: [LibraryMatchProposal] = []
+        let matcher = ReleaseMatcher(preferences: ReleaseMatchPreferences(minimumSimilarity: 0.25, minimumMargin: 0.02, minimumTrackSimilarity: 0.35))
+
+        defer {
+            isWorking = false
+            progress = nil
+        }
+
+        for (index, group) in groups.enumerated() {
+            if Task.isCancelled { break }
+            progress = Double(index) / Double(groups.count)
+            statusMessage = "Matching \(index + 1) of \(groups.count): \(group.title)"
+            let albumFiles = group.fileIDs.compactMap { file(id: $0) }
+            guard let primary = albumFiles.first else { continue }
+            let localTracks = albumFiles.map { Self.localCandidate($0) }
+            let local = LocalAlbumCandidate(metadata: primary.metadata, tracks: localTracks)
+
+            do {
+                let summaries = try await musicBrainzClient.searchReleases(for: local, limit: 10)
+                let rankedSummaries = matcher.rank(local: local, candidates: summaries)
+                var detailed: [MusicBrainzRelease] = []
+                for candidate in rankedSummaries.prefix(3) {
+                    if let release = try? await musicBrainzClient.lookupRelease(id: candidate.release.id) {
+                        detailed.append(release)
+                    }
+                }
+
+                guard let result = matcher.rank(local: local, candidates: detailed).first,
+                      let release = detailed.first(where: { $0.id == result.release.id }) else {
+                    proposals.append(LibraryMatchProposal(id: group.id, albumTitle: group.title, artist: group.artist,
+                                                           fileIDs: group.fileIDs, result: nil, release: nil,
+                                                           status: .noMatch, errorMessage: "No detailed release match was found."))
+                    continue
+                }
+
+                let hasAmbiguousTracks = result.trackMatches.contains { $0.decision == .ambiguous }
+                let hasUnmatchedTracks = result.trackMatches.contains { $0.releaseTrackID == nil }
+                let status: LibraryMatchProposalStatus = result.decision == .rejected || result.decision == .ambiguous ||
+                    result.score.total < autoApplyThreshold || hasAmbiguousTracks || hasUnmatchedTracks ? .review : .matched
+                proposals.append(LibraryMatchProposal(id: group.id, albumTitle: group.title, artist: group.artist,
+                                                       fileIDs: group.fileIDs, result: result, release: release,
+                                                       status: status, errorMessage: nil))
+            } catch {
+                proposals.append(LibraryMatchProposal(id: group.id, albumTitle: group.title, artist: group.artist,
+                                                       fileIDs: group.fileIDs, result: nil, release: nil,
+                                                       status: .failed, errorMessage: error.localizedDescription))
+            }
+        }
+
+        progress = 1
+        libraryMatchRun = LibraryMatchRun(proposals: proposals, autoApplyThreshold: autoApplyThreshold, completedAt: Date())
+        statusMessage = "Matched \(proposals.count) albums: \(proposals.count(where: { $0.status == .matched })) ready, \(proposals.count(where: { $0.status == .review })) need review."
+    }
+
+    func prepareLibraryProposalForReview(_ proposal: LibraryMatchProposal) {
+        selectionChanged(Set(proposal.fileIDs))
+        selectedAlbumID = proposal.id
+        searchQuery = ""
+    }
+
+    @discardableResult
+    func applyLibraryMatches(_ proposals: [LibraryMatchProposal]) -> Int {
+        guard !isBusy else { return 0 }
+        var edited = files
+        let indices = Dictionary(uniqueKeysWithValues: edited.enumerated().map { ($0.element.id, $0.offset) })
+        var applied = 0
+        do {
+            for proposal in proposals {
+                guard let release = proposal.release, let result = proposal.result else { continue }
+                let matches = result.trackMatches.filter { $0.decision != .ambiguous && $0.releaseTrackID != nil }
+                for match in matches {
+                    guard let fileIndex = indices[match.localTrackID],
+                          let track = release.tracks.first(where: { $0.id == match.releaseTrackID }) else { continue }
+                    guard let metadata = metadata(for: edited[fileIndex], release: release, track: track) else { continue }
+                    try edited[fileIndex].updateMetadata(metadata)
+                    applied += 1
+                }
+            }
+            files = edited
+            statusMessage = "Applied metadata proposals to \(applied) files. Save Tags to write changes to disk."
+            errorMessage = nil
+            scheduleSessionSave()
+        } catch {
+            present(error)
+        }
+        return applied
     }
 
     func selectionChanged(_ ids: Set<UUID>) {
@@ -546,9 +699,12 @@ final class AppModel: ObservableObject {
 
     func reviewedMetadata(for fileID: UUID) -> Metadata? {
         guard let review = matchReview, let file = reviewFile(fileID),
-              let remoteID = review.assignments[fileID], let track = review.release.tracks.first(where: { $0.id == remoteID }),
-              let medium = review.release.media.first(where: { $0.tracks.contains { $0.id == remoteID } }) else { return nil }
-        let release = review.release
+              let remoteID = review.assignments[fileID], let track = review.release.tracks.first(where: { $0.id == remoteID }) else { return nil }
+        return metadata(for: file, release: review.release, track: track)
+    }
+
+    private func metadata(for file: AudioFile, release: MusicBrainzRelease, track: MusicBrainzTrack) -> Metadata? {
+        guard let medium = release.media.first(where: { $0.tracks.contains { $0.id == track.id } }) else { return nil }
         var metadata = file.metadata
         metadata.setValue(release.title, for: "album")
         metadata.setValue(release.artistCredit, for: "albumartist")

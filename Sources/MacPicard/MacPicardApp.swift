@@ -142,6 +142,10 @@ struct ContentView: View {
             OrganizationView(model: model)
                 .frame(minWidth: 980, minHeight: 660)
         }
+        .sheet(isPresented: $presentation.isShowingLibraryMatch) {
+            LibraryMatchView(model: model, presentation: presentation)
+                .frame(minWidth: 900, minHeight: 620)
+        }
         .sheet(isPresented: $presentation.isShowingSettings) {
             SettingsView(model: model)
                 .frame(width: 500, height: 390)

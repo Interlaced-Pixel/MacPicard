@@ -28,6 +28,35 @@ final class BrowserTests: XCTestCase {
         XCTAssertEqual(LocalTrackCandidate(metadata: metadata).recordingID, "recording-two")
     }
 
+    @MainActor
+    func testLibraryMatchProposalStagesMatchedMetadataWithoutWritingAudio() async throws {
+        let data = Data(#"{"id":"11111111-1111-1111-1111-111111111111","title":"Album","artist-credit":[{"name":"Alice"}],"media":[{"position":1,"tracks":[{"id":"track-one","number":"1","position":1,"title":"First Song","length":180000,"artist-credit":[{"name":"Alice"}],"recording":{"id":"recording-one"}},{"id":"track-two","number":"2","position":2,"title":"Second Song","length":180000,"artist-credit":[{"name":"Alice"}],"recording":{"id":"recording-two"}}]}]}"#.utf8)
+        let client = MusicBrainzClient(userAgent: "Tests/1.0", transport: ReleaseTransport(data: data), minimumRequestInterval: .zero)
+        let model = AppModel(musicBrainzClient: client)
+        let file = try audioFile(title: "Second Song", artist: "Alice", album: "Album", track: "2/2")
+        model.files = [file]
+        let release = try await client.lookupRelease(id: "11111111-1111-1111-1111-111111111111")
+        let local = LocalAlbumCandidate(metadata: file.metadata, tracks: [LocalTrackCandidate(metadata: file.metadata, id: file.id)])
+        let result = try XCTUnwrap(ReleaseMatcher().rank(local: local, candidates: [release]).first)
+        let proposal = AppModel.LibraryMatchProposal(
+            id: "alice\u{1F}album",
+            albumTitle: "Album",
+            artist: "Alice",
+            fileIDs: [file.id],
+            result: result,
+            release: release,
+            status: .matched,
+            errorMessage: nil
+        )
+
+        XCTAssertEqual(model.applyLibraryMatches([proposal]), 1)
+        XCTAssertEqual(model.files.first?.metadata.firstValue(for: "title"), "Second Song")
+        XCTAssertEqual(model.files.first?.metadata.firstValue(for: "musicbrainz_trackid"), "recording-two")
+        XCTAssertTrue(model.files.first?.isModified == true)
+        XCTAssertEqual(model.files.first?.state, .changed)
+        model.sessionSaveTask?.cancel()
+    }
+
     private struct ReleaseTransport: MusicBrainzTransport {
         let data: Data
         func data(for request: URLRequest) async throws -> MusicBrainzHTTPResponse {

@@ -113,6 +113,9 @@ struct MacPicardCommands: Commands {
             Button("Refresh Library") { Task { await model.refreshLibrary() } }
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(model.isBusy || model.activeWorkspace?.kind != .library)
+            Button("Match Entire Library…") { presentation.isShowingLibraryMatch = true }
+                .keyboardShortcut("m", modifiers: [.command, .option])
+                .disabled(model.isBusy || model.activeWorkspace?.kind != .library || model.albumGroups.isEmpty)
             Button("Cancel Library Refresh") { model.cancelLibraryRefresh() }
                 .disabled(!model.isScanningLibrary)
             Toggle("Refresh Automatically", isOn: Binding(

@@ -145,7 +145,6 @@ end
 # Normalize string-valued target/proxy UUID references in the first pass;
 # hash the normalized tree in the second pass for byte-stable regeneration.
 project.predictabilize_uuids
-project.predictabilize_uuids
 project.save
 scheme = Xcodeproj::XCScheme.new
 scheme.configure_with_targets(app, nil, launch_target: true)
