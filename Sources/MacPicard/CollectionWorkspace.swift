@@ -39,7 +39,60 @@ struct BrowserPreferences: Codable {
     var sort = "number"
     var descending = false
     var columns = TableColumnCustomization<CollectionTrack>()
-    var toolbarActions: Set<String> = ["lookup", "artwork", "script", "save", "discard"]
+    var toolbarActions: Set<String> = ["import", "lookup", "save", "organize", "artwork", "scripts", "activity"]
+    var showsSidebar = true
+    var showsInspector = true
+
+    private enum CodingKeys: String, CodingKey { case sort, descending, columns, toolbarActions, showsSidebar, showsInspector }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        sort = try values.decodeIfPresent(String.self, forKey: .sort) ?? "number"
+        descending = try values.decodeIfPresent(Bool.self, forKey: .descending) ?? false
+        columns = try values.decodeIfPresent(TableColumnCustomization<CollectionTrack>.self, forKey: .columns) ?? TableColumnCustomization()
+        toolbarActions = try values.decodeIfPresent(Set<String>.self, forKey: .toolbarActions) ?? ["import", "lookup", "save", "organize", "artwork", "scripts", "activity"]
+        showsSidebar = try values.decodeIfPresent(Bool.self, forKey: .showsSidebar) ?? true
+        showsInspector = try values.decodeIfPresent(Bool.self, forKey: .showsInspector) ?? true
+    }
+}
+
+enum BrowserToolbarAction: String, CaseIterable, Identifiable {
+    case importFiles = "import"
+    case lookup
+    case save
+    case organize
+    case artwork
+    case scripts
+    case discard
+    case activity
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .importFiles: "Import"
+        case .lookup: "Look Up"
+        case .save: "Save"
+        case .organize: "Organize"
+        case .artwork: "Artwork"
+        case .scripts: "Tools"
+        case .discard: "Discard"
+        case .activity: "Activity"
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .importFiles: "plus"
+        case .lookup: "magnifyingglass"
+        case .save: "square.and.arrow.down"
+        case .organize: "folder.badge.gearshape"
+        case .artwork: "photo"
+        case .scripts: "wand.and.stars"
+        case .discard: "arrow.uturn.backward"
+        case .activity: "list.bullet.rectangle"
+        }
+    }
 }
 
 struct ActivityEntry: Identifiable {
@@ -207,6 +260,10 @@ struct CollectionTrackTable: View {
     @ObservedObject var presentation: AppPresentation
     @State private var sortOrder = [KeyPathComparator(\CollectionTrack.number)]
     private var rows: [CollectionTrack] { model.visibleFiles.map(CollectionTrack.init).sorted(using: sortOrder) }
+    private func idealWidth(_ values: [String], minimum: CGFloat, maximum: CGFloat) -> CGFloat {
+        let longest = values.map { CGFloat($0.count) }.max() ?? 0
+        return min(max(minimum, longest * 7.2 + 28), maximum)
+    }
     var body: some View {
         Table(rows, selection: Binding(get: { model.selectedFileIDs }, set: { model.selectionChanged($0) }), sortOrder: $sortOrder,
               columnCustomization: $model.browserPreferences.columns) {
@@ -215,14 +272,21 @@ struct CollectionTrackTable: View {
                     if model.playback.currentTrack?.fileID == row.id { Image(systemName: "speaker.wave.2.fill").accessibilityLabel("Now playing") }
                     Text(row.title).lineLimit(1)
                 }
-            }.width(min: 160, ideal: 230).customizationID("title").disabledCustomizationBehavior(.visibility)
-            TableColumn("Artist", value: \.artist).customizationID("artist")
-            TableColumn("Album", value: \.album).customizationID("album")
+            }.width(min: 160, ideal: idealWidth(rows.map(\.title), minimum: 210, maximum: 420)).customizationID("title").disabledCustomizationBehavior(.visibility)
+            TableColumn("Artist", value: \.artist).width(min: 120, ideal: idealWidth(rows.map(\.artist), minimum: 150, maximum: 300)).customizationID("artist")
+            TableColumn("Album", value: \.album).width(min: 140, ideal: idealWidth(rows.map(\.album), minimum: 170, maximum: 340)).customizationID("album")
             TableColumn("#", value: \.number) { Text($0.number == 0 ? "—" : String($0.number)) }.width(40).customizationID("number")
             TableColumn("Time", value: \.duration) { Text($0.duration == 0 ? "—" : String(format: "%d:%02d", $0.duration / 60_000, $0.duration / 1_000 % 60)) }.width(65).customizationID("duration")
             TableColumn("Format", value: \.format).width(65).customizationID("format")
-            TableColumn("State", value: \.state).width(85).customizationID("state")
-            TableColumn("File", value: \.filename).customizationID("filename")
+            TableColumn("State", value: \.state) { row in
+                Text(row.state)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(stateColor(row.state))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(stateColor(row.state).opacity(0.14), in: .capsule)
+            }.width(100).customizationID("state")
+            TableColumn("File", value: \.filename).width(min: 150, ideal: idealWidth(rows.map(\.filename), minimum: 190, maximum: 420)).customizationID("filename")
         }
         .contextMenu(forSelectionType: UUID.self) { ids in
             if let id = ids.first { TrackContextMenu(model: model, presentation: presentation, fileID: id) }
@@ -258,6 +322,84 @@ struct CollectionTrackTable: View {
         if value.keyPath == \CollectionTrack.state { return "state" }
         if value.keyPath == \CollectionTrack.filename { return "filename" }
         return "number"
+    }
+
+    private func stateColor(_ state: String) -> Color {
+        switch state.lowercased() {
+        case "changed": return MusicBrainzTheme.orange
+        case "saved", "ready": return MusicBrainzTheme.success
+        case "failed", "unsupported": return MusicBrainzTheme.error
+        default: return .secondary
+        }
+    }
+}
+
+struct ToolbarEditorView: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Customize Toolbar").font(.title2.weight(.bold))
+                    Text("Choose the actions that stay close at hand.").font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(22)
+            .background(LinearGradient(colors: [MusicBrainzTheme.purple.opacity(0.18), .clear], startPoint: .topLeading, endPoint: .bottomTrailing))
+
+            List {
+                Section("Visible actions") {
+                    ForEach(BrowserToolbarAction.allCases) { action in
+                        Toggle(isOn: binding(for: action)) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(action.title)
+                                    Text(description(for: action)).font(.caption).foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: action.systemImage).foregroundStyle(MusicBrainzTheme.purple).frame(width: 24)
+                            }
+                        }
+                    }
+                }
+                Section {
+                    Button("Restore Default Toolbar") {
+                        model.browserPreferences.toolbarActions = ["import", "lookup", "save", "organize", "artwork", "scripts", "activity"]
+                        model.saveBrowserPreferences()
+                    }
+                }
+            }
+            .listStyle(.inset)
+        }
+        .tint(MusicBrainzTheme.purple)
+    }
+
+    private func binding(for action: BrowserToolbarAction) -> Binding<Bool> {
+        Binding(
+            get: { model.browserPreferences.toolbarActions.contains(action.rawValue) },
+            set: { visible in
+                if visible { model.browserPreferences.toolbarActions.insert(action.rawValue) }
+                else { model.browserPreferences.toolbarActions.remove(action.rawValue) }
+                model.saveBrowserPreferences()
+            }
+        )
+    }
+
+    private func description(for action: BrowserToolbarAction) -> String {
+        switch action {
+        case .importFiles: "Add audio to the active library"
+        case .lookup: "Find MusicBrainz matches for the selection"
+        case .save: "Write pending metadata changes"
+        case .organize: "Review file and folder organization"
+        case .artwork: "Edit and export embedded artwork"
+        case .scripts: "Open tools, scripts, and profiles"
+        case .discard: "Revert unsaved changes"
+        case .activity: "Review background operations"
+        }
     }
 }
 

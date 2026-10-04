@@ -119,25 +119,29 @@ private struct ActionBar: View {
     @State private var isCompact = false
 
     var body: some View {
-                HStack(spacing: 8) {
+        HStack(spacing: 8) {
+            toolbarLabel
+            if isEnabled(.importFiles) {
                 GlassActionButton("Import", systemImage: "plus", compact: isCompact) {
                     isImporting = true
                 }
                 .disabled(model.isBusy || model.activeWorkspace == nil)
                 .help("Copy audio files into this library. Originals stay unchanged.")
-                if !presentation.showsMatchComparison {
+            }
+            if isEnabled(.lookup) && !presentation.showsMatchComparison {
                 GlassActionButton("Look Up", systemImage: "magnifyingglass", compact: isCompact) {
                     presentation.showsMatchComparison = true
                     Task { await model.lookup() }
                 }
                 .disabled(!model.canLookupSelection)
-                }
-                if model.selectedModifiedCount > 0 {
+            }
+            if isEnabled(.save) && model.selectedModifiedCount > 0 {
                 GlassActionButton("Save", systemImage: "square.and.arrow.down", prominent: true, compact: isCompact) {
                     Task { await model.saveSelected() }
                 }
                 .disabled(!model.canPerform(.save))
-                }
+            }
+            if isEnabled(.organize) {
                 Menu {
                     Button("Organize Selected Files…") {
                         model.requestOrganizationReview()
@@ -155,6 +159,12 @@ private struct ActionBar: View {
                 }
                 .buttonStyle(.bordered)
                 .help("Review filenames and folders before moving files.")
+            }
+            if isEnabled(.artwork) {
+                GlassActionButton("Artwork", systemImage: "photo", compact: isCompact) { presentation.isShowingArtwork = true }
+                    .disabled(!model.canEditSelection)
+            }
+            if isEnabled(.scripts) {
                 Menu {
                     Button("Collection Tools…") { presentation.collectionToolsPage = "operations"; presentation.isShowingCollectionTools = true }
                     Button("Scripts…") { presentation.collectionToolsPage = "scripts"; presentation.isShowingCollectionTools = true }
@@ -163,51 +173,63 @@ private struct ActionBar: View {
                     Divider()
                     Button("Scan Selected Audio…") { model.startFingerprintScan(); presentation.isShowingFingerprints = true }.disabled(model.isBusy || model.selectedFiles.isEmpty)
                     Button("Fingerprint Results…") { presentation.isShowingFingerprints = true }
-                    Button("Manage Artwork…") { presentation.isShowingArtwork = true }.disabled(!model.canEditSelection)
-                    Button("Discard Selected Changes…") { presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID) }.disabled(!model.canPerform(.discard))
-                    Button("All Tags & Changes…") { presentation.isShowingMetadataEditor = true }.disabled(!model.canEditSelection)
-                    Button("Activity…") { presentation.isShowingActivity = true }
-                    Divider()
-                    Toggle("Sidebar", isOn: $presentation.showsSidebar)
-                    Toggle("Inspector", isOn: $presentation.showsInspector).disabled(presentation.showsMatchComparison)
-                    Button("Clear Selection") { model.clearSelection() }.disabled(model.selectedFiles.isEmpty)
-                } label: { Image(systemName: "ellipsis") }.menuIndicator(.hidden).buttonStyle(.bordered).accessibilityLabel("More actions")
-
-                Spacer(minLength: 8)
-
-                if !model.selectedFiles.isEmpty {
-                    HStack(spacing: 6) {
-                        Text("\(model.selectedFiles.count) selected")
-                            .font(.caption.weight(.medium))
-                        if model.selectedModifiedCount > 0 {
-                            Text("\(model.selectedModifiedCount) pending save")
-                                .font(.caption2)
-                                .foregroundStyle(MusicBrainzTheme.orange)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Selection")
-                    .accessibilityValue("\(model.selectedFiles.count) selected, \(model.selectedFormatSummary)")
-
+                } label: { Label("Tools", systemImage: "wand.and.stars") }.buttonStyle(.bordered)
+            }
+            if isEnabled(.discard) && model.selectedModifiedCount > 0 {
+                GlassActionButton("Discard", systemImage: "arrow.uturn.backward", compact: isCompact) {
+                    presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID)
                 }
+                .disabled(!model.canPerform(.discard))
+            }
+            if isEnabled(.activity) {
+                GlassActionButton("Activity", systemImage: "list.bullet.rectangle", compact: isCompact) { presentation.isShowingActivity = true }
+            }
+            Spacer(minLength: 8)
 
-                if let progress = model.progress {
-                    ProgressView(value: progress)
-                        .frame(width: 90)
-                        .accessibilityLabel("Operation progress")
+            if !model.selectedFiles.isEmpty {
+                HStack(spacing: 6) {
+                    Text("\(model.selectedFiles.count) selected").font(.caption.weight(.medium))
+                    if model.selectedModifiedCount > 0 { Text("\(model.selectedModifiedCount) pending save").font(.caption2).foregroundStyle(MusicBrainzTheme.orange) }
                 }
-                if model.isWorking {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel("Working")
-                }
-                }
-                .controlSize(.small).tint(.primary)
-                .padding(.horizontal, 12).padding(.vertical, 7)
-        .background(.bar)
-        .onGeometryChange(for: Bool.self) { geometry in geometry.size.width < 620 } action: {
-            isCompact = $0
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Selection")
+                .accessibilityValue("\(model.selectedFiles.count) selected, \(model.selectedFormatSummary)")
+            }
+            if let progress = model.progress { ProgressView(value: progress).frame(width: 90) }
+            if model.isWorking { ProgressView().controlSize(.small).accessibilityLabel("Working") }
+            Menu {
+                Button("Customize Toolbar…") { presentation.isShowingToolbarEditor = true }
+                Divider()
+                Button("Collection Tools…") { presentation.collectionToolsPage = "operations"; presentation.isShowingCollectionTools = true }
+                Button("Manage Artwork…") { presentation.isShowingArtwork = true }.disabled(!model.canEditSelection)
+                Button("All Tags & Changes…") { presentation.isShowingMetadataEditor = true }.disabled(!model.canEditSelection)
+                Button("Fingerprint Results…") { presentation.isShowingFingerprints = true }
+                Divider()
+                Toggle("Sidebar", isOn: $presentation.showsSidebar)
+                Toggle("Inspector", isOn: $presentation.showsInspector).disabled(presentation.showsMatchComparison)
+                Button("Clear Selection") { model.clearSelection() }.disabled(model.selectedFiles.isEmpty)
+            } label: { Image(systemName: "slider.horizontal.3") }
+                .menuIndicator(.hidden).buttonStyle(.bordered).help("Workspace options")
         }
+        .controlSize(.small)
+        .tint(.primary)
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background {
+            LinearGradient(colors: [MusicBrainzTheme.purple.opacity(0.16), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(.bar.opacity(0.86))
+        }
+        .onGeometryChange(for: Bool.self) { geometry in geometry.size.width < 760 } action: { isCompact = $0 }
+    }
+
+    private func isEnabled(_ action: BrowserToolbarAction) -> Bool { model.browserPreferences.toolbarActions.contains(action.rawValue) }
+
+    private var toolbarLabel: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("MACPICARD").font(.caption2.weight(.black)).tracking(1.4).foregroundStyle(MusicBrainzTheme.purple)
+            Text(model.browserTitle).font(.caption.weight(.semibold)).lineLimit(1)
+        }
+        .frame(minWidth: 118, alignment: .leading)
+        .help("Customize this toolbar from the slider menu")
     }
 }
 

@@ -1,13 +1,21 @@
 .DS_Store
+.AppleDouble
+.LSOverride
 .build/
 .swiftpm/
 DerivedData/
 xcuserdata/
 *.xcuserstate
+*.xcuserdatad
+*.swp
+*.swo
+.idea/
+build/
 # Keep shared Xcode projects, schemes, and package locks in version control.
 **/xcuserdata/
 *.xcresult/
 coverage/
+*.dSYM/
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
@@ -19,3 +27,8 @@ MacPicardData/
 
 # Publisher credentials are embedded at build time, never committed.
 Config/AcoustID.plist
+
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example

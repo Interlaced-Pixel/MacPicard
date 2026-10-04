@@ -25,6 +25,7 @@ final class AppPresentation: ObservableObject {
     @Published var isManagingWorkspaces = false
     @Published var showsSidebar = true
     @Published var showsInspector = true
+    @Published var isShowingToolbarEditor = false
     @Published var searchFocusRequest = 0
     @Published var isShowingGuide = false
     @Published var showsPlaybackQueue = false

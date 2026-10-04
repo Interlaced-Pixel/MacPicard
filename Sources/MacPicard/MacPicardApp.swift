@@ -136,6 +136,18 @@ struct ContentView: View {
         .tint(MusicBrainzTheme.purple)
         .accentColor(MusicBrainzTheme.purple)
         .preferredColorScheme(model.configuration.editing.appearance == "dark" ? .dark : model.configuration.editing.appearance == "light" ? .light : nil)
+        .onAppear {
+            presentation.showsSidebar = model.browserPreferences.showsSidebar
+            presentation.showsInspector = model.browserPreferences.showsInspector
+        }
+        .onChange(of: presentation.showsSidebar) { _, value in
+            model.browserPreferences.showsSidebar = value
+            model.saveBrowserPreferences()
+        }
+        .onChange(of: presentation.showsInspector) { _, value in
+            model.browserPreferences.showsInspector = value
+            model.saveBrowserPreferences()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSText.didChangeNotification)) { _ in model.editHistoryRevision += 1 }
         .onChange(of: presentation.isImporting) { _, importing in
             guard importing else { return }
@@ -184,6 +196,10 @@ struct ContentView: View {
         .sheet(isPresented: $presentation.isShowingSettings) {
             SettingsView(model: model)
                 .frame(minWidth: 720, idealWidth: 820, minHeight: 560, idealHeight: 650)
+        }
+        .sheet(isPresented: $presentation.isShowingToolbarEditor) {
+            ToolbarEditorView(model: model)
+                .frame(width: 440, height: 540)
         }
         .sheet(isPresented: $presentation.isShowingMetadataEditor) {
             MetadataEditorView(model: model).frame(minWidth: 850, minHeight: 570)
