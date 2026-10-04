@@ -144,10 +144,33 @@ Implementation status: complete for the automated hardening and packaging gate. 
 
 API contracts, security rules, and live integration-test instructions are documented in [docs/API_AUDIT.md](docs/API_AUDIT.md).
 
+### Xcode
+
+Open `MacPicard.xcodeproj`, select the **MacPicard App** scheme and **My Mac**, then use **Run** (⌘R) or **Test** (⌘U). Xcode 26 or newer and macOS 26 or newer are required. The checked-in project works without a project generator or CocoaPods installation.
+
+The native application target builds the existing UI sources and links the seven local Swift package library products. `Package.swift` remains the single source of truth for their dependencies and the pinned TagLibSwift revision. Xcode builds the `.app` with the existing bundle identifier, icon and English localization. **MacPicard App** is distinct from SwiftPM's automatically exposed **MacPicard** executable scheme; use the app scheme for Run, Test and Archive.
+
+```sh
+xcodebuild -project MacPicard.xcodeproj -scheme 'MacPicard App' \
+  -configuration Debug -destination 'platform=macOS' -derivedDataPath DerivedData build
+xcodebuild -project MacPicard.xcodeproj -scheme 'MacPicard App' \
+  -destination 'platform=macOS' -derivedDataPath DerivedData test
+```
+
+All eight test targets are included. Hosted app-model tests suppress automatic restoration of your actual music workspace; their fixtures use temporary directories. Live MusicBrainz/Cover Art requests, the recoverable Trash integration test, and the temporary disk-image cross-volume test are opt-in: enable their `MACPICARD_*` variables under **Edit Scheme → Test → Arguments → Environment Variables**. Real audio fixture tests require `ffmpeg` on the test process's `PATH`.
+
+For command-line integration runs, pass these as environment variables prefixed with `TEST_RUNNER_` (for example, `TEST_RUNNER_MACPICARD_LIVE_API_TESTS=1 xcodebuild … test`). Xcode forwards them to the test process without the prefix. Enable all four listed variables to run the full integration suite; the default scheme leaves those five external/environment-dependent tests skipped.
+
+Debug and Release default to local **ad hoc signing**, with no development team required. This is not Developer ID signing or notarization. For distribution, configure your own signing identity/team and use the release checklist. **Product → Archive** uses Release; the standalone packaging/notarization script below remains available.
+
+If app/test source files or package products change, regenerate the project with `ruby Scripts/generate-xcode-project.rb` and commit the shared project changes. Regeneration requires the development-only Ruby `xcodeproj` gem, version 1.27.x (`gem install --user-install xcodeproj -v 1.27.0`); it is not needed to open, build, or run the checked-in project. The generator reads target/product definitions from `swift package dump-package` and uses stable identifiers. New core library source files are picked up directly by SwiftPM without regeneration. Xcode user settings and DerivedData stay ignored.
+
+### Swift Package Manager
+
 ```sh
 swift build -Xswiftc -strict-concurrency=complete
 swift test -Xswiftc -strict-concurrency=complete
 swift run MacPicard
 ```
 
-The application targets macOS 26 and requires the Xcode 26 SDK because the production UI uses native Liquid Glass APIs.
+The application targets macOS 26 and requires the Xcode 26 SDK or newer because the production UI uses native Liquid Glass APIs.

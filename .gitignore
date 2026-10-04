@@ -4,8 +4,9 @@
 DerivedData/
 xcuserdata/
 *.xcuserstate
-*.xcodeproj/
-*.xcworkspace/
+# Keep shared Xcode projects, schemes, and package locks in version control.
+**/xcuserdata/
+*.xcresult/
 coverage/
 fastlane/report.xml
 fastlane/Preview.html

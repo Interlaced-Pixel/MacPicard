@@ -81,7 +81,13 @@ struct MacPicardApp: App {
         Window("MacPicard", id: "workspace") {
             ContentView(model: model, presentation: presentation)
                 .onAppear { appDelegate.model = model }
-                .task { await model.bootstrap() }
+                .task {
+                    // Xcode's hosted model tests create their own temporary
+                    // workspaces. Do not restore or autosave the user's library
+                    // just because the test runner launched the app executable.
+                    guard ProcessInfo.processInfo.environment["MACPICARD_UNIT_TEST_HOST"] != "1" else { return }
+                    await model.bootstrap()
+                }
         }
         .defaultSize(width: 1_360, height: 860)
         .commands { MacPicardCommands(model: model, presentation: presentation) }

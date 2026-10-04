@@ -1,0 +1,14 @@
+{
+  "originHash" : "2210f1535855c5ef57cc8d8061a4ae456540229f26751a325f92b368eba7ace6",
+  "pins" : [
+    {
+      "identity" : "taglibswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jeonghi/TagLibSwift.git",
+      "state" : {
+        "revision" : "a36e48f43a4cea1fd41baa0c90acdb6f35444800"
+      }
+    }
+  ],
+  "version" : 3
+}
