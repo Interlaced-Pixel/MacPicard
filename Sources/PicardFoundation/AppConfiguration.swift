@@ -1,7 +1,7 @@
 import Foundation
 
 public struct AppConfiguration: Codable, Sendable, Equatable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
     public static let defaultUserAgent = "MacPicard/0.1.0 (https://github.com/Interlaced-Pixel)"
 
     public var schemaVersion: Int
@@ -11,6 +11,7 @@ public struct AppConfiguration: Codable, Sendable, Equatable {
     public var automaticCoverArt: Bool
     public var autosaveEnabled: Bool
     public var autosaveIntervalSeconds: Int
+    public var editing = EditingPreferences()
 
     public init(
         schemaVersion: Int = AppConfiguration.currentSchemaVersion,
@@ -39,6 +40,7 @@ public struct AppConfiguration: Codable, Sendable, Equatable {
         case automaticCoverArt
         case autosaveEnabled
         case autosaveIntervalSeconds
+        case editing
     }
 
     public init(from decoder: Decoder) throws {
@@ -59,6 +61,7 @@ public struct AppConfiguration: Codable, Sendable, Equatable {
             autosaveIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .autosaveIntervalSeconds)
                 ?? 60
         )
+        editing = try container.decodeIfPresent(EditingPreferences.self, forKey: .editing) ?? EditingPreferences()
     }
 }
 
@@ -88,6 +91,9 @@ public enum ConfigurationMigrator {
             case 0:
                 dictionary["schemaVersion"] = 1
                 version = 1
+            case 1:
+                dictionary["schemaVersion"] = 2
+                version = 2
             default:
                 throw PicardError.migrationFailed(
                     from: version,
@@ -150,12 +156,20 @@ public actor ConfigurationStore {
     }
 
     public func save(_ configuration: AppConfiguration) throws {
+        try configuration.validate()
         guard configuration.schemaVersion <= AppConfiguration.currentSchemaVersion else {
             throw PicardError.unsupportedConfigurationVersion(configuration.schemaVersion)
         }
 
         do {
-            let data = try JSONEncoder.makeStableEncoder().encode(configuration)
+            let encoded = try JSONEncoder.makeStableEncoder().encode(configuration)
+            // Preserve future/vendor keys, including nested preferences, across edits.
+            var known = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+            if let old = try? Data(contentsOf: fileURL),
+               let original = try? JSONSerialization.jsonObject(with: old) as? [String: Any] {
+                known = Self.merge(original, with: known)
+            }
+            let data = try JSONSerialization.data(withJSONObject: known, options: [.prettyPrinted, .sortedKeys])
             try write(data)
         } catch let error as PicardError {
             throw error
@@ -190,6 +204,72 @@ public actor ConfigurationStore {
             try data.write(to: fileURL, options: [.atomic])
         } catch {
             throw PicardError.configurationWrite(path: fileURL.path, reason: error.localizedDescription)
+        }
+    }
+
+    private static func merge(_ original: [String: Any], with known: [String: Any]) -> [String: Any] {
+        var result = original
+        for (key, value) in known {
+            if let previous = original[key] as? [String: Any], let current = value as? [String: Any] {
+                result[key] = merge(previous, with: current)
+            } else { result[key] = value }
+        }
+        return result
+    }
+}
+
+public struct EditingPreferences: Codable, Sendable, Equatable {
+    public var matchThreshold: Double = 0.85
+    public var preservedTags: [String] = []
+    public var coverArtSize: String = "1200"
+    public var replaceFrontCover: Bool = true
+    public var namingPattern: String = "$if2(%albumartist%,%artist%,Unknown Artist)/$if2(%album%,Unknown Album)/$if($gt(%totaldiscs%,1),$num(%discnumber%,1)-)$if(%tracknumber%,$num($if2(%tracknumber%,0),2) - )$if2(%title%,%filename%).%extension%"
+    public var defaultTagScript: String = ""
+    public var fpcalcPath: String = ""
+    public var appearance: String = "system"
+    public var monitoringIntervalSeconds: Int = 300
+    public var newLibrariesMonitorAutomatically: Bool = true
+    public init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case matchThreshold, preservedTags, coverArtSize, replaceFrontCover, namingPattern
+        case defaultTagScript, fpcalcPath, appearance, monitoringIntervalSeconds, newLibrariesMonitorAutomatically
+    }
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        matchThreshold = try c.decodeIfPresent(Double.self, forKey: .matchThreshold) ?? matchThreshold
+        preservedTags = try c.decodeIfPresent([String].self, forKey: .preservedTags) ?? preservedTags
+        coverArtSize = try c.decodeIfPresent(String.self, forKey: .coverArtSize) ?? coverArtSize
+        replaceFrontCover = try c.decodeIfPresent(Bool.self, forKey: .replaceFrontCover) ?? replaceFrontCover
+        namingPattern = try c.decodeIfPresent(String.self, forKey: .namingPattern) ?? namingPattern
+        defaultTagScript = try c.decodeIfPresent(String.self, forKey: .defaultTagScript) ?? defaultTagScript
+        fpcalcPath = try c.decodeIfPresent(String.self, forKey: .fpcalcPath) ?? fpcalcPath
+        appearance = try c.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
+        monitoringIntervalSeconds = try c.decodeIfPresent(Int.self, forKey: .monitoringIntervalSeconds) ?? monitoringIntervalSeconds
+        newLibrariesMonitorAutomatically = try c.decodeIfPresent(Bool.self, forKey: .newLibrariesMonitorAutomatically) ?? newLibrariesMonitorAutomatically
+    }
+}
+
+extension AppConfiguration {
+    public func validate() throws {
+        guard preferredReleaseCountry.isEmpty || preferredReleaseCountry.range(of: "^[A-Z]{2}$", options: .regularExpression) != nil else {
+            throw PicardError.invalidConfiguration("Release country must be a two-letter uppercase country code, or empty for no preference.")
+        }
+        guard (15...3600).contains(autosaveIntervalSeconds),
+              (60...3600).contains(editing.monitoringIntervalSeconds) else {
+            throw PicardError.invalidConfiguration("Recovery interval must be 15–3600 seconds; monitoring must be 60–3600 seconds.")
+        }
+        guard editing.matchThreshold.isFinite, (0.60...0.95).contains(editing.matchThreshold),
+              ["250", "500", "1200", "original"].contains(editing.coverArtSize),
+              ["system", "light", "dark"].contains(editing.appearance) else {
+            throw PicardError.invalidConfiguration("Invalid matching threshold, artwork size, or appearance.")
+        }
+        guard !editing.namingPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PicardError.invalidConfiguration("A naming pattern is required.")
+        }
+        guard !editing.preservedTags.contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            throw PicardError.invalidConfiguration("Preserved tag names must not be empty.")
         }
     }
 }

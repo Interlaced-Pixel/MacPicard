@@ -242,7 +242,8 @@ extension AppModel {
             }
             sessionSaveTask?.cancel()
             if let sessionManager { try await sessionManager.save(makeSessionDocument()) }
-            let workspace = MusicWorkspace(name: directory.lastPathComponent, kind: .library, directory: directory)
+            var workspace = MusicWorkspace(name: directory.lastPathComponent, kind: .library, directory: directory)
+            workspace.automaticallyRefreshes = configuration.editing.newLibrariesMonitorAutomatically
             try await runtime.bookmarks.save(url: directory, for: "library-\(workspace.id)", readOnly: false)
             _ = try await workspaceStore.create(workspace, document: SessionDocument())
             try await loadWorkspace(workspace.id)
@@ -398,7 +399,8 @@ extension AppModel {
         refreshTask?.cancel()
         refreshTask = Task(priority: .utility) { @MainActor [weak self] in
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(300)) } catch { return }
+                let seconds = self?.configuration.editing.monitoringIntervalSeconds ?? 300
+                do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
                 guard let self, !Task.isCancelled else { return }
                 if self.activeWorkspace?.automaticallyRefreshes == true {
                     await self.refreshLibrary(automatic: true)
@@ -406,6 +408,8 @@ extension AppModel {
             }
         }
     }
+
+    func restartLibraryMonitoring() { startLibraryRefresh() }
 
     func rememberImportAccess(_ urls: [URL]) async throws {
         guard let runtime else { return }

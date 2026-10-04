@@ -32,6 +32,8 @@ Right-click tracks or albums to **Remove from Library…** / **Remove from Sessi
 
 The File, Edit, View, Library, and Metadata menus share their actions and enabled states with the on-screen controls. The sidebar and metadata inspector can be hidden, and the action bar adapts to narrower windows. **Help → MacPicard Guide** explains these workflows in the app.
 
+**Settings…** (⌘,) provides editable recovery/monitoring intervals, new-library monitoring defaults, preferred release country, match threshold (85% by default), preserved tags, timestamp preservation, cover download size/replacement, default naming/tag scripts, fingerprint-tool configuration, Keychain credentials, and System/Light/Dark appearance. Save validates the draft before committing; Cancel keeps existing preferences. Preserved tags retain current values when MusicBrainz proposals are applied. Settings migrate older configuration and retain unknown keys. Credential fields are opened explicitly and stored only in Keychain. Fingerprint identification and submission actions remain scheduled for improvement phase 6.
+
 Menu placement and persistent folder access follow Apple's [command groups](https://developer.apple.com/documentation/swiftui/commandgroupplacement) and [security-scoped URL access](https://developer.apple.com/documentation/foundation/url/startaccessingsecurityscopedresource()) APIs.
 
 ## Review file organization

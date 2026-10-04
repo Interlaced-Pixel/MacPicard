@@ -40,6 +40,7 @@ struct LibraryMatchView: View {
             footer
         }
         .onAppear {
+            threshold = model.configuration.editing.matchThreshold
             if let existing = model.libraryMatchRun { threshold = existing.autoApplyThreshold }
         }
     }

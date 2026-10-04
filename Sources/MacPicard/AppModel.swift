@@ -65,6 +65,7 @@ final class AppModel: ObservableObject {
     }
 
     @Published private(set) var snapshot: RuntimeSnapshot?
+    @Published private(set) var configuration = AppConfiguration()
     @Published var errorMessage: String?
     @Published var statusMessage = "Ready"
     @Published var monitoringMessage: String?
@@ -276,6 +277,7 @@ final class AppModel: ObservableObject {
 
             self.runtime = runtime
             self.snapshot = snapshot
+            installConfiguration(snapshot.configuration)
             self.audioCoordinator = audio
             self.musicBrainzClient = musicBrainz
             self.coverArtClient = coverArt
@@ -446,7 +448,8 @@ final class AppModel: ObservableObject {
     /// Searches, resolves, and scores every album in the active library. The
     /// operation only creates proposals; it never changes metadata. The normal
     /// MusicBrainz client rate limiter and response cache remain in the path.
-    func matchEntireLibrary(autoApplyThreshold: Double = 0.85) async {
+    func matchEntireLibrary(autoApplyThreshold requestedThreshold: Double? = nil) async {
+        let autoApplyThreshold = requestedThreshold ?? configuration.editing.matchThreshold
         guard let musicBrainzClient, activeWorkspace?.kind == .library else {
             statusMessage = "Open a Music Library before matching the whole library."
             return
@@ -464,7 +467,7 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         libraryMatchRun = nil
         var proposals: [LibraryMatchProposal] = []
-        let matcher = ReleaseMatcher(preferences: ReleaseMatchPreferences(minimumSimilarity: 0.25, minimumMargin: 0.02, minimumTrackSimilarity: 0.35))
+        let matcher = ReleaseMatcher(preferences: releaseMatchPreferences)
 
         defer {
             isWorking = false
@@ -623,7 +626,7 @@ final class AppModel: ObservableObject {
             let results = try await musicBrainzClient.searchReleases(for: local)
             guard generation == lookupGeneration, targets == selectedFileIDs else { return }
             lookupResults = results
-            matchResults = ReleaseMatcher().rank(local: local, candidates: results)
+            matchResults = ReleaseMatcher(preferences: releaseMatchPreferences).rank(local: local, candidates: results)
             statusMessage = results.isEmpty ? "No matching releases found." : "Found \(results.count) releases."
         } catch {
             guard generation == lookupGeneration else { return }
@@ -728,6 +731,11 @@ final class AppModel: ObservableObject {
         else { metadata.unset("musicbrainz_trackid") }
         metadata.unset("musicbrainz_recordingid")
         if track.isrcs.isEmpty { metadata.unset("isrc") } else { metadata.setValues(track.isrcs, for: "isrc") }
+        for key in configuration.editing.preservedTags {
+            if file.metadata.isDeleted(key) { metadata.delete(key) }
+            else if file.metadata.contains(key) { metadata.setValues(file.metadata.values(for: key), for: key) }
+            else { metadata.unset(key) }
+        }
         return metadata
     }
 
@@ -750,6 +758,7 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         cancelMatchReview()
         scheduleSessionSave()
+        if configuration.automaticCoverArt { Task { await self.downloadCoverArt() } }
         return true
     }
 
@@ -817,11 +826,13 @@ final class AppModel: ObservableObject {
                 statusMessage = "No cover art is available for this release."
                 return
             }
-            let artwork = try await coverArtClient.download(image, size: .thumbnail1200)
+            let artwork = try await coverArtClient.download(image, size: CoverArtImageSize(rawValue: configuration.editing.coverArtSize) ?? .thumbnail1200)
             var edited = files
             for index in edited.indices where targets.contains(edited[index].id) {
                 var collection = edited[index].artwork
-                collection.remove(id: collection.first(of: .front)?.id ?? UUID())
+                if configuration.editing.replaceFrontCover {
+                    collection.remove(id: collection.first(of: .front)?.id ?? UUID())
+                }
                 collection.append(artwork)
                 try edited[index].updateArtwork(collection)
             }
@@ -861,7 +872,7 @@ final class AppModel: ObservableObject {
         for (index, file) in targets.enumerated() {
             do {
                 let result = try await saveCoordinator.save(file, options: AudioSaveOptions(
-                    preserveModificationDate: snapshot?.configuration.preserveFileTimestamps ?? true
+                    preserveModificationDate: configuration.preserveFileTimestamps
                 ))
                 saved.append(result)
             } catch { failures.append("\(file.url.lastPathComponent): \(error.localizedDescription)") }
@@ -962,6 +973,22 @@ final class AppModel: ObservableObject {
                 await self.saveRecovery()
             }
         }
+    }
+
+    func installConfiguration(_ value: AppConfiguration) {
+        configuration = value
+        if let snapshot {
+            self.snapshot = RuntimeSnapshot(paths: snapshot.paths, configuration: value, diagnostics: snapshot.diagnostics)
+        }
+        organizationNamingScript = value.editing.namingPattern
+        scriptSource = value.editing.defaultTagScript
+        autosaveTask?.cancel()
+        if value.autosaveEnabled { startAutosave(interval: value.autosaveIntervalSeconds) }
+        restartLibraryMonitoring()
+    }
+
+    var releaseMatchPreferences: ReleaseMatchPreferences {
+        ReleaseMatchPreferences(preferredCountries: configuration.preferredReleaseCountry.isEmpty ? [] : [configuration.preferredReleaseCountry])
     }
 
     private func saveRecovery() async {

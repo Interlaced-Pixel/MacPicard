@@ -112,6 +112,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 1_180, minHeight: 760)
         .background(GlassBackdrop())
+        .preferredColorScheme(model.configuration.editing.appearance == "dark" ? .dark : model.configuration.editing.appearance == "light" ? .light : nil)
         .fileImporter(
             isPresented: $presentation.isImporting,
             allowedContentTypes: [.audio, .folder],
@@ -148,7 +149,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $presentation.isShowingSettings) {
             SettingsView(model: model)
-                .frame(width: 500, height: 390)
+                .frame(minWidth: 720, idealWidth: 820, minHeight: 560, idealHeight: 650)
         }
         .sheet(isPresented: $presentation.isNamingSession) {
             NewSessionView(model: model, copying: presentation.copiesCurrentSession)
