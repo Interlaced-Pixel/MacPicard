@@ -3,6 +3,19 @@ import XCTest
 @testable import PicardFoundation
 
 final class PicardFoundationTests: XCTestCase {
+    func testAppVersionComparisonHandlesTagsAndPrereleases() throws {
+        XCTAssertEqual(try AppVersion("v1.2.3"), try AppVersion("1.2.3"))
+        XCTAssertTrue(try AppVersion("1.2.3-beta") < AppVersion("1.2.3"))
+        XCTAssertTrue(try AppVersion("1.9.0") < AppVersion("2.0.0"))
+        XCTAssertThrowsError(try AppVersion("release-latest"))
+    }
+
+    func testUpdateProgressReportsSafeFraction() throws {
+        XCTAssertEqual(AppUpdateProgress(phase: .downloading, completedBytes: 25, totalBytes: 100).fraction, 0.25)
+        XCTAssertNil(AppUpdateProgress(phase: .staging, completedBytes: 1, totalBytes: nil).fraction)
+        XCTAssertEqual(AppUpdateProgress(phase: .installing, completedBytes: 200, totalBytes: 100).fraction, 1)
+    }
+
     func testIdentityDoesNotReuseCachedSizeOrInodeAfterTailChange() throws {
         let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
         let url = root.appendingPathComponent("identity.bin")

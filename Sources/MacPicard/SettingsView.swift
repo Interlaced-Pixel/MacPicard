@@ -18,7 +18,7 @@ struct SettingsView: View {
     private enum SectionName: String, CaseIterable, Identifiable {
         case general = "General", libraries = "Libraries", matching = "Matching"
         case metadata = "Metadata & Saving", artwork = "Artwork", naming = "Naming"
-        case fingerprinting = "Fingerprinting", scripts = "Scripts", appearance = "Appearance"
+        case fingerprinting = "Fingerprinting", updates = "Updates", scripts = "Scripts", appearance = "Appearance"
         var id: String { rawValue }
     }
 
@@ -150,6 +150,45 @@ struct SettingsView: View {
                 TextEditor(text: $draft.editing.defaultTagScript).font(.system(.body, design: .monospaced)).frame(minHeight: 160)
                     .accessibilityLabel("Default tagging script")
                 Text("Loads into Script Editor on launch and after saving these preferences. Scripts run only when you explicitly preview or apply them.").font(.caption)
+            }
+        case .updates:
+            Section("MacPicard updates") {
+                switch model.updateState {
+                case .checking:
+                    Label("Checking for updates…", systemImage: "arrow.triangle.2.circlepath")
+                case .upToDate:
+                    Label("MacPicard is up to date.", systemImage: "checkmark.seal.fill")
+                case let .available(release):
+                    Label { Text(verbatim: "MacPicard \(release.version.description) is available.") } icon: { Image(systemName: "arrow.down.circle.fill") }
+                    if !release.notes.isEmpty {
+                        Text(release.notes).font(.caption).lineLimit(5).textSelection(.enabled)
+                    }
+                    HStack {
+                        Button("Download and Install") { model.installAvailableUpdate() }
+                            .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
+                        Link("Release notes", destination: release.releaseURL)
+                    }
+                case let .downloading(progress), let .installing(progress):
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(progress.phase == .downloading ? "Downloading and verifying update…" : progress.phase == .staging ? "Staging update: \(ByteCountFormatter.string(fromByteCount: progress.completedBytes, countStyle: .file))" : "Installing update…")
+                        if let fraction = progress.fraction { ProgressView(value: fraction) }
+                        else { ProgressView() }
+                        Text(ByteCountFormatter.string(fromByteCount: progress.completedBytes, countStyle: .file) + (progress.totalBytes.map { " of \(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file))" } ?? ""))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                case let .failed(message):
+                    Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                case .idle:
+                    Text("Updates are checked automatically once per day. Downloads are verified before installation.").font(.caption)
+                }
+                Button("Check Now") { model.checkForUpdates(force: true) }
+                    .disabled({
+                        if case .checking = model.updateState { return true }
+                        if case .downloading = model.updateState { return true }
+                        if case .installing = model.updateState { return true }
+                        return false
+                    }())
+                Text("Updates are downloaded over HTTPS, checked against the release SHA-256 asset, staged byte-by-byte, and only then replace the current app bundle. If a release cannot be verified, MacPicard will not install it.").font(.caption)
             }
         case .appearance:
             Section("Appearance") {

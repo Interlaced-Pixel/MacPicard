@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import PicardCoverArt
 import PicardFingerprint
@@ -7,6 +8,28 @@ import PicardMusicBrainz
 import PicardScripts
 import PicardSessions
 import UniformTypeIdentifiers
+
+enum AppUpdateState: Equatable {
+    case idle
+    case checking
+    case upToDate
+    case available(AppUpdateRelease)
+    case downloading(AppUpdateProgress)
+    case installing(AppUpdateProgress)
+    case failed(String)
+
+    var release: AppUpdateRelease? {
+        if case let .available(release) = self { return release }
+        return nil
+    }
+
+    var progress: AppUpdateProgress? {
+        switch self {
+        case let .downloading(progress), let .installing(progress): return progress
+        default: return nil
+        }
+    }
+}
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -153,6 +176,7 @@ final class AppModel: ObservableObject {
     @Published var organizationConflictPolicy = OrganizationConflictPolicy.stop
     @Published var organizationExcludedIDs = Set<UUID>()
     @Published var organizationError: String?
+    @Published private(set) var updateState: AppUpdateState = .idle
     @Published var isPreparingOrganization = false
     @Published var isExecutingOrganization = false
     var organizationFiles: [AudioFile] = []
@@ -204,6 +228,7 @@ final class AppModel: ObservableObject {
     @Published var operationHistory: [FileOperationRecord] = []
     @Published var checkingOperationID: UUID?
     var recoveryCheckTask: Task<Void, Never>?
+    private let updateService = AppUpdateService()
 
     init(musicBrainzClient: MusicBrainzClient? = nil, coverArtClient: CoverArtClient? = nil, audioCoordinator: AudioFileCoordinator? = nil) {
         self.musicBrainzClient = musicBrainzClient
@@ -385,9 +410,69 @@ final class AppModel: ObservableObject {
             if snapshot.configuration.autosaveEnabled {
                 startAutosave(interval: max(15, snapshot.configuration.autosaveIntervalSeconds))
             }
+            checkForUpdates()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func checkForUpdates(force: Bool = false) {
+        if !force {
+            guard case .idle = updateState else { return }
+        } else {
+            switch updateState {
+            case .checking, .downloading, .installing: return
+            default: break
+            }
+        }
+        let key = "MacPicard.lastUpdateCheck"
+        if !force, let last = UserDefaults.standard.object(forKey: key) as? Date,
+           Date().timeIntervalSince(last) < 24 * 60 * 60 { return }
+        updateState = .checking
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let current = try Self.currentAppVersion()
+                let release = try await updateService.check(currentVersion: current)
+                UserDefaults.standard.set(Date(), forKey: key)
+                updateState = release.map(AppUpdateState.available) ?? .upToDate
+            } catch is CancellationError {
+                updateState = .idle
+            } catch {
+                updateState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    func installAvailableUpdate() {
+        guard case let .available(release) = updateState else { return }
+        updateState = .downloading(AppUpdateProgress(phase: .downloading, completedBytes: 0, totalBytes: nil))
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let archive = try await updateService.downloadAndVerify(release) { [weak self] progress in
+                    Task { @MainActor in self?.updateState = .downloading(progress) }
+                }
+                updateState = .installing(AppUpdateProgress(phase: .staging, completedBytes: 0, totalBytes: nil))
+                let progressHandler: @Sendable (AppUpdateProgress) -> Void = { [weak self] progress in
+                    Task { @MainActor in self?.updateState = .installing(progress) }
+                }
+                let installedApp = try await Task.detached {
+                    try AppUpdateInstaller.install(archiveURL: archive, expectedVersion: release.version, progress: progressHandler)
+                }.value
+                NSWorkspace.shared.open(installedApp)
+                NSApp.terminate(nil)
+            } catch is CancellationError {
+                updateState = .available(release)
+            } catch {
+                updateState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private static func currentAppVersion() throws -> AppVersion {
+        let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        return try AppVersion(value)
     }
 
     func importResult(_ result: Result<[URL], Error>) async {

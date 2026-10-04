@@ -60,6 +60,7 @@ For Xcode, open `MacPicard.xcodeproj`, select the **MacPicard App** scheme, and 
 - [Fingerprinting](docs/FINGERPRINTING.md)
 - [Design notes](docs/DESIGN.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
+- [Update system](docs/UPDATES.md)
 - [Improvement roadmap](docs/IMPROVEMENT_PLAN.md)
 
 ## License and project status
