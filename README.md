@@ -36,7 +36,7 @@ Right-click tracks or albums to **Remove from Library…** / **Remove from Sessi
 
 The File, Edit, View, Library, and Metadata menus share their actions and enabled states with the on-screen controls. The sidebar and metadata inspector can be hidden, and the action bar adapts to narrower windows. **Help → MacPicard Guide** explains these workflows in the app.
 
-**Settings…** (⌘,) provides editable recovery/monitoring intervals, new-library monitoring defaults, preferred release country, match threshold (85% by default), preserved tags, timestamp preservation, cover download size/replacement, default naming/tag scripts, fingerprint-tool configuration, Keychain credentials, and System/Light/Dark appearance. Save validates the draft before committing; Cancel keeps existing preferences. Preserved tags retain current values when MusicBrainz proposals are applied. Settings migrate older configuration and retain unknown keys. Credential fields are opened explicitly and stored only in Keychain. Fingerprint identification and submission actions remain scheduled for improvement phase 6.
+**Settings…** (⌘,) provides editable recovery/monitoring intervals, new-library monitoring defaults, preferred release country, match threshold (85% by default), preserved tags, timestamp preservation, cover download size/replacement, default naming/tag scripts, built-in fingerprint diagnostics, optional AcoustID contribution authentication, and System/Light/Dark appearance. Save validates the draft before committing; Cancel keeps existing preferences. Preserved tags retain current values when MusicBrainz proposals are applied. Settings migrate older configuration and retain unknown keys. Optional user submission tokens are opened explicitly and stored only in Keychain. Scan Selected, Scan Album, and Scan Entire Library use built-in fingerprinting and publisher credentials without setup; results remain explicitly reviewed before tags change.
 
 **Metadata → All Tags & Changes…** (⌥⌘T), also available in the inspector, opens the complete Tag / Original / New table. Search names and values, show only changes, or put changed tags first. Add custom tags and edit separate value rows; an empty row is an explicit empty value, while removing a tag marks it for deletion. Mixed selections are displayed without altering individual files. Tag context actions restore each file's original values, merge originals, preserve tags during matching, remove tags, and copy/paste tag sets. Copy uses the first selected file's values; pasting applies them to the selected files.
 
@@ -161,6 +161,14 @@ Phase 9 hardens the release path:
 Implementation status: complete for the automated hardening and packaging gate. The remaining release checklist items are macOS environment validation steps requiring VoiceOver, accessibility settings, and upgrade installation testing; see [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
 
 ## Local development
+
+### Zero-setup app delivery
+
+Installed MacPicard apps include the audio fingerprint calculator and decoding support. Users do not install Chromaprint, FFmpeg, Homebrew, or other tools, and do not enter an API key to scan or identify music. Online identification still requires an internet connection. Only optional contributions to the AcoustID database require personal account authentication.
+
+For **developer builds**, supply the registered publisher application key in ignored `Config/AcoustID.plist` (`ApplicationKey` string) or `MACPICARD_ACOUSTID_APPLICATION_KEY`. Both Xcode and standalone app packaging validate and embed it; missing configuration is a build error, never a setup burden transferred to users. The helper is checksum-pinned, universal, and signed inside-out, and each app includes its licenses and corresponding source. See [fingerprint delivery](docs/FINGERPRINTING.md).
+
+The packaging script refuses to overwrite existing builds. Use a new `MACPICARD_OUTPUT_DIR` for each package. Ad-hoc signing supports local validation; public distribution still requires Developer ID signing and notarization.
 
 API contracts, security rules, and live integration-test instructions are documented in [docs/API_AUDIT.md](docs/API_AUDIT.md).
 

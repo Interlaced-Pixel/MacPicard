@@ -1,6 +1,6 @@
 import PicardFoundation
+import PicardFingerprint
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var model: AppModel
@@ -9,7 +9,6 @@ struct SettingsView: View {
     @State private var section = SectionName.general
     @State private var error: String?
     @State private var saving = false
-    @State private var choosingTool = false
     @State private var testingTool = false
     @State private var toolResult: String?
     @State private var credentials: [ServiceCredential: String] = [:]
@@ -53,10 +52,6 @@ struct SettingsView: View {
         .disabled(saving)
         .interactiveDismissDisabled(saving)
         .onAppear { draft = model.configuration }
-        .fileImporter(isPresented: $choosingTool, allowedContentTypes: [.item]) { result in
-            do { let url = try result.get(); draft.editing.fpcalcPath = url.path; toolResult = nil }
-            catch { self.error = error.localizedDescription }
-        }
     }
 
     @ViewBuilder private var settingsContent: some View {
@@ -115,22 +110,23 @@ struct SettingsView: View {
                 Text("Used for Organize previews. Import continues to use the standard library layout. Naming patterns do not run tag-editing scripts.").font(.caption)
             }
         case .fingerprinting:
-            Section("Fingerprint calculator") {
-                TextField("Absolute fpcalc path (optional)", text: $draft.editing.fpcalcPath)
-                HStack {
-                    Button("Choose…") { choosingTool = true }
-                    Button(testingTool ? "Checking…" : "Check Tool") { checkTool() }.disabled(testingTool)
-                }
+            Section("Built-in fingerprinting") {
+                Label("Chromaprint is included with MacPicard", systemImage: "checkmark.seal.fill")
+                Button(testingTool ? "Checking…" : "Check Built-in Calculator") { checkTool() }.disabled(testingTool)
                 if let toolResult { Text(toolResult).font(.caption).textSelection(.enabled) }
-                Text("MacPicard requires an external official Chromaprint fpcalc executable. An empty path checks standard installation locations. Generate Fingerprints works offline; Scan uses the AcoustID application key. Submission additionally needs a user token and explicit batch consent.").font(.caption)
+                Text("No downloads, external tools, or API-key setup are needed. Generate Fingerprints works offline. Scan identifies audio through AcoustID and MusicBrainz using MacPicard’s built-in application credentials.").font(.caption)
+                if (try? AcoustIDApplicationConfiguration.applicationKey()) == nil {
+                    Label("Identification service configuration is missing in this build. Contact Interlaced Pixel.", systemImage: "exclamationmark.triangle").font(.caption)
+                }
             }
-            Section("Service credentials") {
+            Section("Optional AcoustID contributions") {
+                Text("Identification does not require an account. Only contributing new fingerprints requires your personal AcoustID submission token and explicit consent for each batch.").font(.caption)
                 if editingCredentials {
-                    SecureField("AcoustID application key", text: Binding(get: { credentials[.applicationKey] ?? "" }, set: { credentials[.applicationKey] = $0 }))
                     SecureField("User submission token", text: Binding(get: { credentials[.submissionToken] ?? "" }, set: { credentials[.submissionToken] = $0 }))
-                    Text("Saved only in Keychain. Empty fields remove their stored credential. An application key identifies the app; the user token authorizes submissions.").font(.caption)
+                    Text("Saved only in Keychain. An empty field removes the token. This is never required to scan, match, or organize music.").font(.caption)
+                    Link("Manage your AcoustID account", destination: URL(string: "https://acoustid.org/api-key")!)
                 } else {
-                    Button(loadingCredentials ? "Loading…" : "Edit Keychain Credentials…") {
+                    Button(loadingCredentials ? "Loading…" : "Manage Submission Token…") {
                         loadingCredentials = true
                         Task {
                             defer { loadingCredentials = false }
@@ -168,12 +164,9 @@ struct SettingsView: View {
 
     private func checkTool() {
         testingTool = true; toolResult = nil
-        let executable = draft.editing.fpcalcPath.isEmpty
-            ? ["/opt/homebrew/bin/fpcalc", "/usr/local/bin/fpcalc", "/usr/bin/fpcalc"].first { FileManager.default.isExecutableFile(atPath: $0) } ?? ""
-            : draft.editing.fpcalcPath
         Task {
             defer { testingTool = false }
-            do { toolResult = try await FingerprintToolInspector().version(path: executable) }
+            do { toolResult = try await FingerprintToolInspector().version() }
             catch { toolResult = error.localizedDescription }
         }
     }

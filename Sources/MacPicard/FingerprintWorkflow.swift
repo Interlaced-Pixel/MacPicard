@@ -65,7 +65,7 @@ actor FingerprintScanProcessor {
         }
         var candidates: [FingerprintCandidate] = []
         if identify {
-            guard let acoustID, let musicBrainz else { throw FingerprintError.unavailable("Configure the AcoustID application key in Settings. Generate Fingerprints works offline.") }
+            guard let acoustID, let musicBrainz else { throw FingerprintError.unavailable("Identification service configuration is unavailable in this build. Contact Interlaced Pixel.") }
             let matches = try await acoustID.lookup(fingerprint)
             var releasesByID: [String: MusicBrainzRelease] = [:]
             for match in matches.sorted(by: { $0.score > $1.score }).prefix(3) {
@@ -110,10 +110,7 @@ extension AppModel {
 
     func fingerprintClient() async throws -> AcoustIDClient {
         if let acoustIDClientOverride { return acoustIDClientOverride }
-        guard let runtime, let data = try await runtime.keychain.data(for: ServiceCredential.applicationKey.rawValue),
-              let key = String(data: data, encoding: .utf8), !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw FingerprintError.unavailable("Add your AcoustID application key in Settings → Fingerprinting. Local generation does not require a key.")
-        }
+        let key = try AcoustIDApplicationConfiguration.applicationKey()
         return AcoustIDClient(apiKey: key, userAgent: configuration.requestUserAgent)
     }
 
@@ -122,9 +119,7 @@ extension AppModel {
         let version: String
         if let fingerprintProviderOverride { provider = fingerprintProviderOverride; version = "injected-test-provider-algorithm2" }
         else {
-            let path = configuration.editing.fpcalcPath
-            let executable = path.isEmpty ? ChromaprintFingerprintProvider.defaultExecutableCandidates.first { FileManager.default.isExecutableFile(atPath: $0.path) } : URL(fileURLWithPath: path)
-            guard let executable else { throw FingerprintError.unavailable("Install the official Chromaprint fpcalc executable, then choose it in Settings → Fingerprinting. No calculator is bundled.") }
+            let executable = try ChromaprintFingerprintProvider.bundledExecutableURL()
             version = try await ChromaprintFingerprintProvider.version(executableURL: executable)
             provider = ChromaprintFingerprintProvider(executableURL: executable)
         }
@@ -180,17 +175,17 @@ extension AppModel {
         if let error = error as? FingerprintError {
             switch error {
             case .authenticationRequired, .consentRequired: return error.localizedDescription
-            case let .unavailable(message): return "Fingerprint setup: " + message
+            case let .unavailable(message): return message
             case .invalidInput: return "The file is unavailable, changed, or has invalid audio. Refresh it and retry explicitly."
-            case .processFailed: return "fpcalc could not decode this file. Check the audio and calculator, then retry."
-            case .invalidOutput: return "fpcalc did not return a valid fingerprint. Check the executable in Settings."
+            case .processFailed: return "The built-in calculator could not decode this file. Check the audio, then retry."
+            case .invalidOutput: return "The built-in calculator returned an invalid fingerprint. Check the audio or reinstall MacPicard."
             case let .httpStatus(code, _): return "AcoustID returned HTTP \(code). Check network access and credentials."
             case .network: return "The fingerprint service could not be reached. Retry the read explicitly."
             case .invalidResponse: return "The fingerprint service returned an invalid response. Check credentials and retry the read."
             }
         }
         if error is MusicBrainzError { return "The MusicBrainz release could not be resolved. Retry the scan or load a release manually." }
-        return "Fingerprint processing failed. Check the audio, executable, cache access, and service credentials."
+        return "Fingerprint processing failed. Check the audio, cache access, and network connection."
     }
 
     func reviewFingerprintCandidate(fileID: UUID, candidateID: String) async -> Bool {

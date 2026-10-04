@@ -106,10 +106,10 @@ Work:
 - Build real Settings sections for General, Libraries, Matching, Metadata/Saving, Artwork, Naming, Fingerprinting, Scripts, and Appearance/Accessibility.
 - Persist matching defaults, including **85%** automatic eligibility. Ambiguous, incomplete, conflicting, or unmatched results require review regardless of score.
 - Add editable release preferences and supported preservation/write options. Expose only settings that the corresponding backend actually honors.
-- Configure monitoring enablement, naming defaults, cover-art behavior, and fingerprint calculator/service credentials. Distinguish the AcoustID application key from the user's submission token.
+- Configure monitoring enablement, naming defaults, and cover-art behavior. Show built-in fingerprint diagnostics, not calculator setup. Keep only optional user contribution authentication in Keychain; the AcoustID application key is publisher-supplied during the build, never a user preference.
 - Validate values before commit, show pending/error state, support restore defaults, and preserve unknown configuration fields during migrations where required.
 
-Acceptance: changing a preference affects the relevant next operation and survives relaunch; invalid configuration cannot break saved settings; credentials remain in Keychain; defaults migrate without losing existing workspaces.
+Acceptance: changing a preference affects the relevant next operation and survives relaunch; invalid configuration cannot break saved settings; optional user credentials remain in Keychain; defaults migrate without losing existing workspaces; scanning requires no software installation, account creation, application-key entry, or executable-path configuration.
 
 ### Phase 3 — Complete metadata editor and undo
 
@@ -153,7 +153,7 @@ Acceptance: reordered/incomplete/multi-disc albums, extras, duplicate tracks, we
 Work:
 
 - Connect the existing Chromaprint and AcoustID modules to Scan Selected, Scan Album, and Scan Entire Library actions.
-- Validate fpcalc availability and provide actionable setup errors. Decide and document whether the packaged build bundles the calculator or requires a configured executable; validate that delivery path.
+- Bundle the calculator and all runtime decoding dependencies inside the app, with licenses and corresponding source. Fingerprinting and identification must work on first launch without end-user software installation, executable-path setup, or application-key entry; publisher service configuration is a developer build responsibility. Validate both native Xcode and standalone packaged delivery.
 - Compute fingerprints away from the main actor with bounded concurrency; cache by audio identity and fingerprint version.
 - Resolve fingerprint recording/release candidates through MusicBrainz and feed the normal review workspace. Keep fingerprint confidence and release/track confidence separately labeled.
 - Add Generate Fingerprints and optional Submit AcoustIDs commands. Submission requires verified mappings, configured credentials, and explicit consent for the submitted batch; uncertain submissions are not automatically repeated.

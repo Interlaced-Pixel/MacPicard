@@ -16,3 +16,6 @@ fastlane/test_output
 # Local application data
 MacPicardData/
 *.log
+
+# Publisher credentials are embedded at build time, never committed.
+Config/AcoustID.plist

@@ -6,14 +6,16 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_DIR="${MACPICARD_OUTPUT_DIR:-/Users/jayian/Downloads}"
 CONFIGURATION="${MACPICARD_CONFIGURATION:-release}"
 APP_NAME="MacPicard.app"
-APP_PATH="$OUTPUT_DIR/$APP_NAME"
-ZIP_PATH="$OUTPUT_DIR/MacPicard.zip"
+APP_OUTPUT_PATH="$OUTPUT_DIR/$APP_NAME"
+ZIP_OUTPUT_PATH="$OUTPUT_DIR/MacPicard.zip"
 BUILD_PATH="$(swift build --package-path "$PROJECT_ROOT" --configuration "$CONFIGURATION" --show-bin-path)"
 PRODUCT_PATH="$BUILD_PATH/MacPicard"
 ICON_SOURCE="$PROJECT_ROOT/Sources/MacPicard/Resources/AppIcon.png"
 INFO_PLIST="$PROJECT_ROOT/Sources/MacPicard/Resources/Info.plist"
 LOCALIZATION="$PROJECT_ROOT/Sources/MacPicard/Resources/en.lproj"
 TEMP_ROOT="$(mktemp -d -t macpicard-package)"
+APP_PATH="$TEMP_ROOT/$APP_NAME"
+ZIP_PATH="$TEMP_ROOT/MacPicard.zip"
 
 cleanup() {
     rm -rf "$TEMP_ROOT"
@@ -33,11 +35,9 @@ if [[ ! -f "$ICON_SOURCE" || ! -f "$INFO_PLIST" ]]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
-if [[ -e "$APP_PATH" ]]; then
-    rm -rf "$APP_PATH"
-fi
-if [[ -e "$ZIP_PATH" ]]; then
-    rm -f "$ZIP_PATH"
+if [[ -e "$APP_OUTPUT_PATH" || -e "$ZIP_OUTPUT_PATH" ]]; then
+    print -u2 "Output already exists. Choose a new MACPICARD_OUTPUT_DIR; existing builds will not be deleted."
+    exit 2
 fi
 
 ICONSET="$TEMP_ROOT/AppIcon.iconset"
@@ -75,11 +75,13 @@ if [[ -n "$NOTARY_PROFILE" && -z "$SIGNING_IDENTITY" ]]; then
 fi
 printf 'Signature: %s\nNotarization: %s\n' "${SIGNING_IDENTITY:-Ad hoc}" "$NOTARIZATION_STATUS" > "$APP_RESOURCES/ReleaseSecurity.txt"
 
+/bin/zsh "$PROJECT_ROOT/Scripts/install-fingerprint-support.sh" "$APP_PATH"
+
 if [[ -n "$SIGNING_IDENTITY" ]]; then
-    codesign --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP_PATH"
+    codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP_PATH"
     SIGNATURE_MODE="Developer ID: $SIGNING_IDENTITY"
 else
-    codesign --force --deep --sign - "$APP_PATH"
+    codesign --force --sign - "$APP_PATH"
     SIGNATURE_MODE="Ad hoc"
 fi
 
@@ -96,7 +98,14 @@ if [[ -n "$NOTARY_PROFILE" ]]; then
     ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
 fi
 
-print "Packaged: $APP_PATH"
-print "Archive: $ZIP_PATH"
+# Publish only a complete, verified app; failed builds never leave an installable partial app.
+if [[ -e "$APP_OUTPUT_PATH" || -e "$ZIP_OUTPUT_PATH" ]]; then
+    print -u2 "Another build published to this output directory. Choose a new MACPICARD_OUTPUT_DIR."
+    exit 2
+fi
+mv "$APP_PATH" "$APP_OUTPUT_PATH"
+mv "$ZIP_PATH" "$ZIP_OUTPUT_PATH"
+print "Packaged: $APP_OUTPUT_PATH"
+print "Archive: $ZIP_OUTPUT_PATH"
 print "Signature: $SIGNATURE_MODE"
 print "Notarization: $NOTARIZATION_STATUS"

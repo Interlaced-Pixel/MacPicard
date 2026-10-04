@@ -85,6 +85,69 @@ final class FingerprintSafetyTests: XCTestCase {
         catch { XCTAssertTrue(error is FingerprintError) }
     }
 
+    func testBundledCalculatorWorksWithoutConfigurationOnGeneratedWAV() async throws {
+        let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let audio = root.appendingPathComponent("first-launch.wav")
+        let original = waveFixture(); try original.write(to: audio)
+        let executable = try ChromaprintFingerprintProvider.bundledExecutableURL()
+        XCTAssertFalse(executable.path.contains("/opt/homebrew/"))
+        XCTAssertFalse(executable.path.contains("/usr/local/"))
+        let version = try await ChromaprintFingerprintProvider.version(executableURL: executable)
+        XCTAssertTrue(version.contains("1.6.1"))
+        let result = try await ChromaprintFingerprintProvider().fingerprint(url: audio)
+        XCTAssertFalse(result.fingerprint.isEmpty)
+        XCTAssertEqual(result.durationInSeconds, 30, accuracy: 0.1)
+        XCTAssertEqual(try Data(contentsOf: audio), original)
+        let corrupt = root.appendingPathComponent("corrupt.wav"); try Data("broken audio".utf8).write(to: corrupt)
+        do { _ = try await ChromaprintFingerprintProvider().fingerprint(url: corrupt); XCTFail("Expected rejection") }
+        catch { XCTAssertTrue(error is FingerprintError) }
+    }
+
+    func testInstalledAppDoesNotFallbackOutsideItsBundle() throws {
+        let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let bundle = try fixtureBundle(root: root)
+        XCTAssertThrowsError(try ChromaprintFingerprintProvider.bundledExecutableURL(in: bundle)) { error in
+            XCTAssertFalse(error.localizedDescription.contains("Homebrew"))
+            XCTAssertTrue(error.localizedDescription.contains("Reinstall MacPicard"))
+        }
+    }
+
+    func testPublisherConfigurationLoadsOnlyFromAppResourcesAndRedactsInvalidValues() throws {
+        let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let bundle = try fixtureBundle(root: root)
+        XCTAssertThrowsError(try AcoustIDApplicationConfiguration.applicationKey(in: bundle))
+        let url = bundle.resourceURL!.appendingPathComponent("AcoustID.plist")
+        try PropertyListSerialization.data(fromPropertyList: ["ApplicationKey": "FixtureAppKey123"], format: .xml, options: 0).write(to: url)
+        XCTAssertEqual(try AcoustIDApplicationConfiguration.applicationKey(in: bundle), "FixtureAppKey123")
+        for invalid in ["", "PRIVATE_INVALID_KEY!", " Contains spaces ", String(repeating: "a", count: 257)] {
+            try PropertyListSerialization.data(fromPropertyList: ["ApplicationKey": invalid], format: .xml, options: 0).write(to: url)
+            XCTAssertThrowsError(try AcoustIDApplicationConfiguration.applicationKey(in: bundle)) { error in
+                if !invalid.isEmpty { XCTAssertFalse(error.localizedDescription.contains(invalid)) }
+                XCTAssertFalse(error.localizedDescription.contains("Settings"))
+            }
+        }
+    }
+
+    private func fixtureBundle(root: URL) throws -> Bundle {
+        let app = root.appendingPathComponent("Fixture.app")
+        try FileManager.default.createDirectory(at: app.appendingPathComponent("Contents/Resources"), withIntermediateDirectories: true)
+        let info: [String: Any] = ["CFBundleIdentifier": "com.interlacedpixel.test." + UUID().uuidString, "CFBundlePackageType": "APPL"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: app.appendingPathComponent("Contents/Info.plist"))
+        return try XCTUnwrap(Bundle(url: app))
+    }
+
+    /// Deterministic PCM audio generated in Swift; no fixture encoder or external software needed.
+    private func waveFixture() -> Data {
+        let rate = 22_050, count = rate * 30
+        var data = Data()
+        func append<T: FixedWidthInteger>(_ value: T) { var v = value.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
+        data.append(Data("RIFF".utf8)); append(UInt32(36 + count * 2)); data.append(Data("WAVEfmt ".utf8))
+        append(UInt32(16)); append(UInt16(1)); append(UInt16(1)); append(UInt32(rate)); append(UInt32(rate * 2))
+        append(UInt16(2)); append(UInt16(16)); data.append(Data("data".utf8)); append(UInt32(count * 2))
+        for sample in 0..<count { append(Int16(sin(Double(sample) * 2 * .pi * 440 / Double(rate)) * 12_000)) }
+        return data
+    }
+
     private func directory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true); return url

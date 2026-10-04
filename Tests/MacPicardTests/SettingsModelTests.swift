@@ -18,6 +18,7 @@ final class SettingsModelTests: XCTestCase {
         config.editing.matchThreshold = 0.9
         config.editing.namingPattern = "%artist%/%title%"
         config.editing.defaultTagScript = "$set(genre,Rock)"
+        config.editing.fpcalcPath = "/does/not/exist/legacy-fpcalc"
         try await model.savePreferences(config)
         XCTAssertEqual(model.configuration, config)
         XCTAssertEqual(model.scriptSource, config.editing.defaultTagScript)
@@ -29,5 +30,10 @@ final class SettingsModelTests: XCTestCase {
         do { try await model.savePreferences(invalid); XCTFail("Expected script error") } catch { }
         XCTAssertEqual(model.configuration, config)
         XCTAssertFalse(model.isWorking)
+    }
+
+    func testBuiltInCalculatorInspectorNeedsNoPath() async throws {
+        let version = try await FingerprintToolInspector().version()
+        XCTAssertTrue(version.contains("fpcalc version 1.6.1"))
     }
 }

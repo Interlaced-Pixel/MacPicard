@@ -4,7 +4,6 @@ import PicardFingerprint
 import PicardScripts
 
 enum ServiceCredential: String, CaseIterable {
-    case applicationKey = "acoustid-application-key"
     case submissionToken = "acoustid-user-token"
 }
 
@@ -15,11 +14,6 @@ extension AppModel {
         try value.validate()
         _ = try ScriptParser().parse(value.editing.namingPattern)
         _ = try ScriptParser().parse(value.editing.defaultTagScript)
-        if !value.editing.fpcalcPath.isEmpty {
-            guard value.editing.fpcalcPath.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: value.editing.fpcalcPath) else {
-                throw PicardError.invalidConfiguration("Choose an executable fpcalc file using an absolute path.")
-            }
-        }
         var old: [ServiceCredential: Data] = [:]
         for key in credentials.keys {
             old[key] = try await runtime.keychain.data(for: key.rawValue)
@@ -60,11 +54,8 @@ extension AppModel {
 }
 
 actor FingerprintToolInspector {
-    func version(path: String) async throws -> String {
-        let executable = path.isEmpty ? ChromaprintFingerprintProvider.defaultExecutableCandidates.first { FileManager.default.isExecutableFile(atPath: $0.path) } : URL(fileURLWithPath: path)
-        guard let executable, path.isEmpty || path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw PicardError.invalidConfiguration("Install the official fpcalc calculator or select its executable file.")
-        }
+    func version() async throws -> String {
+        let executable = try ChromaprintFingerprintProvider.bundledExecutableURL()
         return try await ChromaprintFingerprintProvider.version(executableURL: executable)
     }
 }

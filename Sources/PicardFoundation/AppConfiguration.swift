@@ -225,6 +225,7 @@ public struct EditingPreferences: Codable, Sendable, Equatable {
     public var replaceFrontCover: Bool = true
     public var namingPattern: String = "$if2(%albumartist%,%artist%,Unknown Artist)/$if2(%album%,Unknown Album)/$if($gt(%totaldiscs%,1),$num(%discnumber%,1)-)$if(%tracknumber%,$num($if2(%tracknumber%,0),2) - )$if2(%title%,%filename%).%extension%"
     public var defaultTagScript: String = ""
+    /// Legacy preference retained for decoding older workspaces; never used to select executable code.
     public var fpcalcPath: String = ""
     public var appearance: String = "system"
     public var monitoringIntervalSeconds: Int = 300

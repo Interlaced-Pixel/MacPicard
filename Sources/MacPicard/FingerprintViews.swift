@@ -48,7 +48,7 @@ struct FingerprintResultsView: View {
                         }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.3), in: .rect(cornerRadius: 12))
                     }
                     if model.fingerprintRun?.results.isEmpty != false {
-                        ContentUnavailableView("No completed fingerprints", systemImage: "waveform", description: Text("Select audio, then scan for identification or generate locally without a service key."))
+                        ContentUnavailableView("No completed fingerprints", systemImage: "waveform", description: Text("Select audio, then identify it online or generate fingerprints offline. Everything needed is built into MacPicard."))
                     }
                 }
             }

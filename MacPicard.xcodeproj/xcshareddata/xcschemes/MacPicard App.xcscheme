@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "19305B0FB8D10AD116056C7FFB42FD41"
+               BlueprintIdentifier = "0EC82E8043D492F264108BBC0D0F7184"
                BuildableName = "MacPicard.app"
                BlueprintName = "MacPicard"
                ReferencedContainer = "container:MacPicard.xcodeproj">
@@ -142,7 +142,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "19305B0FB8D10AD116056C7FFB42FD41"
+            BlueprintIdentifier = "0EC82E8043D492F264108BBC0D0F7184"
             BuildableName = "MacPicard.app"
             BlueprintName = "MacPicard"
             ReferencedContainer = "container:MacPicard.xcodeproj">
@@ -285,7 +285,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "19305B0FB8D10AD116056C7FFB42FD41"
+            BlueprintIdentifier = "0EC82E8043D492F264108BBC0D0F7184"
             BuildableName = "MacPicard.app"
             BlueprintName = "MacPicard"
             ReferencedContainer = "container:MacPicard.xcodeproj">
@@ -302,7 +302,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "19305B0FB8D10AD116056C7FFB42FD41"
+            BlueprintIdentifier = "0EC82E8043D492F264108BBC0D0F7184"
             BuildableName = "MacPicard.app"
             BlueprintName = "MacPicard"
             ReferencedContainer = "container:MacPicard.xcodeproj">

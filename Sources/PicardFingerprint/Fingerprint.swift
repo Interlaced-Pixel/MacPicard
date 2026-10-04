@@ -73,18 +73,28 @@ public protocol AudioFingerprintProviding: Sendable {
 }
 
 public actor ChromaprintFingerprintProvider: AudioFingerprintProviding {
-    public static let defaultExecutableCandidates: [URL] = [
-        URL(fileURLWithPath: "/opt/homebrew/bin/fpcalc"),
-        URL(fileURLWithPath: "/usr/local/bin/fpcalc"),
-        URL(fileURLWithPath: "/usr/bin/fpcalc")
-    ]
-
     private let executableURL: URL?
 
+    /// Explicit injection is for tests and developer tools only. Production never searches PATH.
     public init(executableURL: URL? = nil) {
-        self.executableURL = executableURL ?? Self.defaultExecutableCandidates.first(where: {
-            FileManager.default.isExecutableFile(atPath: $0.path)
-        })
+        self.executableURL = executableURL ?? (try? Self.bundledExecutableURL())
+    }
+
+    public static func bundledExecutableURL(in appBundle: Bundle = .main) throws -> URL {
+        let executable: URL
+        if appBundle.bundleURL.pathExtension == "app" {
+            // Never fall back to an adjacent development bundle for a damaged installed app.
+            executable = appBundle.bundleURL.appendingPathComponent("Contents/Helpers/fpcalc")
+        } else {
+            guard let resources = Bundle.module.resourceURL else {
+                throw FingerprintError.unavailable("The fingerprint resource bundle is damaged. Rebuild MacPicard.")
+            }
+            executable = resources.appendingPathComponent("Resources/Chromaprint/fpcalc")
+        }
+        guard FileManager.default.isExecutableFile(atPath: executable.path) else {
+            throw FingerprintError.unavailable("The built-in fingerprint calculator is missing or damaged. Reinstall MacPicard.")
+        }
+        return executable
     }
 
     public func fingerprint(url: URL) async throws -> AudioFingerprint {
@@ -92,7 +102,7 @@ public actor ChromaprintFingerprintProvider: AudioFingerprintProviding {
             throw FingerprintError.invalidInput("The audio file is not readable: \(url.path)")
         }
         guard let executableURL else {
-            throw FingerprintError.unavailable("Install Chromaprint's fpcalc command-line tool.")
+            throw FingerprintError.unavailable("The built-in fingerprint calculator is missing or damaged. Reinstall MacPicard.")
         }
 
         let run = FingerprintProcess(executable: executableURL, arguments: ["-algorithm", "2", "-length", "120", "-json", url.path], timeoutSeconds: 120)
@@ -105,13 +115,13 @@ public actor ChromaprintFingerprintProvider: AudioFingerprintProviding {
     }
 
     public static func version(executableURL: URL) async throws -> String {
-        guard FileManager.default.isExecutableFile(atPath: executableURL.path) else { throw FingerprintError.unavailable("Choose an executable fpcalc in Settings.") }
+        guard FileManager.default.isExecutableFile(atPath: executableURL.path) else { throw FingerprintError.unavailable("The built-in fingerprint calculator cannot be run. Reinstall MacPicard.") }
         let run = FingerprintProcess(executable: executableURL, arguments: ["-version"], timeoutSeconds: 5)
         let task = Task.detached(priority: .utility) { try run.execute() }
         return try await withTaskCancellationHandler {
             let text = String(decoding: try await task.value, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             try Task.checkCancellation()
-            guard text.lowercased().contains("fpcalc") else { throw FingerprintError.unavailable("The selected executable did not identify itself as fpcalc.") }
+            guard text.lowercased().contains("fpcalc") else { throw FingerprintError.unavailable("The fingerprint calculator did not identify itself correctly.") }
             return text
         } onCancel: { run.cancel(); task.cancel() }
     }
@@ -129,6 +139,8 @@ private final class FingerprintProcess: @unchecked Sendable {
         self.timeoutSeconds = timeoutSeconds
         process.executableURL = executable
         process.arguments = arguments
+        // Decoding is self-contained. Do not inherit PATH or loader overrides from the caller.
+        process.environment = ["PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"]
         process.standardOutput = output
         // Tool diagnostics can contain private paths or fingerprints; never relay them to logs/UI.
         process.standardError = FileHandle.nullDevice
@@ -145,7 +157,7 @@ private final class FingerprintProcess: @unchecked Sendable {
     func execute() throws -> Data {
         lock.lock()
         if cancelled { lock.unlock(); throw CancellationError() }
-        do { try process.run() } catch { lock.unlock(); throw FingerprintError.unavailable("The configured fpcalc executable could not be started.") }
+        do { try process.run() } catch { lock.unlock(); throw FingerprintError.unavailable("The built-in fingerprint calculator could not be started. Reinstall MacPicard.") }
         lock.unlock()
         let timeout = DispatchWorkItem { [self] in cancel(timedOut: true) }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeoutSeconds, execute: timeout)
@@ -159,7 +171,7 @@ private final class FingerprintProcess: @unchecked Sendable {
         } catch { cancel(); process.waitUntilExit(); throw error }
         process.waitUntilExit()
         lock.lock(); let wasCancelled = cancelled; let didTimeOut = timedOut; lock.unlock()
-        if didTimeOut { throw FingerprintError.unavailable("The calculator timed out. Check the executable and audio file, then retry explicitly.") }
+        if didTimeOut { throw FingerprintError.unavailable("The calculator timed out. Check the audio file, then retry explicitly.") }
         if wasCancelled { throw CancellationError() }
         guard process.terminationStatus == 0 else { throw FingerprintError.processFailed(process.terminationStatus, "Check that this audio file is valid and supported by fpcalc.") }
         return data

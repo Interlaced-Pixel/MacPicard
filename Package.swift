@@ -109,6 +109,7 @@ let package = Package(
             name: "PicardFingerprint",
             dependencies: ["PicardMusicBrainz", "PicardFoundation"],
             path: "Sources/PicardFingerprint",
+            resources: [.copy("Resources")],
             swiftSettings: [
                 .unsafeFlags(["-strict-concurrency=complete"])
             ]

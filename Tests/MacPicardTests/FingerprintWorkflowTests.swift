@@ -118,13 +118,19 @@ final class FingerprintWorkflowTests: XCTestCase {
     }
 
     @MainActor
-    func testMissingToolSetupIsRecoverableAndReadOnly() async throws {
+    func testCalculatorFailureIsRecoverableAndReadOnlyWithoutSetupPrompts() async throws {
         let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
         let model = AppModel(); model.files = [try file(root: root, name: "missing")]
         var configuration = model.configuration; configuration.editing.fpcalcPath = root.appendingPathComponent("does-not-exist").path; model.installConfiguration(configuration)
+        model.fingerprintCacheDirectory = root.appendingPathComponent("cache")
         let original = model.files
         await model.runFingerprintScan(ids: [original[0].id], identify: false)
-        XCTAssertNotNil(model.errorMessage); XCTAssertFalse(model.isWorking); XCTAssertEqual(model.files, original)
+        // A legacy missing path is ignored. The actual bundled calculator rejects the corrupt fixture.
+        XCTAssertNil(model.errorMessage)
+        let error = try XCTUnwrap(model.fingerprintRun?.results.first?.error)
+        XCTAssertTrue(error.contains("could not decode"))
+        XCTAssertFalse(error.contains("Settings")); XCTAssertFalse(error.contains("Install"))
+        XCTAssertFalse(model.isWorking); XCTAssertEqual(model.files, original)
     }
 
     private func directory() throws -> URL {

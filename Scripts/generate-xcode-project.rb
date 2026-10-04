@@ -103,6 +103,14 @@ icon.shell_script = '/bin/zsh "${SRCROOT}/Scripts/build-app-icon.sh" "${SRCROOT}
 icon.input_paths = ['$(SRCROOT)/Scripts/build-app-icon.sh', '$(SRCROOT)/Sources/MacPicard/Resources/AppIcon.png']
 icon.output_paths = ['$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AppIcon.icns']
 
+fingerprinting = app.new_shell_script_build_phase('Bundle Fingerprint Support')
+fingerprinting.shell_path = '/bin/zsh'
+fingerprinting.shell_script = '/bin/zsh "${SRCROOT}/Scripts/install-fingerprint-support.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
+# Always validate the publisher credential and pinned payload, including incremental/archive builds.
+fingerprinting.always_out_of_date = '1'
+fingerprinting.input_paths = ['$(SRCROOT)/Scripts/install-fingerprint-support.sh', '$(SRCROOT)/Sources/PicardFingerprint/Resources/Chromaprint/SHA256SUMS']
+fingerprinting.output_paths = ['$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/fpcalc', '$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AcoustID.plist']
+
 tests_group = project.main_group.new_group('Tests', 'Tests')
 tests = test_manifests.sort_by { |target| target.fetch('name') }.map do |definition|
   name = definition.fetch('name')

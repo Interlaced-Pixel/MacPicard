@@ -1,0 +1,10 @@
+--- a/common.sh
++++ b/common.sh
+@@ -5,6 +5,7 @@
+ FFMPEG_TARBALL_URL=http://ffmpeg.org/releases/$FFMPEG_TARBALL
+ 
+ FFMPEG_CONFIGURE_FLAGS=(
++    --disable-x86asm
+     --disable-shared
+     --enable-static
+     --enable-pic

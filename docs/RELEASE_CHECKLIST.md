@@ -1,5 +1,15 @@
 # MacPicard release checklist
 
+## Zero-setup fingerprint delivery
+
+- Build/Archive with the publisher's registered AcoustID application key supplied in ignored `Config/AcoustID.plist` or the release environment. Never ask users to supply an application key or install a calculator.
+- Check that `Contents/Helpers/fpcalc` is executable, contains arm64 and x86_64 slices, and depends only on macOS system libraries. Verify the helper and enclosing app signatures separately and with deep verification.
+- Launch the packaged app with a fresh data directory and a system-only PATH. Add a generated-audio library containing MP3, FLAC, M4A/AAC, Ogg Vorbis, Ogg Opus, and WAV. Generate offline and scan online without opening credentials or configuring a tool. Confirm all six results, expected unmatched synthetic tones, and unchanged audio/tag bytes.
+- Verify Settings shows built-in status/version and has no application-key or executable-path controls. Optional contribution credentials must not gate scanning, metadata matching, saving, or organization.
+- Confirm source archives, licensing notices, provenance, and offline rebuild recipes are present inside the app. Rebuild the helper from included source, exercise the six formats, and preserve those resources in distribution.
+- Confirm bad/missing publisher configuration fails the build rather than leaving an installable partial app. Existing output packages must never be deleted by the packager.
+- For a commercial product, obtain the appropriate AcoustID service agreement. Developer ID signing, notarization, upgrade QA, and accessibility QA remain separate distribution gates.
+
 Phase 9 release validation is split between automated checks and macOS-only validation that requires the built application to run.
 
 ## Automated release gate
