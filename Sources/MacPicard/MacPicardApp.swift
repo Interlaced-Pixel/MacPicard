@@ -107,7 +107,7 @@ struct MacPicardApp: App {
         .commands { MacPicardCommands(model: model, presentation: presentation) }
         Window("Collection Tools", id: "collection-tools") {
             CollectionToolsView(model: model, presentation: presentation)
-                .tint(MusicBrainzTheme.purple).accentColor(MusicBrainzTheme.purple)
+                .tint(.primary).accentColor(MusicBrainzTheme.purple)
                 .preferredColorScheme(model.configuration.editing.appearance == "dark" ? .dark : model.configuration.editing.appearance == "light" ? .light : nil)
         }.defaultSize(width: 1100, height: 780)
     }
@@ -132,7 +132,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 1_180, minHeight: 760)
         .background(GlassBackdrop())
-        .tint(MusicBrainzTheme.purple)
+        .tint(.primary)
         .accentColor(MusicBrainzTheme.purple)
         .preferredColorScheme(model.configuration.editing.appearance == "dark" ? .dark : model.configuration.editing.appearance == "light" ? .light : nil)
         .onReceive(NotificationCenter.default.publisher(for: NSText.didChangeNotification)) { _ in model.editHistoryRevision += 1 }
@@ -164,7 +164,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $presentation.isShowingLookup) {
             LookupView(model: model)
-                .frame(minWidth: 1_120, minHeight: 680)
+                    .frame(minWidth: 900, minHeight: 560)
         }
         .onChange(of: presentation.isShowingScript) { _, showing in
             if showing { presentation.isShowingScript = false; presentation.collectionToolsScope = .selection; presentation.collectionToolsPage = "scripts"; openWindow(id: "collection-tools") }

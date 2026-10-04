@@ -23,7 +23,7 @@ struct MetadataEditorView: View {
             HStack {
                 VStack(alignment: .leading) {
                     Text("All Tags & Changes").font(.title2.weight(.semibold))
-                    Text("\(model.selectedFiles.count) selected files · edits remain staged until Save Tags")
+                    Text("\(model.selectedFiles.count) selected files · Save writes changes to audio")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -124,7 +124,7 @@ private struct TagEditorSheet: View {
             Text(draft.key.isEmpty ? "Add Tag" : "Edit \(draft.key)").font(.title2.weight(.semibold))
             TextField("Tag name", text: $key).textFieldStyle(.roundedBorder)
                 .disabled(!draft.key.isEmpty)
-            Text("These values replace this tag on all \(draft.files.count) selected files. Each row is a separate value; an empty row is an explicit empty value.")
+            Text("Replaces this tag on \(draft.files.count) files. Each row is a value, including blank rows.")
                 .font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 VStack(spacing: 8) {
@@ -142,7 +142,7 @@ private struct TagEditorSheet: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Apply Values") { model.setTagValues(values.map(\.value), for: key); dismiss() }
-                    .buttonStyle(.glassProminent).keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).keyboardShortcut(.defaultAction)
                     .disabled(!isCurrent || !model.canEditSelection || key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || key.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("~") || key.contains(where: { $0.isNewline || $0 == "\0" }))
             }
         }.padding(22).frame(width: 520)

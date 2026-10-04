@@ -12,7 +12,6 @@ struct CollectionToolsView: View {
     @State private var loaded = false
     var body: some View {
         VStack(spacing: 0) {
-            MusicBrainzBrandHeader()
             Picker("Collection tools", selection: $presentation.collectionToolsPage) {
                 Text("Workflow").tag("operations"); Text("Scripts").tag("scripts")
                 Text("Filename → Tags").tag("filenames"); Text("Profiles").tag("profiles")
@@ -83,15 +82,15 @@ private struct WorkflowReviewView: View {
                     }
                 }
             }
-            if review.blockedCount > 0 { Toggle("Skip the \(review.blockedCount) blocked files; apply only reviewed eligible changes", isOn: $acknowledgesBlocked).font(.caption) }
+            if review.blockedCount > 0 { Toggle("Skip \(review.blockedCount) files with errors", isOn: $acknowledgesBlocked).font(.caption) }
             if let error { Text(error).foregroundStyle(.red).font(.caption) }
             HStack {
-                Text(applied ? "Applied as one staged undo transaction. Save Tags separately." : "Preview never writes audio. Excluded and blocked files remain untouched.").font(.caption).foregroundStyle(.secondary)
+                Text(applied ? "Changes applied. Undo reverts this batch; Save writes it to audio." : "Preview does not write audio. Skipped files stay unchanged.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button(applied ? "Applied" : "Stage Changes for \(eligibleCount) Files") {
+                Button(applied ? "Applied" : "Apply to \(eligibleCount) Files") {
                     do { try model.applyWorkflowReview(review, excluded: excluded, confirmed: true); applied = true }
                     catch { self.error = error.localizedDescription }
-                }.buttonStyle(.glassProminent).disabled(applied || model.isBusy || eligibleCount == 0 || (review.blockedCount > 0 && !acknowledgesBlocked))
+                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).disabled(applied || model.isBusy || eligibleCount == 0 || (review.blockedCount > 0 && !acknowledgesBlocked))
             }
         }
     }
@@ -129,13 +128,13 @@ struct ScriptStudioView: View {
                     Button("↓") { move(1) }.accessibilityLabel("Move script later")
                     Button("Delete…", role: .destructive) { confirmsDelete = true }.disabled(selectedIndex == nil)
                 }
-                Button("Save Script Library") { perform { try await model.persistWorkflows(draft) } }.disabled(model.workflowError != nil)
+                Button("Save Scripts") { perform { try await model.persistWorkflows(draft) } }.disabled(model.workflowError != nil)
                 if draft != model.workflowDocument {
                     Text("Unsaved library draft").font(.caption).foregroundStyle(MusicBrainzTheme.purple)
-                    Button("Revert Library Draft") { draft = model.workflowDocument; selectedID = draft.scripts.first?.id }
+                    Button("Revert Draft") { draft = model.workflowDocument; selectedID = draft.scripts.first?.id }
                 }
                 HStack { Button("Import…") { importDocument() }; Button("Export…") { exportDocument() } }
-                Text("Enabled tagging scripts run in list order on each file’s own tags. Naming scripts never stage tags.").font(.caption).foregroundStyle(.secondary)
+                Text("Tagging scripts run from top to bottom. Naming scripts preview file paths.").font(.caption).foregroundStyle(.secondary)
             }.padding(16).frame(minWidth: 260, idealWidth: 285, maxWidth: 330).disabled(model.isBusy || busy)
             VStack(alignment: .leading, spacing: 12) {
                 ScopePicker(scope: $scope, count: model.collectionFiles(scope).count).disabled(model.isBusy || busy)
@@ -148,10 +147,10 @@ struct ScriptStudioView: View {
                     TextEditor(text: $draft.scripts[index].source).font(.system(.body, design: .monospaced))
                         .frame(minHeight: 100, maxHeight: 180).background(.background).accessibilityLabel("Managed script source").disabled(model.isBusy || busy)
                     HStack {
-                        Button("Preview Enabled Tagging Scripts") { preview() }.disabled(!draft.scripts.contains { $0.kind == .tagging && $0.enabled })
+                        Button("Preview Tags") { preview() }.disabled(!draft.scripts.contains { $0.kind == .tagging && $0.enabled })
                         if draft.scripts[index].kind == .naming {
-                            Button("Preview Naming Paths") { previewNaming(draft.scripts[index].source) }
-                            Button("Use as Naming Default") {
+                            Button("Preview Paths") { previewNaming(draft.scripts[index].source) }
+                            Button("Use for Organize") {
                                 let source = draft.scripts[index].source
                                 perform { var config = model.configuration; config.editing.namingPattern = source; try await model.savePreferences(config) }
                             }
@@ -176,7 +175,7 @@ struct ScriptStudioView: View {
         .alert("Delete this script?", isPresented: $confirmsDelete) {
             Button("Delete", role: .destructive) { draft.scripts.removeAll { $0.id == selectedID }; selectedID = draft.scripts.first?.id }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("This edits the draft library only. Save Script Library to persist it. Audio is not changed.") }
+        } message: { Text("Save Scripts to keep this deletion. Audio files are unchanged.") }
     }
     private func add(_ kind: ManagedScript.Kind) {
         let value = ManagedScript(name: kind == .tagging ? "New Tagging Script" : "New Naming Script", kind: kind,
@@ -216,7 +215,7 @@ struct FilenameTagsView: View {
         VStack(alignment: .leading, spacing: 14) {
             ScopePicker(scope: $scope, count: model.collectionFiles(scope).count).disabled(model.isBusy || busy)
             Text("Filename → Tags").font(.title2.weight(.semibold))
-            Text("Use literal separators and named captures. Paths are matched from their last components, without the audio extension. Ambiguous files stay blocked.").font(.callout).foregroundStyle(.secondary)
+            Text("Map filename fields to tags. Files with ambiguous matches are skipped.").font(.callout).foregroundStyle(.secondary)
             TextField("Pattern", text: $pattern).font(.body.monospaced()).disabled(busy || model.isBusy)
             HStack { Button("Track — Title") { pattern = "{track} - {title}" }; Button("Artist / Album / Track — Title") { pattern = "{artist}/{album}/{track} - {title}" } }.disabled(busy || model.isBusy)
             ForEach($mappings) { $mapping in
@@ -260,7 +259,7 @@ struct WorkflowProfilesView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Configuration profiles").font(.headline)
                 List(selection: $selectedID) { ForEach(draft.profiles) { Text($0.name).tag($0.id) } }
-                Button("Capture Current Preferences") {
+                Button("New from Settings") {
                     let value = WorkflowProfile(name: "New Profile", configuration: model.configuration)
                     draft.profiles.append(value); selectedID = value.id
                 }
@@ -268,22 +267,22 @@ struct WorkflowProfilesView: View {
                     Button("Duplicate") { if let index { var value = draft.profiles[index]; value.id = UUID(); value.name += " copy"; draft.profiles.append(value); selectedID = value.id } }
                     Button("Delete…", role: .destructive) { confirmsDelete = true }
                 }.disabled(index == nil)
-                Button("Save Profile Library") { run { try await model.persistWorkflows(draft) } }
+                Button("Save Profiles") { run { try await model.persistWorkflows(draft) } }
                 if draft != model.workflowDocument {
                     Text("Unsaved library draft").font(.caption).foregroundStyle(MusicBrainzTheme.purple)
-                    Button("Revert Library Draft") { draft = model.workflowDocument; selectedID = draft.profiles.first?.id }
+                    Button("Revert Draft") { draft = model.workflowDocument; selectedID = draft.profiles.first?.id }
                 }
                 HStack {
                     Button("Import…") { do { if let data = try WorkflowFilePanels.importJSON() { var value = draft; try value.merge(WorkflowDocument.imported(data)); draft = value } } catch { self.error = error.localizedDescription } }
                     Button("Export…") { do { try WorkflowFilePanels.exportJSON(draft.exported(), name: "MacPicard-Profiles-And-Scripts.json") } catch { self.error = error.localizedDescription } }
                 }
-                Text("Exports include named scripts and profiles only. No credentials, bookmarks, library/session documents or audio files.").font(.caption).foregroundStyle(.secondary)
+                Text("Exports contain scripts and profiles, not credentials or music.").font(.caption).foregroundStyle(.secondary)
             }.padding(16).frame(minWidth: 260, maxWidth: 330)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if let index {
                         TextField("Profile name", text: $draft.profiles[index].name).font(.title2)
-                        Text("Activate changes only the checked preference groups. Other settings and pending music edits remain intact.").font(.callout).foregroundStyle(.secondary)
+                        Text("Apply changes only the checked settings.").font(.callout).foregroundStyle(.secondary)
                         ForEach(ProfileOption.allCases) { option in
                             Toggle(option.rawValue.capitalized, isOn: Binding(get: { draft.profiles[index].included.contains(option) }, set: { if $0 { draft.profiles[index].included.insert(option) } else { draft.profiles[index].included.remove(option) } }))
                         }
@@ -308,11 +307,11 @@ struct WorkflowProfilesView: View {
                             }
                         }
                         Toggle("Preserve file timestamps", isOn: $draft.profiles[index].preserveTimestamps)
-                        Button("Update Snapshot from Current Settings") {
+                        Button("Replace with Current Settings") {
                             let old = draft.profiles[index]
                             draft.profiles[index] = WorkflowProfile(id: old.id, name: old.name, included: old.included, configuration: model.configuration)
                         }
-                        Button("Activate Included Preferences") { let value = draft.profiles[index]; run { try await model.activateProfile(value) } }.buttonStyle(.glassProminent)
+                        Button("Apply Profile") { let value = draft.profiles[index]; run { try await model.activateProfile(value) } }.buttonStyle(.borderedProminent)
                     } else { ContentUnavailableView("Capture or import a profile", systemImage: "slider.horizontal.3") }
                     if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
                     if let error = model.workflowError { Text(error).font(.caption).foregroundStyle(.red) }
@@ -323,7 +322,7 @@ struct WorkflowProfilesView: View {
         .alert("Delete this profile?", isPresented: $confirmsDelete) {
             Button("Delete", role: .destructive) { draft.profiles.removeAll { $0.id == selectedID }; selectedID = draft.profiles.first?.id }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("This changes the draft only. Save Profile Library to persist deletion. Current preferences and music are untouched.") }
+        } message: { Text("Save Profiles to keep this deletion. Current settings and music are unchanged.") }
     }
     private func run(_ action: @escaping @MainActor () async throws -> Void) {
         error = nil; Task { do { try await action() } catch { self.error = error.localizedDescription } }
@@ -347,10 +346,10 @@ struct CollectionWorkflowView: View {
     private var changed: [AudioFile] { targets.filter(\.isModified) }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 12) {
                 ScopePicker(scope: $scope, count: targets.count).disabled(model.isBusy)
                 Text("Collection Workflow").font(.title2.weight(.semibold))
-                Text("Each step stops for your review. Matching and tools stage edits; Save writes tags; Organize moves only explicitly reviewed files.").foregroundStyle(.secondary)
+                Text("Apply matching results, save tags, then review filenames before moving files.").foregroundStyle(.secondary)
                 GroupBox("1 · Identify and review") {
                     HStack {
                         Text("\(targets.count) files in \(scope.rawValue.lowercased())").font(.callout); Spacer()
@@ -374,14 +373,14 @@ struct CollectionWorkflowView: View {
                 GroupBox("3 · Review and save changed files") {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("\(changed.count) files with pending edits · \(targets.count { ![.ready, .changed, .saved].contains($0.state) }) unavailable/blocked").font(.caption)
-                        Button("Review Save Tags…") { saveReview = changed; saveWorkspace = model.activeWorkspaceID; reviewingSave = true; error = nil }.disabled(changed.isEmpty || model.isBusy)
+                        Button("Review Changes…") { saveReview = changed; saveWorkspace = model.activeWorkspaceID; reviewingSave = true; error = nil }.disabled(changed.isEmpty || model.isBusy)
                         if reviewingSave {
                             ScrollView { LazyVStack(alignment: .leading) { ForEach(saveReview) { file in
                                 Text("\(file.url.lastPathComponent) · \(file.metadata.difference(from: file.originalMetadata).changedKeys.joined(separator: ", "))\(file.artwork != file.originalArtwork ? " · artwork" : "")").font(.caption.monospaced())
                             } } }.frame(maxHeight: 180)
                             HStack {
                                 Button("Cancel Review") { reviewingSave = false }
-                                Button("Write Tags to \(saveReview.count) Files") { save() }.buttonStyle(.glassProminent).disabled(model.isBusy)
+                                Button("Write Tags to \(saveReview.count) Files") { save() }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).disabled(model.isBusy)
                             }
                         }
                         if model.isWorking { HStack { ProgressView().controlSize(.small); Button("Stop after current file") { job?.cancel() } } }
@@ -392,21 +391,21 @@ struct CollectionWorkflowView: View {
                 }
                 GroupBox("4 · Review organization, then confirm moves") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Guided organization excludes failed, cancelled, unavailable, still-pending or changed-since-save files. It never starts automatically.").font(.caption).foregroundStyle(.secondary)
+                        Text("Only saved, unchanged files can move in this step. Failed saves stay pending.").font(.caption).foregroundStyle(.secondary)
                         HStack {
-                            Button("Review Saved/Clean Files…") {
-                                guard savedScopeWorkspace == model.activeWorkspaceID else { error = "Save/review this workspace before the guided move step."; return }
+                            Button("Organize Saved Files…") {
+                                guard savedScopeWorkspace == model.activeWorkspaceID else { error = "Review and save this workspace before organizing saved files."; return }
                                 let eligible = Set(savedScopeIDs.filter { id in model.file(id: id).map { !$0.isModified && [.ready, .saved].contains($0.state) && savedBaselines[id] == $0 } == true })
                                 guard !eligible.isEmpty else { error = "No unchanged saved files are eligible. Save and review again."; return }
                                 model.requestOrganizationReview(ids: eligible, label: "Guided saved/clean files"); openWindow(id: "workspace"); presentation.isShowingOrganization = true
                             }.disabled(model.isBusy || savedScopeIDs.isEmpty)
-                            Button("Organize Scope Independently…") {
+                            Button("Organize All in Scope…") {
                                 if scope == .workspace && model.activeWorkspace?.kind == .library { model.requestOrganizationReview(entireLibrary: true) }
                                 else { model.requestOrganizationReview(ids: Set(targets.map(\.id)), label: scope.rawValue) }
                                 openWindow(id: "workspace"); presentation.isShowingOrganization = true
                             }.disabled(targets.isEmpty || model.isBusy)
                         }
-                        Button("Review Already-Clean Scope") {
+                        Button("Include Files Without Edits") {
                             let clean = targets.filter { !$0.isModified && [.ready, .saved].contains($0.state) }
                             savedScopeIDs = Set(clean.map(\.id)); savedScopeWorkspace = model.activeWorkspaceID
                             savedBaselines = Dictionary(uniqueKeysWithValues: clean.map { ($0.id, $0) })
@@ -414,7 +413,7 @@ struct CollectionWorkflowView: View {
                     }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-            }.padding(24)
+            }.padding(16)
         }.onDisappear { job?.cancel() }
         .onChange(of: scope) { _, _ in reviewingSave = false; savedScopeIDs = [] }
     }

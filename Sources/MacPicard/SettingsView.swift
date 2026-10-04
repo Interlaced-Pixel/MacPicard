@@ -40,12 +40,12 @@ struct SettingsView: View {
             Divider()
             HStack {
                 Button("Restore Defaults") { draft = AppConfiguration(); toolResult = nil }
-                Text(error ?? (draft == model.configuration ? "Preferences are up to date." : "Unsaved preferences"))
+                Text(error ?? (draft == model.configuration ? "No changes" : "Unsaved settings"))
                     .font(.caption).foregroundStyle(error == nil ? Color.secondary : .red)
                     .textSelection(.enabled)
                 Spacer()
                 if saving { ProgressView().controlSize(.small) }
-                Button("Save") { save() }.buttonStyle(.glassProminent).keyboardShortcut(.defaultAction)
+                Button("Save") { save() }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).keyboardShortcut(.defaultAction)
                     .disabled(model.isBusy || saving || loadingCredentials)
             }.padding(16)
         }
@@ -61,13 +61,13 @@ struct SettingsView: View {
                 Toggle("Write periodic recovery snapshots", isOn: $draft.autosaveEnabled)
                 Stepper("Recovery every \(draft.autosaveIntervalSeconds) seconds", value: $draft.autosaveIntervalSeconds, in: 15...3600, step: 15)
                     .disabled(!draft.autosaveEnabled)
-                Text("Edits, workspace switches, and quit always save the workspace. Recovery snapshots provide additional protection; they never write audio tags.").font(.caption)
+                Text("Edits are saved to your library or session automatically. Periodic backups add recovery points without writing audio tags.").font(.caption)
             }
         case .libraries:
             Section("Background monitoring") {
                 Toggle("Enable monitoring for new libraries", isOn: $draft.editing.newLibrariesMonitorAutomatically)
                 Stepper("Check every \(draft.editing.monitoringIntervalSeconds / 60) minutes", value: $draft.editing.monitoringIntervalSeconds, in: 60...3600, step: 60)
-                Text("Existing libraries keep their own monitoring switch. Background checks defer during playback or foreground work; manual refresh stays available.").font(.caption)
+                Text("Each library has its own monitoring switch. Checks wait during playback or other work. Refresh is always available.").font(.caption)
                 if model.activeWorkspace?.kind == .library {
                     Text("Current library: \(model.activeWorkspace?.name ?? "")")
                 }
@@ -77,9 +77,9 @@ struct SettingsView: View {
                 TextField("Preferred country (e.g. US)", text: $draft.preferredReleaseCountry)
                 Text("Leave country empty for no regional preference.").font(.caption)
                 Slider(value: $draft.editing.matchThreshold, in: 0.60...0.95, step: 0.01) {
-                    Text("Automatic eligibility: \(Int((draft.editing.matchThreshold * 100).rounded()))%")
+                    Text("Ready threshold: \(Int((draft.editing.matchThreshold * 100).rounded()))%")
                 }
-                Text("Threshold: \(Int((draft.editing.matchThreshold * 100).rounded()))%. Ambiguous or incomplete matches still require review.").font(.caption)
+                Text("Ambiguous or incomplete matches need review, regardless of score.").font(.caption)
             }
         case .metadata:
             Section("Tag preservation") {
@@ -87,11 +87,11 @@ struct SettingsView: View {
                     get: { draft.editing.preservedTags.joined(separator: ", ") },
                     set: { draft.editing.preservedTags = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty } }
                 ))
-                Text("These tags keep their current values when MusicBrainz metadata is applied. Scripts and deliberate manual edits remain available.").font(.caption)
+                Text("MusicBrainz matching will not replace these tags. You can still edit them manually or with scripts.").font(.caption)
             }
             Section("Saving") {
                 Toggle("Preserve file modification timestamps", isOn: $draft.preserveFileTimestamps)
-                Text("External file changes are always checked before saving. Save Tags writes staged edits; Save Workspace does not.").font(.caption)
+                Text("Save Tags writes changes to audio after checking for external edits. Save Workspace only saves the library or session.").font(.caption)
             }
         case .artwork:
             Section("Cover Art Archive") {
@@ -110,7 +110,7 @@ struct SettingsView: View {
                     Text("Keep format").tag("preserve"); Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
                 }
                 Slider(value: $draft.editing.artworkJPEGQuality, in: 0.1...1) { Text("JPEG quality") }
-                Text("Conversion is explicit in Manage Artwork. Export-only mode never stages embedded-image changes. Exports always require destination review and never overwrite files.").font(.caption)
+                Text("Convert images in Manage Artwork. Export-only mode leaves audio unchanged. Review export paths before saving; existing files are never overwritten.").font(.caption)
             }
         case .naming:
             Section("Default organization pattern") {
@@ -123,7 +123,7 @@ struct SettingsView: View {
                 Label("Chromaprint is included with MacPicard", systemImage: "checkmark.seal.fill")
                 Button(testingTool ? "Checking…" : "Check Built-in Calculator") { checkTool() }.disabled(testingTool)
                 if let toolResult { Text(toolResult).font(.caption).textSelection(.enabled) }
-                Text("No downloads, external tools, or API-key setup are needed. Generate Fingerprints works offline. Scan identifies audio through AcoustID and MusicBrainz using MacPicard’s built-in application credentials.").font(.caption)
+                Text("Generate Fingerprints works offline. Scan uses AcoustID and MusicBrainz to identify audio. Both are ready to use; no extra setup is needed.").font(.caption)
                 if (try? AcoustIDApplicationConfiguration.applicationKey()) == nil {
                     Label("Identification service configuration is missing in this build. Contact Interlaced Pixel.", systemImage: "exclamationmark.triangle").font(.caption)
                 }
@@ -156,7 +156,7 @@ struct SettingsView: View {
                 Picker("Color scheme", selection: $draft.editing.appearance) {
                     Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark")
                 }
-                Text("System accessibility settings control contrast, motion, and transparency. Content uses standard readable surfaces; native glass is reserved for controls.").font(.caption)
+                Text("MacPicard follows macOS contrast, motion and transparency settings.").font(.caption)
             }
         }
     }

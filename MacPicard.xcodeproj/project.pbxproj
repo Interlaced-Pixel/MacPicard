@@ -96,6 +96,8 @@
 		F79B05C87479737783FF5FBD07771BB3 /* WorkflowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F166730F712042778D87FEFC8BEF671D /* WorkflowModel.swift */; };
 		F881A04E4ACE5DFE3A3E2311488FEAFB /* ArtworkManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C49BF5555C9E2246B0676D69C3CDD1B /* ArtworkManagementTests.swift */; };
 		FC87354A0F88DE7075F0B1F34D4F5575 /* PlaybackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C38B4A13C858D30337948BFC51DEDB60 /* PlaybackViews.swift */; };
+		AD8DBFD8FADD05D33F3A8ED6FEF75570 /* CompactMatchReviewPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63835A3089BF2DD460D519932158BC8 /* CompactMatchReviewPane.swift */; };
+		B51458951EE59FB93F3DAA74F233BFCB /* CompactInterfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07780F860089345E1F3E1C642E8C6CA8 /* CompactInterfaceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -196,6 +198,8 @@
 		FDA6545E4D3F622492EB1D14C78E25D3 /* PicardFoundationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PicardFoundationTests.swift; sourceTree = "<group>"; };
 		FF62B3C49193F543B9DB8D51E59AAB12 /* ARTWORK.md */ = {isa = PBXFileReference; includeInIndex = 1; path = ARTWORK.md; sourceTree = "<group>"; };
 		FFB125B23C1A8F380CD13A3C537499EA /* OrganizationModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OrganizationModel.swift; sourceTree = "<group>"; };
+		07780F860089345E1F3E1C642E8C6CA8 /* CompactInterfaceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CompactInterfaceTests.swift; sourceTree = "<group>"; };
+		D63835A3089BF2DD460D519932158BC8 /* CompactMatchReviewPane.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CompactMatchReviewPane.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -323,6 +327,7 @@
 				3906C6DB1F8C8E1E6E43DE80CF1D58C3 /* ArtworkEditingTests.swift */,
 				A9A6A432DAF67C2EA083044128E76D73 /* BrowserTests.swift */,
 				8945F96824319CEAD353EA5B71F22A62 /* CollectionWorkspaceTests.swift */,
+				07780F860089345E1F3E1C642E8C6CA8 /* CompactInterfaceTests.swift */,
 				267E8955D8FD98E617CC5401C774BA79 /* EditReviewTests.swift */,
 				3A39811E020B901BC4DDC9D1382980D4 /* FingerprintWorkflowTests.swift */,
 				C1E7D95F29E36AF16B5C46449FD9CE4D /* LibraryManagementTests.swift */,
@@ -367,6 +372,7 @@
 				C5E0D177879B892A5F91C7EE65646936 /* ArtworkManagerView.swift */,
 				F85C5D43C9B1ED41325AB4717D0CA021 /* CollectionToolsView.swift */,
 				724CA13FA29D6EE6EBF04DC17B7C4D64 /* CollectionWorkspace.swift */,
+				D63835A3089BF2DD460D519932158BC8 /* CompactMatchReviewPane.swift */,
 				16CCD358589D0C706645BA5A41A05F97 /* FingerprintViews.swift */,
 				FA34D3E914FE7F10884D010411CC0F32 /* FingerprintWorkflow.swift */,
 				7AAEA620D907327F18934F19D5E42320 /* LibraryActions.swift */,
@@ -909,6 +915,7 @@
 				D8CA5AEEACE8766419C54A035C09C308 /* ArtworkManagerView.swift in Sources */,
 				A4138AE9436DB50CF472731B897EB831 /* CollectionToolsView.swift in Sources */,
 				629FBD0F319312FBFF1B5376E6BB53B6 /* CollectionWorkspace.swift in Sources */,
+				AD8DBFD8FADD05D33F3A8ED6FEF75570 /* CompactMatchReviewPane.swift in Sources */,
 				9E1E0C1868D7DEC3EB01C07F0620E591 /* FingerprintViews.swift in Sources */,
 				6322BE6FC20D4CA3231179DB05CA8A63 /* FingerprintWorkflow.swift in Sources */,
 				CF546A6D6509A3AA02E931A073DB88D6 /* LibraryActions.swift in Sources */,
@@ -972,6 +979,7 @@
 				4C38D20C7458E38298EB6C10416B49CD /* ArtworkEditingTests.swift in Sources */,
 				BE7CA29586439F5A65F34DC10AAA1F4C /* BrowserTests.swift in Sources */,
 				A0DBA657DCE4E4BCBFB4E964A7C038C4 /* CollectionWorkspaceTests.swift in Sources */,
+				B51458951EE59FB93F3DAA74F233BFCB /* CompactInterfaceTests.swift in Sources */,
 				B5AAE4EF82226FE9B138EA5816B15170 /* EditReviewTests.swift in Sources */,
 				7C151DF381AAAF5C358248E9A234F22B /* FingerprintWorkflowTests.swift in Sources */,
 				B7281A82C6E699A0F7DDCA4D87301116 /* LibraryManagementTests.swift in Sources */,

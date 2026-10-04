@@ -113,7 +113,7 @@ struct MacPicardCommands: Commands {
         }
 
         CommandMenu("Library") {
-            Button("Collection Tools & Guided Workflow…") {
+            Button("Collection Tools…") {
                 presentation.collectionToolsPage = "operations"; presentation.isShowingCollectionTools = true
             }.keyboardShortcut("k", modifiers: [.command, .shift])
             Divider()
@@ -193,7 +193,7 @@ struct MacPicardCommands: Commands {
                 Button("Submit Verified Selected AcoustIDs…") { model.prepareFingerprintSubmission() }.disabled(model.isBusy || model.fingerprintRun == nil || model.selectedFiles.isEmpty)
                 Button("Submit Verified Library AcoustIDs…") { model.prepareFingerprintSubmission(scope: .library) }.disabled(model.isBusy || model.fingerprintRun == nil || model.activeWorkspace?.kind != .library)
             }
-            Button("Show Release Comparison") { presentation.showsMatchComparison.toggle() }.disabled(!model.canEditSelection)
+            Button(presentation.showsMatchComparison ? "Close Track Matching" : "Show Track Matching") { presentation.showsMatchComparison.toggle() }.disabled(!presentation.showsMatchComparison && !model.canEditSelection)
             Button("Regroup Selected Files…") { presentation.isRegrouping = true }.disabled(!model.canEditSelection)
             Button("All Tags & Changes…") { presentation.isShowingMetadataEditor = true }
                 .keyboardShortcut("t", modifiers: [.command, .option])
@@ -210,11 +210,11 @@ struct MacPicardCommands: Commands {
                 .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(!model.canEditSelection)
             Divider()
-            Button("Script Studio…") { presentation.collectionToolsPage = "scripts"; presentation.isShowingCollectionTools = true }
+            Button("Scripts…") { presentation.collectionToolsPage = "scripts"; presentation.isShowingCollectionTools = true }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(model.isBusy)
             Button("Filename → Tags…") { presentation.collectionToolsPage = "filenames"; presentation.isShowingCollectionTools = true }.disabled(model.isBusy)
-            Button("Configuration Profiles…") { presentation.collectionToolsPage = "profiles"; presentation.isShowingCollectionTools = true }.disabled(model.isBusy)
+            Button("Profiles…") { presentation.collectionToolsPage = "profiles"; presentation.isShowingCollectionTools = true }.disabled(model.isBusy)
             Button("Organize Selected Files…") {
                 model.requestOrganizationReview()
                 presentation.isShowingOrganization = true
@@ -246,27 +246,29 @@ struct QuickStartView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Get things done with MacPicard").font(.title2.weight(.semibold))
+                Text("MacPicard Guide").font(.title2.weight(.semibold))
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            guide("Keep a music library", symbol: "externaldrive",
+            ScrollView { VStack(alignment: .leading, spacing: 14) {
+            guide("Libraries", symbol: "externaldrive",
                   text: "Choose File → Add Music Library and select a folder. Imports copy audio into Artist / Album folders, leaving originals untouched. Existing library files are indexed in place. Right-click tracks or albums to remove them from the library or move its copies to Trash after confirmation. Remove a library in Library → Manage Libraries & Sessions; this never deletes its audio.")
-            guide("Keep separate sessions", symbol: "rectangle.stack",
+            guide("Sessions", symbol: "rectangle.stack",
                   text: "Create a named session for a particular tagging task. Import files or folders, then return through the workspace chooser or File → Open Workspace. Pending edits are saved in the workspace; Save Tags writes them to the audio files.")
-            guide("Review and revert", symbol: "arrow.triangle.branch",
-                  text: "Look Up shows suggested file-to-track assignments. Choose or swap tracks, leave extras unmatched, and preview tag changes before applying. Nothing is written until Save Tags. Use Discard on the toolbar or in the Edit/right-click menus to revert pending tags and artwork; already-saved tags cannot be undone this way.")
-            guide("Navigate a large collection", symbol: "magnifyingglass",
+            guide("Review changes", symbol: "arrow.triangle.branch",
+                  text: "Look Up pairs files with MusicBrainz tracks. Choose a track in each row; choosing an occupied track swaps the pair. Open a row’s changes button to compare tags. Apply changes the pending tags; Save writes them to audio. Discard is in More, Edit, and track context menus.")
+            guide("Navigation", symbol: "magnifyingglass",
                   text: "Albums start collapsed. Click an album to open all its tracks; click its chevron to expand the sidebar. Press ⌘F to search title, artist, album, genre, or filename across the collection. Filters highlight unsaved edits, missing artwork, unidentified tracks, and unavailable files.")
-            guide("Edit and identify music", symbol: "slider.horizontal.3",
-                  text: "Select tracks with Command-click or Shift-click. The inspector shows Multiple values when tags differ; typing a value applies it to the selection. Use Metadata → Look Up on MusicBrainz, choose a release, then Apply Match. Save Selected Tags with ⌘S, or Save All Changed Tags with ⌥⌘S.")
-            guide("Listen while you work", symbol: "play.circle",
+            guide("Metadata", symbol: "slider.horizontal.3",
+                  text: "Select tracks with Command-click or Shift-click. The inspector shows Multiple values when tags differ; typing applies that value to the selection. Look Up finds MusicBrainz releases. Apply to Files changes pending tags; ⌘S saves selected tags, and ⌥⌘S saves all changed tags.")
+            guide("Playback", symbol: "play.circle",
                   text: "Right-click a song to Play, Play Next, or Add to Queue. Right-click an album to play it in track order. The player provides pause, seeking, volume, and queue controls. Double-click a track to play it; ⌘P toggles playback. Playback stops when you switch workspaces or quit.")
             guide("Organize files", symbol: "folder.badge.gearshape",
                   text: "Organize previews filenames and folders before moving anything. Choose a naming preset or custom pattern, resolve conflicts, exclude files, then confirm Move Files. Libraries default to their own folder; moves outside it need explicit acknowledgment. Existing files are never overwritten. Pending tags remain unsaved. Reveal files in Finder with ⇧⌘R.")
+            } }
         }
-        .padding(24)
-        .frame(width: 650)
+        .padding(16)
+        .frame(width: 650, height: 580)
     }
 
     private func guide(_ title: String, symbol: String, text: String) -> some View {

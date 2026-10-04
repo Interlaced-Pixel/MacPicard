@@ -98,7 +98,7 @@ struct WorkspaceView: View {
                 Text(model.activeWorkspace?.kind == .library ? "Drop to copy and organize in this library" : "Drop audio files or folders to import")
                     .font(.headline)
                     .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 6)
                     .glassEffect(.regular.tint(.accentColor.opacity(0.25)).interactive(), in: .capsule)
                     .padding(.top, 12)
                     .allowsHitTesting(false)
@@ -116,50 +116,26 @@ private struct ActionBar: View {
     @State private var isCompact = false
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 8) {
-                Button { presentation.showsSidebar.toggle() } label: {
-                    Image(systemName: "sidebar.left")
-                }
-                .buttonStyle(.glass)
-                .help(presentation.showsSidebar ? "Hide sidebar" : "Show sidebar")
-                GlassActionButton("Import", systemImage: "plus", prominent: true) {
+                GlassActionButton("Import", systemImage: "plus", compact: isCompact) {
                     isImporting = true
                 }
                 .disabled(model.isBusy)
                 .help(model.activeWorkspace?.kind == .library
-                      ? "Copy audio into the library and organize by artist and album; keep originals."
-                      : "Import audio references into this session without moving files.")
-                if model.browserPreferences.toolbarActions.contains("lookup") && !isCompact {
+                      ? "Copy audio files into this library. Originals stay unchanged."
+                      : "Add audio files to this session without copying them.")
+                if !presentation.showsMatchComparison {
                 GlassActionButton("Look Up", systemImage: "magnifyingglass", compact: isCompact) {
                     presentation.showsMatchComparison = true
                     Task { await model.lookup() }
                 }
                 .disabled(!model.canLookupSelection)
                 }
-                if model.browserPreferences.toolbarActions.contains("artwork") && !isCompact {
-                GlassActionButton("Cover Art", systemImage: "photo.on.rectangle", compact: isCompact) {
-                    presentation.isShowingArtwork = true
-                }
-                .disabled(!model.canEditSelection)
-                }
-                if model.browserPreferences.toolbarActions.contains("script") && !isCompact {
-                GlassActionButton("Script", systemImage: "chevron.left.forwardslash.chevron.right", compact: isCompact) {
-                    isShowingScript = true
-                }
-                .disabled(!model.canEditSelection)
-                }
-                GlassActionButton("Save", systemImage: "square.and.arrow.down", compact: isCompact) {
+                if model.selectedModifiedCount > 0 {
+                GlassActionButton("Save", systemImage: "square.and.arrow.down", prominent: true, compact: isCompact) {
                     Task { await model.saveSelected() }
                 }
                 .disabled(!model.canPerform(.save))
-                if model.browserPreferences.toolbarActions.contains("discard") && !isCompact {
-                GlassActionButton("Discard", systemImage: "arrow.uturn.backward", compact: isCompact) {
-                    presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID)
-                }
-                .disabled(!model.canDiscardChanges(model.selectedFileIDs))
-                .help("Discard pending tags and artwork; keep audio files unchanged.")
                 }
                 Menu {
                     Button("Organize Selected Files…") {
@@ -176,49 +152,32 @@ private struct ActionBar: View {
                     Label("Organize", systemImage: "folder.badge.gearshape")
                         .labelStyle(.titleAndIcon)
                 }
-                .buttonStyle(.glass)
-                .help("Choose selected files or the entire library, then review paths before moving.")
+                .buttonStyle(.bordered)
+                .help("Review filenames and folders before moving files.")
                 Menu {
-                    Button("Collection Tools & Guided Workflow…") { presentation.collectionToolsPage = "operations"; presentation.isShowingCollectionTools = true }
-                    Button("Script Studio…") { presentation.collectionToolsPage = "scripts"; presentation.isShowingCollectionTools = true }
+                    Button("Collection Tools…") { presentation.collectionToolsPage = "operations"; presentation.isShowingCollectionTools = true }
+                    Button("Scripts…") { presentation.collectionToolsPage = "scripts"; presentation.isShowingCollectionTools = true }
                     Button("Filename → Tags…") { presentation.collectionToolsPage = "filenames"; presentation.isShowingCollectionTools = true }
-                    Button("Configuration Profiles…") { presentation.collectionToolsPage = "profiles"; presentation.isShowingCollectionTools = true }
+                    Button("Profiles…") { presentation.collectionToolsPage = "profiles"; presentation.isShowingCollectionTools = true }
                     Divider()
-                    Button("Look Up…") { presentation.showsMatchComparison = true; Task { await model.lookup() } }.disabled(!model.canLookupSelection)
                     Button("Scan Selected Audio…") { model.startFingerprintScan(); presentation.isShowingFingerprints = true }.disabled(model.isBusy || model.selectedFiles.isEmpty)
                     Button("Fingerprint Results…") { presentation.isShowingFingerprints = true }
                     Button("Manage Artwork…") { presentation.isShowingArtwork = true }.disabled(!model.canEditSelection)
-                    Button("Edit Script…") { isShowingScript = true }.disabled(!model.canEditSelection)
                     Button("Discard Selected Changes…") { presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID) }.disabled(!model.canPerform(.discard))
                     Button("All Tags & Changes…") { presentation.isShowingMetadataEditor = true }.disabled(!model.canEditSelection)
                     Button("Activity…") { presentation.isShowingActivity = true }
                     Divider()
-                    Menu("Toolbar Items") {
-                        ForEach(["lookup", "artwork", "script", "discard"], id: \.self) { key in
-                            Toggle(key.capitalized, isOn: Binding(get: { model.browserPreferences.toolbarActions.contains(key) }, set: {
-                                if $0 { model.browserPreferences.toolbarActions.insert(key) } else { model.browserPreferences.toolbarActions.remove(key) }
-                                model.saveBrowserPreferences()
-                            }))
-                        }
-                    }
-                } label: { Image(systemName: "ellipsis") }.buttonStyle(.glass).accessibilityLabel("More actions and toolbar customization")
-
-                Button { presentation.showsInspector.toggle() } label: {
-                    Image(systemName: "sidebar.right")
-                }
-                .buttonStyle(.glass)
-                .help(presentation.showsInspector ? "Hide metadata inspector" : "Show metadata inspector")
+                    Toggle("Sidebar", isOn: $presentation.showsSidebar)
+                    Toggle("Inspector", isOn: $presentation.showsInspector).disabled(presentation.showsMatchComparison)
+                    Button("Clear Selection") { model.clearSelection() }.disabled(model.selectedFiles.isEmpty)
+                } label: { Image(systemName: "ellipsis") }.menuIndicator(.hidden).buttonStyle(.bordered).accessibilityLabel("More actions")
 
                 Spacer(minLength: 8)
 
                 if !model.selectedFiles.isEmpty {
-                    VStack(alignment: .trailing, spacing: 1) {
+                    HStack(spacing: 6) {
                         Text("\(model.selectedFiles.count) selected")
                             .font(.caption.weight(.medium))
-                        Text(model.selectedFormatSummary)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
                         if model.selectedModifiedCount > 0 {
                             Text("\(model.selectedModifiedCount) pending save")
                                 .font(.caption2)
@@ -229,14 +188,6 @@ private struct ActionBar: View {
                     .accessibilityLabel("Selection")
                     .accessibilityValue("\(model.selectedFiles.count) selected, \(model.selectedFormatSummary)")
 
-                    Button {
-                        model.clearSelection()
-                    } label: {
-                        Image(systemName: "xmark.circle")
-                    }
-                    .buttonStyle(.glass)
-                    .help("Clear selection")
-                    .accessibilityLabel("Clear selection")
                 }
 
                 if let progress = model.progress {
@@ -250,15 +201,10 @@ private struct ActionBar: View {
                         .accessibilityLabel("Working")
                 }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-            }
-        }
-        .scrollClipDisabled()
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+                .controlSize(.small).tint(.primary)
+                .padding(.horizontal, 12).padding(.vertical, 7)
         .background(.bar)
-        .onGeometryChange(for: Bool.self) { geometry in geometry.size.width < 1_000 } action: {
+        .onGeometryChange(for: Bool.self) { geometry in geometry.size.width < 620 } action: {
             isCompact = $0
         }
     }
@@ -326,12 +272,12 @@ private struct GlassActionButton: View {
                 Button(action: action) {
                     buttonLabel
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
             } else {
                 Button(action: action) {
                     buttonLabel
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
             }
         }
         .help(title)
@@ -350,13 +296,13 @@ private struct EmptyLibraryView: View {
 
     var body: some View {
         ContentUnavailableView {
-            Label("Make room for your music", systemImage: "music.note.list")
+            Label("No Audio Files", systemImage: "music.note.list")
         } description: {
-            Text("Link a music folder to manage it over time, or import files into this session for a tagging task.")
+            Text("Add a music folder as a library, or import files into this session.")
         } actions: {
             Button("Add Music Library…") { addLibraryAction() }
-                .buttonStyle(.glassProminent)
-            Button("Import Audio…") { importAction() }.buttonStyle(.glass)
+                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
+            Button("Import Audio…") { importAction() }.buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -368,21 +314,18 @@ private struct AlbumWorkspace: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            AlbumHeader(model: model)
-                .padding(.horizontal, 18)
-                .padding(.top, 18)
-                .padding(.bottom, 12)
+            if !presentation.showsMatchComparison { AlbumHeader(model: model) }
 
             HSplitView {
                 if presentation.showsMatchComparison {
                     LookupView(model: model, embedded: true, close: { presentation.showsMatchComparison = false })
-                        .frame(minWidth: 800)
+                        .frame(minWidth: 680)
                 } else {
                 TrackListView(model: model, presentation: presentation)
                     .frame(minWidth: 440, idealWidth: 560)
                 if presentation.showsInspector {
                     MetadataInspector(model: model, presentation: presentation)
-                        .frame(minWidth: 390, idealWidth: 460)
+                        .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
                 }
                 }
             }
@@ -395,18 +338,21 @@ private struct AlbumHeader: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 10) {
             WorkspaceArtwork(model: model)
-                .frame(width: 88, height: 88)
-                .clipShape(.rect(cornerRadius: 14))
+                .frame(width: 40, height: 40)
+                .clipShape(.rect(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(model.browserTitle)
-                    .font(.title2.weight(.semibold))
+                    .font(.headline)
                     .lineLimit(1)
                 Text(model.browserSubtitle)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+            }
+            Spacer(minLength: 8)
                 HStack(spacing: 10) {
                     Label("\(model.visibleFiles.count) tracks", systemImage: "music.note")
                     if model.hasUnsavedChanges {
@@ -416,30 +362,9 @@ private struct AlbumHeader: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 5) {
-                Text(model.statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
-                    .frame(width: 300, alignment: .trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let errorMessage = model.errorMessage {
-                    Text(errorMessage)
-                        .font(.caption2)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.trailing)
-                        .lineLimit(2)
-                        .frame(width: 300, alignment: .trailing)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .layoutPriority(1)
         }
-        .padding(12)
-        .background(.regularMaterial, in: .rect(cornerRadius: 18))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.bar)
     }
 }
 
@@ -503,15 +428,15 @@ private struct TrackListView: View {
                 Spacer()
                 HStack(spacing: 6) {
                     Button("Select All") { model.selectAllVisible() }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.bordered)
                         .disabled(model.visibleFiles.isEmpty)
                     Button("Clear") { model.clearSelection() }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.bordered)
                         .disabled(model.selectedFiles.isEmpty)
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.vertical, 7)
 
             if model.visibleFiles.isEmpty {
                 ContentUnavailableView("No matching tracks", systemImage: "magnifyingglass",
@@ -622,7 +547,7 @@ private struct MetadataInspector: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Metadata")
                     .font(.headline)
                 if model.selectedFiles.isEmpty {
@@ -633,7 +558,7 @@ private struct MetadataInspector: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Button("All Tags & Changes…", systemImage: "tablecells") { presentation.isShowingMetadataEditor = true }
-                        .buttonStyle(.glass).disabled(!model.canEditSelection)
+                        .buttonStyle(.bordered).disabled(!model.canEditSelection)
                     MetadataFieldGroup(title: "Identity", fields: identityFields, model: model)
                     MetadataFieldGroup(title: "Release", fields: releaseFields, model: model)
                     MetadataFieldGroup(title: "Numbering", fields: numberingFields, model: model)
@@ -646,7 +571,7 @@ private struct MetadataInspector: View {
                     }
                 }
             }
-            .padding(18)
+            .padding(12)
         }
         .background(.regularMaterial)
     }
@@ -658,7 +583,7 @@ private struct MetadataFieldGroup: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
@@ -704,7 +629,7 @@ private struct ArtworkInspector: View {
             Text("Artwork")
                 .font(.subheadline.weight(.semibold))
             Button("Manage Artwork…", systemImage: "photo.on.rectangle.angled") { presentation.isShowingArtwork = true }
-                .buttonStyle(.glass).disabled(!model.canEditSelection)
+                .buttonStyle(.bordered).disabled(!model.canEditSelection)
             Text("\(model.primarySelectedFile?.artwork.images.count ?? 0) images in preview file").font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 12) {
                 ArtworkThumbnail(artwork: model.primarySelectedFile?.artwork.first(of: .front))
@@ -789,7 +714,7 @@ struct ScriptView: View {
                 Button("Preview") { model.runScript(applying: false) }
                     .disabled(model.selectedFiles.isEmpty)
                 Button("Apply") { model.runScript(applying: true) }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
                     .disabled(model.selectedFiles.isEmpty)
             }
             .padding(14)

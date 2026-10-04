@@ -48,7 +48,7 @@ struct FingerprintResultsView: View {
                         }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.3), in: .rect(cornerRadius: 12))
                     }
                     if model.fingerprintRun?.results.isEmpty != false {
-                        ContentUnavailableView("No completed fingerprints", systemImage: "waveform", description: Text("Select audio, then identify it online or generate fingerprints offline. Everything needed is built into MacPicard."))
+                        ContentUnavailableView("No fingerprints", systemImage: "waveform", description: Text("Select audio, then scan online or generate fingerprints offline."))
                     }
                 }
             }
@@ -72,7 +72,7 @@ struct FingerprintSubmissionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Submit Verified AcoustIDs").font(.title2.weight(.semibold))
-            Text("This batch sends fingerprints, durations, and MusicBrainz recording IDs to AcoustID. Audio files are not uploaded. Only explicitly approved current mappings are eligible.").foregroundStyle(.secondary)
+            Text("Sends the approved fingerprints, durations and MusicBrainz recording IDs to AcoustID. Audio files are not uploaded.").foregroundStyle(.secondary)
             List(review.items) { item in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.baseline.url.lastPathComponent).fontWeight(.medium)
@@ -81,7 +81,7 @@ struct FingerprintSubmissionView: View {
                 }.padding(.vertical, 5)
             }
             Toggle("I verified these recording mappings and consent to send this batch to AcoustID.", isOn: $consent).disabled(attempted)
-            Text("Submissions are journaled before sending. Accepted or uncertain attempts are never automatically resent. An uncertain result needs service-side verification, not another click.").font(.caption).foregroundStyle(.secondary)
+            Text("Accepted submissions are not sent again. Check an uncertain result with AcoustID before retrying.").font(.caption).foregroundStyle(.secondary)
             if let error = model.errorMessage { Text(error).foregroundStyle(.red) }
             HStack {
                 Button("Close") { dismiss() }.disabled(model.isBusy).keyboardShortcut(.cancelAction)

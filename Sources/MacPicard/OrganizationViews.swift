@@ -124,7 +124,7 @@ struct OrganizationView: View {
                     ForEach(model.workflowDocument.scripts.filter { $0.kind == .naming && $0.enabled }) { script in
                         Button(script.name) { model.organizationNamingScript = script.source }
                     }
-                    Button("Shared Naming Default") { model.organizationNamingScript = model.configuration.editing.namingPattern }
+                    Button("Default Naming Pattern") { model.organizationNamingScript = model.configuration.editing.namingPattern }
                 }
                 Picker("Naming", selection: Binding<NamingPreset>(
                     get: { NamingPreset.allCases.first { $0.script == model.organizationNamingScript } ?? .custom },
@@ -194,7 +194,7 @@ struct OrganizationView: View {
                 }
             } else {
                 ContentUnavailableView(model.organizationDirectory == nil ? "Choose a destination" : "Preview not ready",
-                    systemImage: "folder", description: Text(model.organizationError ?? "A read-only preview will appear here. No files move until you review and confirm."))
+                    systemImage: "folder", description: Text(model.organizationError ?? "Choose a folder to preview paths. Confirm the moves when ready."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -223,7 +223,7 @@ struct OrganizationView: View {
                 Button("Move \(model.organizationReview?.moveCount ?? 0) Files…") {
                     confirmationReview = model.organizationReview
                     confirmsMove = true
-                }.buttonStyle(.glassProminent)
+                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
                     .disabled(!model.canExecuteOrganization || (model.organizationOutsideLibraryCount > 0 && !acknowledgesOutsideMove))
             }
         }.padding(18).background(.bar)

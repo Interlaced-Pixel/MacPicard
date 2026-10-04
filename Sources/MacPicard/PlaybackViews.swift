@@ -59,7 +59,7 @@ struct PlaybackBar: View {
                     Button { presentation.showsPlaybackQueue.toggle() } label: {
                         Label("\(playback.remainingCount)", systemImage: "list.bullet")
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.bordered)
                     .help("Show playback queue")
                     .accessibilityLabel("Playback queue, \(playback.remainingCount) upcoming tracks")
                     .popover(isPresented: $presentation.showsPlaybackQueue) { PlaybackQueueView(playback: playback) }
@@ -91,7 +91,7 @@ struct PlaybackBar: View {
                     Image(systemName: playback.transportIsActive ? "pause.fill" : "play.fill")
                         .frame(width: 16)
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
                 .help(playback.transportIsActive ? "Pause" : "Play")
                 .accessibilityLabel(playback.transportIsActive ? "Pause Playback" : "Play Playback")
                 Button { playback.next() } label: { Image(systemName: "forward.end.fill") }
@@ -101,7 +101,7 @@ struct PlaybackBar: View {
                 Button { playback.stop() } label: { Image(systemName: "stop.fill") }
                     .help("Stop playback")
                     .accessibilityLabel("Stop Playback")
-            }.buttonStyle(.glass)
+            }.buttonStyle(.bordered)
         }
     }
 

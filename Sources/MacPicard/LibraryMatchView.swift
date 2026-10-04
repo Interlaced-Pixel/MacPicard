@@ -41,7 +41,7 @@ struct LibraryMatchView: View {
                 ContentUnavailableView(
                     "Match your entire library",
                     systemImage: "wand.and.stars",
-                    description: Text("MacPicard will search MusicBrainz album by album, score full-track assignments, stage high-confidence metadata, and leave uncertain albums for review.")
+                    description: Text("Search MusicBrainz for each album, then review the matches before applying tags.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -81,7 +81,7 @@ struct LibraryMatchView: View {
                     ForEach(["All", "Ready", "Review", "Unresolved", "Rejected", "Stale"], id: \.self) { Text($0).tag($0) }
                 }.frame(width: 180)
             }
-            Text("Only Ready proposals are eligible for the one-click batch apply. Review opens the normal track-by-track matcher for that album. Nothing is written to audio until Save Tags.")
+            Text("Apply Ready albums together, or review an album’s track matches. Save writes the applied tags to audio.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -126,7 +126,7 @@ struct LibraryMatchView: View {
                         presentation.isShowingLookup = true
                         Task { if let result = proposal.result { await model.chooseMatch(result) } else { await model.lookup() } }
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.bordered)
                     .disabled(model.isBusy)
                     Button("Reject") { model.setProposalStatus(proposal.id, .rejected) }.disabled(model.isBusy)
                 }
@@ -139,7 +139,7 @@ struct LibraryMatchView: View {
     private var footer: some View {
         HStack(spacing: 12) {
             if run == nil {
-                Text("Auto-apply threshold")
+                Text("Ready threshold")
                     .font(.callout)
                 Slider(value: $threshold, in: 0.60...0.95, step: 0.01)
                     .frame(width: 180)
@@ -154,17 +154,18 @@ struct LibraryMatchView: View {
                     model.applyLibraryMatches(eligible)
                     dismiss()
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
                 .disabled(eligible.isEmpty || model.isBusy)
-                Button("Resume / Retry Stale") { model.startLibraryMatch(threshold: threshold, resume: true) }.disabled(model.isBusy)
+                Button("Resume") { model.startLibraryMatch(threshold: threshold, resume: true) }.disabled(model.isBusy)
+                    .help("Continue unfinished albums and recheck stale matches")
                 Button("Run Again") { model.startLibraryMatch(threshold: threshold) }
                     .disabled(model.isBusy)
             } else {
                 Button("Start Library Match") { model.startLibraryMatch(threshold: threshold) }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
                     .disabled(model.isBusy)
             }
-            if model.isWorking { Button("Cancel Read Job") { model.cancelLibraryMatch() } }
+            if model.isWorking { Button("Stop Search") { model.cancelLibraryMatch() } }
             Button("Cancel") { dismiss() }
         }
         .padding(16)

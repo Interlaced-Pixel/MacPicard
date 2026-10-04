@@ -75,12 +75,11 @@ struct LibrarySidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            MusicBrainzBrandHeader()
             workspaceChooser
-                .padding(14)
+                .padding(10)
             Divider()
             searchControls
-                .padding(12)
+                .padding(10)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 6) {
                     Button {
@@ -102,12 +101,6 @@ struct LibrarySidebar: View {
                     }
                     .buttonStyle(.plain)
 
-                    ForEach([BrowserFilter.modified, .unidentified, .unavailable, .missingArtwork]) { destination in
-                        Button { model.browseDestination(destination) } label: {
-                            Label(destination.rawValue, systemImage: destination.symbol).frame(maxWidth: .infinity, alignment: .leading)
-                        }.buttonStyle(.plain).padding(8)
-                    }
-                    Toggle("Group by Artist", isOn: $model.groupsByArtist).padding(8)
 
                     HStack {
                         Text("ALBUMS")
@@ -141,16 +134,16 @@ struct LibrarySidebar: View {
                         VStack(spacing: 8) {
                             Image(systemName: model.files.isEmpty ? "folder.badge.plus" : "magnifyingglass")
                                 .font(.title2)
-                            Text(model.files.isEmpty ? "Build your collection" : "No matching albums")
+                            Text(model.files.isEmpty ? "No albums" : "No matching albums")
                                 .font(.subheadline.weight(.medium))
                             Text(model.files.isEmpty
-                                ? "Add a music folder as a library, or import files into this session."
+                                ? "Add a library or import audio files."
                                 : "Try another search or filter.")
                                 .font(.caption)
                                 .multilineTextAlignment(.center)
                             if model.files.isEmpty {
                                 Button("Add Music Library…") { presentation.isAddingLibrary = true }
-                                    .buttonStyle(.glass)
+                                    .buttonStyle(.bordered)
                             } else {
                                 Button("Clear Search & Filter") {
                                     model.searchQuery = ""
@@ -290,6 +283,7 @@ struct LibrarySidebar: View {
                         ForEach(AlbumSort.allCases) { sort in Text(sort.rawValue).tag(sort) }
                     }
                     Divider()
+                    Toggle("Group by Artist", isOn: $model.groupsByArtist)
                     Button("Expand All Albums") { model.expandAllAlbums() }
                     Button("Collapse All Albums") { model.collapseAllAlbums() }
                 } label: { Image(systemName: "ellipsis.circle") }
@@ -314,7 +308,7 @@ struct LibrarySidebar: View {
             }
             Spacer()
             Button { presentation.isShowingSettings = true } label: { Image(systemName: "gearshape") }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
                 .help("Settings")
                 .accessibilityLabel("Settings")
         }
@@ -411,7 +405,7 @@ struct NewSessionView: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(copying ? "Save Session" : "Create Session") { create() }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isBusy)
             }
@@ -477,7 +471,7 @@ struct WorkspaceManagerView: View {
                             }
                         }
                         if workspace.id == model.activeWorkspaceID && workspace.kind == .library {
-                            Toggle("Monitor quietly (every \(model.configuration.editing.monitoringIntervalSeconds / 60) minutes)", isOn: Binding(
+                            Toggle("Check for changes every \(model.configuration.editing.monitoringIntervalSeconds / 60) minutes", isOn: Binding(
                                 get: { model.activeWorkspace?.automaticallyRefreshes ?? false },
                                 set: { value in Task { await model.setAutomaticRefresh(value) } }
                             ))
@@ -489,7 +483,7 @@ struct WorkspaceManagerView: View {
                         HStack {
                             Button("Open") {
                                 Task { await model.switchWorkspace(workspace.id); dismiss() }
-                            }.buttonStyle(.glassProminent)
+                            }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
                                 .disabled(workspace.id == model.activeWorkspaceID)
                             Button("Remove…", role: .destructive) { confirmsRemoval = true }
                         }

@@ -1,16 +1,16 @@
 # Collection Tools
 
-Open **Library → Collection Tools & Guided Workflow** (⇧⌘K), or the toolbar's More menu. Scripts, filename parsing, profiles and the guided workflow share this window. Closing the main MacPicard window still quits the app.
+Open **Library → Collection Tools…** (⇧⌘K), or the toolbar's More menu. Scripts, filename parsing, profiles and the workflow share this window. Closing the main MacPicard window still quits the app.
 
 ## Scope and safety
 
 Choose Selection, Album or Entire collection. Entire collection includes all indexed files in the active library/session, regardless of search, filter or selection. Unavailable files appear as blocked review rows. A review freezes file/workspace baselines; changing the underlying files invalidates application. Reviews show changes, unchanged files and failures. Exclusion and explicit confirmation precede staging. Staged edits support the existing global undo/discard flow; **Save Tags is a separate disk write**.
 
-## Script Studio
+## Scripts
 
-Create named tagging or naming scripts, rename/duplicate/delete them, order execution and enable individual scripts. Save Script Library persists the draft; Revert restores its saved version. Tagging previews run enabled tagging scripts in order against each file's own metadata. Metadata/variables pass between scripts for that file, never between files. Syntax/evaluation failures include source locations. Disabled/naming scripts do not change tags in a tagging preview.
+Create named tagging or naming scripts, rename/duplicate/delete them, order execution and enable individual scripts. Save Scripts persists the draft; Revert Draft restores its saved version. Tagging previews run enabled tagging scripts in order against each file's own metadata. Metadata/variables pass between scripts for that file, never between files. Syntax/evaluation failures include source locations. Disabled/naming scripts do not change tags in a tagging preview.
 
-Naming scripts preview output paths through the existing organization engine; Use as Naming Default updates the shared naming preference, not files. Organize still requires a destination, conflict review and explicit move confirmation. Search and lazy rows keep reviews bounded visually. Stop cancels preview work; cancellation cannot apply a partial tag batch.
+Naming scripts preview output paths through the existing organization engine; Use for Organize updates the shared naming preference, not files. Organize still requires a destination, conflict review and explicit move confirmation. Search and lazy rows keep reviews bounded visually. Stop cancels preview work; cancellation cannot apply a partial tag batch.
 
 JSON import merges scripts/profiles with fresh IDs; it does not replace existing items. Export contains the current draft. Imports are bounded to 2 MiB, validated for schema, IDs, source size and syntax. Scripts are bounded to 64 KiB and 64 nesting levels. Persistence uses validated atomic writes. A damaged saved workflow document is not overwritten: Reveal Data and Retry Load support restoring a valid backup externally. Workflow data lives at the app's application-support `Workflows/library.json`.
 
@@ -39,6 +39,6 @@ Unrelated appearance, monitoring, autosave, paths, bookmarks, workspace identiti
 1. Identify and review: use album/selected matching or library-wide matching; audio scanning remains explicit.
 2. Stage and inspect: metadata, artwork, tagging scripts or filename parsing. No automatic save or move follows.
 3. Review changed files, then explicitly Write Tags. Outcomes report actual success/failure per file; Stop takes effect after the current safe file transaction. Unprocessed and failed files remain pending.
-4. Review Saved/Clean Files, then confirm organization in the existing move review. Failed, cancelled, unavailable, still-pending or changed-since-save files are ineligible. Already-clean scope can be explicitly admitted. Organize Scope Independently is available for a deliberate naming-only workflow.
+4. Organize Saved Files, then confirm organization in the existing move review. Failed, cancelled, unavailable, still-pending or changed-since-save files are ineligible. Already-clean scope can be explicitly admitted. Organize All in Scope is available for a deliberate naming-only workflow.
 
 There is no automatic chaining into filesystem moves. Imports, tag writes and organization retain their existing identity checks, collision policies and recovery behavior.

@@ -298,7 +298,7 @@ struct ArtworkManagerView: View {
                     Button("Convert Selected") { convert(all: false) }.disabled(selectedImage == nil)
                     Button("Convert All Preview Images") { convert(all: true) }.disabled(images.isEmpty)
                 }
-                Text("Orientation is normalized; transparent JPEG backgrounds become white. Conversion changes the staged bytes only.").font(.caption).foregroundStyle(.secondary)
+                Text("Conversion fixes image orientation. JPEG makes transparent areas white. Save writes changes to audio.").font(.caption).foregroundStyle(.secondary)
             }.padding(8)
         }.disabled(busy)
     }
@@ -326,7 +326,7 @@ struct ArtworkManagerView: View {
                 Spacer()
                 Button(embed ? "Cancel" : "Done") { task?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Review & Apply…") { isReviewingApply = true }
-                    .buttonStyle(.glassProminent).disabled(!embed || busy || model.isBusy || validationError != nil || (!changed && !replaceScope))
+                    .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).disabled(!embed || busy || model.isBusy || validationError != nil || (!changed && !replaceScope))
             }
         }.padding(16)
     }
@@ -355,7 +355,7 @@ struct ArtworkManagerView: View {
                         catch { if !Task.isCancelled { self.error = error.localizedDescription; isReviewingApply = false } }
                         activity = nil
                     }
-                }.buttonStyle(.glassProminent).disabled(validationError != nil || model.isBusy || busy)
+                }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple).disabled(validationError != nil || model.isBusy || busy)
             }
         }.padding(24).frame(width: 640, height: 470)
     }
@@ -365,7 +365,7 @@ struct ArtworkManagerView: View {
             Text("Review image export").font(.title2.weight(.semibold))
             if let plan = exportPlan {
                 Text(plan.directory.path).font(.caption).textSelection(.enabled)
-                Text("These files will be created exclusively. Existing files are never overwritten. Export does not apply artwork to audio files.").font(.caption)
+                Text("Export creates image files without overwriting existing files or changing audio.").font(.caption)
                 List(plan.items) { item in HStack { Text(item.filename); Spacer(); Text(ByteCountFormatter.string(fromByteCount: Int64(item.data.count), countStyle: .file)).foregroundStyle(.secondary) } }
                 HStack {
                     Spacer(); Button("Cancel") { exportPlan = nil; exportAccess = nil }.keyboardShortcut(.cancelAction)
@@ -384,7 +384,7 @@ struct ArtworkManagerView: View {
                             } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
                             activity = nil
                         }
-                    }.buttonStyle(.glassProminent)
+                    }.buttonStyle(.borderedProminent).tint(MusicBrainzTheme.purple)
                 }
             }
         }.padding(24).frame(width: 580, height: 400)
