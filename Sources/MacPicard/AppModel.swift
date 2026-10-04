@@ -141,6 +141,10 @@ final class AppModel: ObservableObject {
     var submissionTokenOverride: String?
     @Published private(set) var scriptOutput = ""
     @Published var scriptSource = ""
+    @Published var workflowDocument = WorkflowDocument()
+    @Published var workflowError: String?
+    @Published var lastSaveOutcomes: [FileSaveOutcome] = []
+    var workflowStore: WorkflowStore?
     @Published var destinationDirectory: URL?
     @Published var organizationReview: OrganizationReview?
     @Published var organizationDirectory: URL?
@@ -153,6 +157,8 @@ final class AppModel: ObservableObject {
     var organizationFiles: [AudioFile] = []
     var organizationTargetsEntireLibrary = false
     var organizationEntireLibraryRequested = false
+    var organizationRequestedIDs: Set<UUID>?
+    var organizationScopeLabel = "Selection"
     var organizationWorkspaceID: UUID?
     var organizationLibraryRoot: URL?
     var organizationGeneration = UUID()
@@ -161,7 +167,7 @@ final class AppModel: ObservableObject {
     private var audioCoordinator: AudioFileCoordinator?
     var musicBrainzClient: MusicBrainzClient?
     var coverArtClient: CoverArtClient?
-    private var saveCoordinator: AudioSaveCoordinator?
+    var saveCoordinator: AudioSaveCoordinator?
     let organizationCoordinator = FileOrganizationCoordinator()
     var sessionManager: SessionManager?
     var sessionCreatedAt = Date()
@@ -353,6 +359,9 @@ final class AppModel: ObservableObject {
             browserPreferencesURL = snapshot.paths.applicationSupportDirectory.appendingPathComponent("browser.json")
             loadBrowserPreferences()
             installConfiguration(snapshot.configuration)
+            workflowStore = WorkflowStore(url: snapshot.paths.applicationSupportDirectory.appendingPathComponent("Workflows/library.json"))
+            do { workflowDocument = try await workflowStore!.load() }
+            catch { workflowError = "Workflow library could not be loaded: \(error.localizedDescription). Existing data was not replaced." }
             self.audioCoordinator = audio
             self.musicBrainzClient = musicBrainz
             self.coverArtClient = coverArt
@@ -872,7 +881,9 @@ final class AppModel: ObservableObject {
         await saveFiles(files.filter(\.isModified))
     }
 
-    private func saveFiles(_ targets: [AudioFile]) async {
+    func saveFiles(_ targets: [AudioFile]) async {
+        guard !isWorking else { return }
+        lastSaveOutcomes = []
         guard let saveCoordinator, !targets.isEmpty, !isWorking else {
             statusMessage = "Select at least one changed file to save."
             return
@@ -890,17 +901,23 @@ final class AppModel: ObservableObject {
         var saved: [AudioFile] = []
         var failures: [String] = []
         for (index, file) in targets.enumerated() {
+            if Task.isCancelled { break }
             do {
                 let result = try await saveCoordinator.save(file, options: AudioSaveOptions(
                     preserveModificationDate: configuration.preserveFileTimestamps
                 ))
                 saved.append(result)
-            } catch { failures.append("\(file.url.lastPathComponent): \(error.localizedDescription)") }
+                lastSaveOutcomes.append(FileSaveOutcome(fileID: file.id, filename: file.url.lastPathComponent, saved: true, message: "Saved"))
+            } catch {
+                failures.append("\(file.url.lastPathComponent): \(error.localizedDescription)")
+                lastSaveOutcomes.append(FileSaveOutcome(fileID: file.id, filename: file.url.lastPathComponent, saved: false, message: error.localizedDescription))
+            }
             progress = Double(index + 1) / Double(targets.count)
         }
         if !saved.isEmpty { clearEditHistory() }
         replaceFiles(saved)
-        statusMessage = "Saved \(saved.count) \(saved.count == 1 ? "file" : "files")."
+        let remaining = targets.count - lastSaveOutcomes.count
+        statusMessage = "Saved \(saved.count) \(saved.count == 1 ? "file" : "files")." + (remaining > 0 ? " Stopped; \(remaining) files were not written." : "")
         errorMessage = failures.isEmpty ? nil : failures.prefix(3).joined(separator: "\n")
         await saveSession()
     }

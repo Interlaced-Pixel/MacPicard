@@ -1,5 +1,17 @@
 # MacPicard release checklist
 
+## Improvement phase 8: Collection Tools and identity
+
+- Inspect the new icon at 16/32/128/1024 pixels, Dock/Finder and light/dark surfaces. Verify MusicBrainz-inspired colors without suggesting affiliation. Verify visible labels, focus, keyboard navigation, VoiceOver and accessibility display preferences.
+- From menus/toolbar, open Collection Tools, switch all four tabs and scopes, then close/reopen. Create/rename/duplicate/reorder/disable/delete scripts, save/reload and import/export. Unsaved drafts must be visibly identified; invalid documents must not replace saved data.
+- Preview ordered scripts on distinct per-file titles, disabled/naming scripts and unavailable files. Inspect original/new differences, skip blocked/excluded rows, apply, undo, discard and relaunch. Stop must not stage a partial batch; changed baselines invalidate application.
+- Parse Unicode filenames, multiple path components, leading-zero numbers, unmatched and ambiguous filenames. Verify explicit mappings, preserved unmapped fields and unchanged audio bytes until Save Tags.
+- Capture and activate a profile with only Matching checked; unrelated appearance, autosave, paths, workspaces and pending edits must survive. Verify exported JSON excludes credentials/bookmarks and unknown schema/corruption is rejected without replacement.
+- Test Entire collection with a restrictive search/selection: matching/scripts/save/organization must use the chosen scope, not hidden selection. Review includes unavailable items as blocked, with lazy/searchable paths and explicit move confirmation.
+- Exercise a real successful/failed/cancelled save batch. Failed and unprocessed edits stay pending; only unchanged saved/clean baselines are admitted to guided organization, and no move starts automatically. Independently organizing scope still requires its own review.
+- Close the main window with Collection Tools open and confirm exit/persistence; closing tools alone must retain the main app. Run isolated fixture checks only, never a real catalog.
+- Interactive phase-7/8 acceptance remains pending where SkyComputerUseService crashes during UI observation. Offscreen rendering and model tests do not replace these desktop checks. Signing/notarization and phase-10 distribution QA remain separate gates.
+
 ## Zero-setup fingerprint delivery
 
 - Build/Archive with the publisher's registered AcoustID application key supplied in ignored `Config/AcoustID.plist` or the release environment. Never ask users to supply an application key or install a calculator.

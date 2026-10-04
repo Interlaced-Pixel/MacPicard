@@ -179,6 +179,11 @@ private struct ActionBar: View {
                 .buttonStyle(.glass)
                 .help("Choose selected files or the entire library, then review paths before moving.")
                 Menu {
+                    Button("Collection Tools & Guided Workflow…") { presentation.collectionToolsPage = "operations"; presentation.isShowingCollectionTools = true }
+                    Button("Script Studio…") { presentation.collectionToolsPage = "scripts"; presentation.isShowingCollectionTools = true }
+                    Button("Filename → Tags…") { presentation.collectionToolsPage = "filenames"; presentation.isShowingCollectionTools = true }
+                    Button("Configuration Profiles…") { presentation.collectionToolsPage = "profiles"; presentation.isShowingCollectionTools = true }
+                    Divider()
                     Button("Look Up…") { presentation.showsMatchComparison = true; Task { await model.lookup() } }.disabled(!model.canLookupSelection)
                     Button("Scan Selected Audio…") { model.startFingerprintScan(); presentation.isShowingFingerprints = true }.disabled(model.isBusy || model.selectedFiles.isEmpty)
                     Button("Fingerprint Results…") { presentation.isShowingFingerprints = true }

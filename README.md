@@ -4,6 +4,8 @@ Native macOS Swift 6 recreation of the core MusicBrainz Picard workflow.
 
 The first release targets MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV. The active end-to-end roadmap is documented in [docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md). The phase sections below record the original implementation history; they are separate from the new improvement phases.
 
+The current identity uses MusicBrainz-inspired purple/orange accents and an original geometric music-tag icon; MacPicard remains independent. See [Design](docs/DESIGN.md). **Library → Collection Tools & Guided Workflow** (⇧⌘K) unifies Selection/Album/Entire collection scope with named ordered scripts, reviewed filename-to-tag parsing, scoped configuration profiles and separate identify/stage/save/organize steps. Failed or still-pending saves never enter guided organization. [Collection Tools guide](docs/WORKFLOWS.md) covers persistence, imports, profile scope and safety.
+
 ## Libraries and sessions
 
 Choose **File → Add Music Library…** (⌘O) to link a music directory. Supported audio files in its subfolders are indexed. Automatic monitoring runs quietly every five minutes, defers during playback or foreground work, and leaves unchanged libraries untouched. **Library → Refresh Library** (⌘R) scans immediately with progress and cancellation. Refreshes preserve pending edits, detect external changes, and retain unavailable files until their drive reconnects. Use **Reconnect Library Folder…** after moving a collection.

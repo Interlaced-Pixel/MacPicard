@@ -24,6 +24,7 @@ public enum ScriptError: Error, LocalizedError, Sendable, Equatable {
     case invalidArgument(function: String, message: String, location: ScriptSourceLocation)
     case invalidRegularExpression(String, ScriptSourceLocation)
     case invalidNumber(String, ScriptSourceLocation)
+    case resourceLimit(String, ScriptSourceLocation)
 
     public var errorDescription: String? {
         switch self {
@@ -47,6 +48,8 @@ public enum ScriptError: Error, LocalizedError, Sendable, Equatable {
             return "Invalid regular expression '\(pattern)' at \(location.line):\(location.column)."
         case let .invalidNumber(value, location):
             return "Invalid number '\(value)' at \(location.line):\(location.column)."
+        case let .resourceLimit(message, location):
+            return "Script limit at \(location.line):\(location.column): \(message)"
         }
     }
 }
@@ -72,6 +75,7 @@ public struct ScriptParser: Sendable {
     public init() {}
 
     public func parse(_ source: String) throws -> ScriptProgram {
+        guard source.utf8.count <= 64 * 1024 else { throw ScriptError.resourceLimit("Maximum source size is 64 KiB.", .init(offset: 0, line: 1, column: 1)) }
         var parser = Parser(source: source)
         let nodes = try parser.parseDocument()
         return ScriptProgram(source: source, nodes: nodes)
@@ -81,6 +85,7 @@ public struct ScriptParser: Sendable {
         let source: String
         let characters: [Character]
         var index: Int = 0
+        var depth = 0
 
         init(source: String) {
             self.source = source
@@ -96,6 +101,9 @@ public struct ScriptParser: Sendable {
         }
 
         mutating func parseSequence(stoppingAt terminators: Set<Character>) throws -> [ScriptNode] {
+            try Task.checkCancellation()
+            guard depth < 64 else { throw ScriptError.resourceLimit("Maximum nesting is 64 levels.", location()) }
+            depth += 1; defer { depth -= 1 }
             var nodes: [ScriptNode] = []
             var literal = String()
             var literalLocation: ScriptSourceLocation?
@@ -369,6 +377,7 @@ public struct ScriptEvaluator: Sendable {
     }
 
     private func evaluate(_ node: ScriptNode, context: inout ScriptContext) throws -> Value {
+        try Task.checkCancellation()
         switch node {
         case let .sequence(nodes):
             return try evaluateSequence(nodes, context: &context)

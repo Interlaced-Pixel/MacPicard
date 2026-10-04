@@ -113,6 +113,10 @@ struct MacPicardCommands: Commands {
         }
 
         CommandMenu("Library") {
+            Button("Collection Tools & Guided Workflow…") {
+                presentation.collectionToolsPage = "operations"; presentation.isShowingCollectionTools = true
+            }.keyboardShortcut("k", modifiers: [.command, .shift])
+            Divider()
             Button("Manage Libraries & Sessions…") { presentation.isManagingWorkspaces = true }
                 .keyboardShortcut("l", modifiers: [.command, .option])
             Button("Refresh Library") { Task { await model.refreshLibrary() } }
@@ -206,9 +210,11 @@ struct MacPicardCommands: Commands {
                 .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(!model.canEditSelection)
             Divider()
-            Button("Script Editor…") { presentation.isShowingScript = true }
+            Button("Script Studio…") { presentation.collectionToolsPage = "scripts"; presentation.isShowingCollectionTools = true }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(!model.canEditSelection)
+                .disabled(model.isBusy)
+            Button("Filename → Tags…") { presentation.collectionToolsPage = "filenames"; presentation.isShowingCollectionTools = true }.disabled(model.isBusy)
+            Button("Configuration Profiles…") { presentation.collectionToolsPage = "profiles"; presentation.isShowingCollectionTools = true }.disabled(model.isBusy)
             Button("Organize Selected Files…") {
                 model.requestOrganizationReview()
                 presentation.isShowingOrganization = true

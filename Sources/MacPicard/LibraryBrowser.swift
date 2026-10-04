@@ -9,6 +9,9 @@ final class AppPresentation: ObservableObject {
     @Published var isShowingLibraryMatch = false
     @Published var isShowingLookup = false
     @Published var isShowingScript = false
+    @Published var isShowingCollectionTools = false
+    @Published var collectionToolsPage = "operations"
+    @Published var collectionToolsScope = CollectionScope.workspace
     @Published var isShowingSettings = false
     @Published var isShowingMetadataEditor = false
     @Published var isShowingArtwork = false
@@ -72,6 +75,7 @@ struct LibrarySidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            MusicBrainzBrandHeader()
             workspaceChooser
                 .padding(14)
             Divider()

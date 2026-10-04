@@ -95,7 +95,7 @@ struct OrganizationView: View {
                     .font(.title2.weight(.semibold))
                 Text(model.organizationTargetsEntireLibrary
                      ? "\(model.activeWorkspace?.name ?? "Library") · \(model.organizationFiles.count) files · all indexed items"
-                     : "\(model.organizationFiles.count) selected files · review folders and filenames")
+                     : "\(model.organizationScopeLabel) · \(model.organizationFiles.count) files · review folders and filenames")
                     .font(.callout).foregroundStyle(.secondary)
             }
             Spacer()
@@ -120,6 +120,12 @@ struct OrganizationView: View {
                 Button("Choose Folder…", systemImage: "folder") { choosingDirectory = true }
             }
             HStack(spacing: 20) {
+                Menu("Saved Naming Scripts") {
+                    ForEach(model.workflowDocument.scripts.filter { $0.kind == .naming && $0.enabled }) { script in
+                        Button(script.name) { model.organizationNamingScript = script.source }
+                    }
+                    Button("Shared Naming Default") { model.organizationNamingScript = model.configuration.editing.namingPattern }
+                }
                 Picker("Naming", selection: Binding<NamingPreset>(
                     get: { NamingPreset.allCases.first { $0.script == model.organizationNamingScript } ?? .custom },
                     set: { if let script = $0.script { model.organizationNamingScript = script } else { showsNamingPattern = true } }

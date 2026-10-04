@@ -1,7 +1,7 @@
 # MacPicard end-to-end improvement plan
 
 Date: 2026-10-03  
-Status: Phases 1–7 implemented; phase 7 interactive acceptance pending. Phases 8–10 remain planned. See IMPROVEMENT_PROGRESS.md for evidence and outstanding gates.
+Status: Phases 1–8 implemented; phases 7–8 interactive acceptance pending. Phases 9–10 remain planned. See IMPROVEMENT_PROGRESS.md for evidence and outstanding gates.
 Baseline: Current native Swift 6 app, including library-wide matching and organization
 
 ## 1. Outcome and scope
@@ -10,7 +10,7 @@ Deliver a polished, production-ready macOS music metadata application with Picar
 
 Every delivered feature must have its complete model, persistence, UI, error handling, cancellation where applicable, and verification. No stubs, inert buttons, simulated results, or backend-only features presented as completed UI capabilities. Compiling is necessary but does not establish usability or release readiness.
 
-Retain Swift 6 strict concurrency, macOS 26 minimum deployment, native SwiftUI/AppKit controls, and Liquid Glass in navigation and controls. Preserve existing libraries, sessions, bookmarks, pending edits, recovery documents, and audio metadata through upgrades.
+Retain Swift 6 strict concurrency, macOS 26 minimum deployment and native SwiftUI/AppKit controls. The requested phase-8 MusicBrainz-inspired purple/orange identity supersedes the previous blue ambient styling; native materials remain on controls. Preserve existing libraries, sessions, bookmarks, pending edits, recovery documents, and audio metadata through upgrades.
 
 Supported formats remain MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV. There is no format expansion in this roadmap. Metadata capabilities vary by container; the UI must report unsupported tag or artwork operations accurately.
 

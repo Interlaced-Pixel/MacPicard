@@ -4,13 +4,22 @@ import PicardSessions
 
 extension AppModel {
     func requestOrganizationReview(entireLibrary: Bool = false) {
+        organizationRequestedIDs = nil
+        organizationScopeLabel = entireLibrary ? "Entire library" : "Selection"
         organizationEntireLibraryRequested = entireLibrary
     }
 
+    func requestOrganizationReview(ids: Set<UUID>, label: String) {
+        organizationRequestedIDs = ids; organizationScopeLabel = label
+        organizationEntireLibraryRequested = false
+    }
+
     func beginOrganizationReview(entireLibrary: Bool = false) {
-        let targets = entireLibrary && activeWorkspace?.kind == .library ? files : selectedFiles
-        guard canPerform(.organize, scope: entireLibrary ? .library : .selection), !targets.isEmpty else { return }
+        let explicit = organizationRequestedIDs
+        let targets = explicit.map { ids in files.filter { ids.contains($0.id) } } ?? (entireLibrary && activeWorkspace?.kind == .library ? files : selectedFiles)
+        guard !isBusy, !targets.isEmpty else { return }
         cancelOrganizationReview()
+        organizationRequestedIDs = explicit
         organizationTargetsEntireLibrary = entireLibrary && activeWorkspace?.kind == .library
         organizationFiles = targets
         organizationWorkspaceID = activeWorkspaceID
@@ -66,9 +75,9 @@ extension AppModel {
         guard let review = organizationReview,
               organizationWorkspaceID == activeWorkspaceID,
               organizationLibraryRoot == libraryDirectory,
-              (organizationTargetsEntireLibrary
+              (organizationRequestedIDs.map { Set(organizationFiles.map(\.id)) == $0 } ?? (organizationTargetsEntireLibrary
                 ? Set(organizationFiles.map(\.id)) == Set(files.map(\.id))
-                : Set(organizationFiles.map(\.id)) == selectedFileIDs),
+                : Set(organizationFiles.map(\.id)) == selectedFileIDs)),
               organizationFiles.allSatisfy({ file(id: $0.id) == $0 }),
               organizationDirectory == review.directory,
               organizationNamingScript == review.namingScript,
@@ -92,6 +101,7 @@ extension AppModel {
         organizationGeneration = UUID()
         organizationReview = nil
         organizationFiles.removeAll()
+        organizationRequestedIDs = nil
         organizationTargetsEntireLibrary = false
         organizationError = nil
         isPreparingOrganization = false

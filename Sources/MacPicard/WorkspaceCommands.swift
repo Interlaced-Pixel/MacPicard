@@ -23,7 +23,8 @@ extension AppModel {
     func canPerform(_ action: WorkspaceAction, scope: WorkspaceScope = .selection) -> Bool {
         let ids = commandFileIDs(scope)
         switch action {
-        case .edit, .script, .organize: return canEdit(ids)
+        case .edit, .script: return canEdit(ids)
+        case .organize: return !isBusy && !contextFiles(ids).isEmpty
         case .lookup: return canLookUp(ids)
         case .save: return canEdit(ids) && contextFiles(ids).contains(where: \.isModified)
         case .discard: return canDiscardChanges(ids)

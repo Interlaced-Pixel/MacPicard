@@ -6,11 +6,18 @@ import UniformTypeIdentifiers
 @MainActor
 final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
+    private var terminationInProgress = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(self, selector: #selector(mainWindowWillClose(_:)), name: NSWindow.willCloseNotification, object: nil)
         DispatchQueue.main.async { [weak self] in
             self?.fitWindowsToVisibleScreen()
         }
+    }
+
+    @objc private func mainWindowWillClose(_ notification: Notification) {
+        guard !terminationInProgress, (notification.object as? NSWindow)?.title == "MacPicard" else { return }
+        NSApp.terminate(nil)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -30,6 +37,7 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
         model.playback.stop(clearQueue: true)
         model.cancelFingerprintOperation()
         model.cancelLibraryMatch()
+        terminationInProgress = true
         Task { @MainActor in
             do {
                 try await model.flushSession()
@@ -40,7 +48,9 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
                 alert.informativeText = error.localizedDescription
                 alert.addButton(withTitle: "Keep Open")
                 alert.addButton(withTitle: "Quit Without Saving")
-                sender.reply(toApplicationShouldTerminate: alert.runModal() == .alertSecondButtonReturn)
+                let shouldQuit = alert.runModal() == .alertSecondButtonReturn
+                terminationInProgress = shouldQuit
+                sender.reply(toApplicationShouldTerminate: shouldQuit)
             }
         }
         return .terminateLater
@@ -95,6 +105,11 @@ struct MacPicardApp: App {
         }
         .defaultSize(width: 1_360, height: 860)
         .commands { MacPicardCommands(model: model, presentation: presentation) }
+        Window("Collection Tools", id: "collection-tools") {
+            CollectionToolsView(model: model, presentation: presentation)
+                .tint(MusicBrainzTheme.purple).accentColor(MusicBrainzTheme.purple)
+                .preferredColorScheme(model.configuration.editing.appearance == "dark" ? .dark : model.configuration.editing.appearance == "light" ? .light : nil)
+        }.defaultSize(width: 1100, height: 780)
     }
 }
 
@@ -102,6 +117,7 @@ struct ContentView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var presentation: AppPresentation
     @State private var isDropTargeted = false
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Group {
@@ -116,6 +132,8 @@ struct ContentView: View {
         }
         .frame(minWidth: 1_180, minHeight: 760)
         .background(GlassBackdrop())
+        .tint(MusicBrainzTheme.purple)
+        .accentColor(MusicBrainzTheme.purple)
         .preferredColorScheme(model.configuration.editing.appearance == "dark" ? .dark : model.configuration.editing.appearance == "light" ? .light : nil)
         .onReceive(NotificationCenter.default.publisher(for: NSText.didChangeNotification)) { _ in model.editHistoryRevision += 1 }
         .onChange(of: presentation.isImporting) { _, importing in
@@ -148,9 +166,11 @@ struct ContentView: View {
             LookupView(model: model)
                 .frame(minWidth: 1_120, minHeight: 680)
         }
-        .sheet(isPresented: $presentation.isShowingScript) {
-            ScriptView(model: model)
-                .frame(minWidth: 760, minHeight: 500)
+        .onChange(of: presentation.isShowingScript) { _, showing in
+            if showing { presentation.isShowingScript = false; presentation.collectionToolsScope = .selection; presentation.collectionToolsPage = "scripts"; openWindow(id: "collection-tools") }
+        }
+        .onChange(of: presentation.isShowingCollectionTools) { _, showing in
+            if showing { presentation.isShowingCollectionTools = false; openWindow(id: "collection-tools") }
         }
         .sheet(isPresented: $presentation.isShowingOrganization) {
             OrganizationView(model: model)
@@ -268,25 +288,6 @@ private struct StartupErrorView: View {
 
 private struct GlassBackdrop: View {
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color.accentColor.opacity(0.13),
-                    Color(nsColor: .windowBackgroundColor),
-                    Color(nsColor: .underPageBackgroundColor)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-            .backgroundExtensionEffect()
-
-            Circle()
-                .fill(Color.accentColor.opacity(0.06))
-                .frame(width: 500, height: 500)
-                .blur(radius: 70)
-                .offset(x: 340, y: -250)
-                .accessibilityHidden(true)
-        }
+        MusicBrainzTheme.surface.ignoresSafeArea()
     }
 }
