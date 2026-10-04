@@ -2,7 +2,7 @@
 
 Native macOS Swift 6 recreation of the core MusicBrainz Picard workflow.
 
-The first release targets MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV. The project plan is documented in [picard-swift6-plan.md](picard-swift6-plan.md).
+The first release targets MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV. The active end-to-end roadmap is documented in [docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md). The phase sections below record the original implementation history; they are separate from the new improvement phases.
 
 ## Libraries and sessions
 
