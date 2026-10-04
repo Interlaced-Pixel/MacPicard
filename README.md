@@ -6,7 +6,7 @@ The first release targets MP3, FLAC, M4A/MP4, Ogg Vorbis, Ogg Opus, and WAV. The
 
 ## Libraries and sessions
 
-Choose **File → Add Music Library…** (⌘O) to link a music directory. Supported audio files in its subfolders are indexed, and the active library refreshes every minute. **Library → Refresh Library** (⌘R) scans immediately. Refreshes preserve pending edits, detect external changes, and retain unavailable files until their drive reconnects. Use **Reconnect Library Folder…** after moving a collection.
+Choose **File → Add Music Library…** (⌘O) to link a music directory. Supported audio files in its subfolders are indexed. Automatic monitoring runs quietly every five minutes, defers during playback or foreground work, and leaves unchanged libraries untouched. **Library → Refresh Library** (⌘R) scans immediately with progress and cancellation. Refreshes preserve pending edits, detect external changes, and retain unavailable files until their drive reconnects. Use **Reconnect Library Folder…** after moving a collection.
 
 Importing or dropping external music into a **Music Library** copies it into that library folder, organized as `Album Artist/Album/01 - Title.ext` (with a disc prefix for multi-disc albums). Original files and embedded metadata stay untouched. Missing tags fall back to artist/album placeholders and the source filename. Identical files at the organized destination are reused; different files with the same name receive a numbered suffix, never an overwrite. Files already inside the library are indexed in place. A **Session** continues to reference originals without copying them.
 
@@ -96,6 +96,8 @@ Phase 5 adds the MusicBrainz integration and matching engine:
 ## Phase 6
 
 Phase 6 adds scripts and automatic identification:
+
+Fingerprint generation and AcoustID clients in this historical phase are backend capabilities. The user-facing Scan and submission workflows are scheduled in the active improvement roadmap; they are not currently available as application actions.
 
 - `PicardScripts` parses and evaluates nested Picard-style expressions without stringly-typed shortcuts.
 - Script execution reads and mutates the existing multi-value `Metadata` model, including unset/delete semantics.

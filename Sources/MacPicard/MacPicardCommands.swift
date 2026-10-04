@@ -38,7 +38,7 @@ struct MacPicardCommands: Commands {
         CommandGroup(replacing: .saveItem) {
             Button("Save Selected Tags") { Task { await model.saveSelected() } }
                 .keyboardShortcut("s", modifiers: .command)
-                .disabled(!model.canEditSelection || model.selectedModifiedCount == 0)
+                .disabled(!model.canPerform(.save))
             Button("Save All Changed Tags") { Task { await model.saveAllChanges() } }
                 .keyboardShortcut("s", modifiers: [.command, .option])
                 .disabled(model.isBusy || !model.hasUnsavedChanges)
@@ -188,7 +188,7 @@ struct MacPicardCommands: Commands {
                 model.requestOrganizationReview()
                 presentation.isShowingOrganization = true
             }.keyboardShortcut("o", modifiers: [.command, .shift])
-                .disabled(!model.canEditSelection)
+                .disabled(!model.canPerform(.organize))
             if model.activeWorkspace?.kind == .library {
                 Button("Organize Entire Library…") {
                     model.requestOrganizationReview(entireLibrary: true)

@@ -83,8 +83,8 @@ struct OrganizationView: View {
                 Text(model.organizationTargetsEntireLibrary ? "Organize Entire Library" : "Organize Files")
                     .font(.title2.weight(.semibold))
                 Text(model.organizationTargetsEntireLibrary
-                     ? "Review every library file before anything moves."
-                     : "Review filenames and folders before anything moves.")
+                     ? "\(model.activeWorkspace?.name ?? "Library") · \(model.organizationFiles.count) files · all indexed items"
+                     : "\(model.organizationFiles.count) selected files · review folders and filenames")
                     .font(.callout).foregroundStyle(.secondary)
             }
             Spacer()

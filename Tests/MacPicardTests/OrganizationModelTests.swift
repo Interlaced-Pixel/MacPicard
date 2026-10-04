@@ -34,14 +34,32 @@ final class OrganizationModelTests: XCTestCase {
         let first = try audio("first.mp3", in: library), second = try audio("second.mp3", in: library)
         let model = libraryModel(library, files: [first, second])
         model.selectedFileIDs = [first.id]
+        model.searchQuery = "first"
 
         XCTAssertTrue(model.canOrganizeEntireLibrary)
+        XCTAssertEqual(model.commandFileIDs(.library), [first.id, second.id])
         model.beginOrganizationReview(entireLibrary: true)
         await model.refreshOrganizationPreview()
 
         XCTAssertTrue(model.organizationTargetsEntireLibrary)
         XCTAssertEqual(model.organizationFiles.map(\.id), [first.id, second.id])
         XCTAssertEqual(model.organizationReview?.rows.map(\.id), [first.id, second.id])
+    }
+
+    @MainActor
+    func testNoOpMonitoringDoesNotChangeForegroundStatusOrSelection() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let file = try audio("source.mp3", in: root)
+        let model = libraryModel(root, files: [file])
+        model.statusMessage = "Editing title"
+        model.errorMessage = "An earlier foreground warning"
+        await model.refreshLibrary(automatic: true)
+        XCTAssertEqual(model.files, [file])
+        XCTAssertEqual(model.selectedFileIDs, [file.id])
+        XCTAssertEqual(model.statusMessage, "Editing title")
+        XCTAssertEqual(model.errorMessage, "An earlier foreground warning")
+        XCTAssertNil(model.progress)
+        XCTAssertFalse(model.isWorking)
     }
 
     @MainActor

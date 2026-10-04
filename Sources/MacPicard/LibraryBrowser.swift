@@ -448,7 +448,7 @@ struct WorkspaceManagerView: View {
                             }
                         }
                         if workspace.id == model.activeWorkspaceID && workspace.kind == .library {
-                            Toggle("Refresh automatically every minute", isOn: Binding(
+                            Toggle("Monitor quietly in the background (every 5 minutes)", isOn: Binding(
                                 get: { model.activeWorkspace?.automaticallyRefreshes ?? false },
                                 set: { value in Task { await model.setAutomaticRefresh(value) } }
                             ))

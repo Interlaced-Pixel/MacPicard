@@ -9,7 +9,7 @@ extension AppModel {
 
     func beginOrganizationReview(entireLibrary: Bool = false) {
         let targets = entireLibrary && activeWorkspace?.kind == .library ? files : selectedFiles
-        guard !targets.isEmpty, targets.allSatisfy({ [.ready, .changed, .saved].contains($0.state) }) else { return }
+        guard canPerform(.organize, scope: entireLibrary ? .library : .selection), !targets.isEmpty else { return }
         cancelOrganizationReview()
         organizationTargetsEntireLibrary = entireLibrary && activeWorkspace?.kind == .library
         organizationFiles = targets

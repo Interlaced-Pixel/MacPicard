@@ -67,6 +67,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var snapshot: RuntimeSnapshot?
     @Published var errorMessage: String?
     @Published var statusMessage = "Ready"
+    @Published var monitoringMessage: String?
     @Published private(set) var isLoading = false
     @Published var isWorking = false
     @Published var progress: Double?

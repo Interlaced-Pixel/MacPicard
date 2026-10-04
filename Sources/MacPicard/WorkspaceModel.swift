@@ -66,9 +66,7 @@ extension AppModel {
     }
 
     var canOrganizeEntireLibrary: Bool {
-        activeWorkspace?.kind == .library && !isBusy && !files.isEmpty && files.allSatisfy {
-            [.ready, .changed, .saved].contains($0.state)
-        }
+        canPerform(.organize, scope: .library)
     }
 
     var canLookupSelection: Bool {
@@ -187,6 +185,7 @@ extension AppModel {
         accessBookmarkKeys.removeAll()
         workspaces = catalog.workspaces
         activeWorkspaceID = id
+        monitoringMessage = nil
         sessionManager = manager
         sessionCreatedAt = Date()
         resetWorkspaceSelection()
@@ -368,20 +367,24 @@ extension AppModel {
             updated.directory = directory
             updated.lastScannedAt = Date()
             if let workspaceStore { workspaces = try await workspaceStore.update(updated).workspaces }
-            statusMessage = automatic
-                ? "Library updated · \(report.addedCount) added · \(report.updatedCount) refreshed"
-                : "\(files.count) files · \(report.addedCount) added · \(report.updatedCount) refreshed"
-            if report.missingCount > 0 { statusMessage += " · \(report.missingCount) unavailable" }
+            if !automatic {
+                statusMessage = "\(files.count) files · \(report.addedCount) added · \(report.updatedCount) refreshed"
+                if report.missingCount > 0 { statusMessage += " · \(report.missingCount) unavailable" }
+            }
             let warnings = report.failures + report.conflicts.map {
                 "\($0) changed on disk; your pending edits were preserved."
             }
-            errorMessage = warnings.isEmpty ? nil : warnings.prefix(3).joined(separator: "\n")
+            if automatic {
+                monitoringMessage = warnings.isEmpty ? nil : warnings.prefix(3).joined(separator: "\n")
+            } else {
+                errorMessage = warnings.isEmpty ? nil : warnings.prefix(3).joined(separator: "\n")
+            }
             await saveSession()
         } catch is CancellationError {
             if !automatic { statusMessage = "Library refresh cancelled." }
         } catch {
             if automatic {
-                statusMessage = "Library monitoring paused: \(error.localizedDescription)"
+                monitoringMessage = "Monitoring needs attention: \(error.localizedDescription)"
             } else {
                 present(error)
                 statusMessage = "Library unavailable. Reconnect its folder and refresh."

@@ -147,27 +147,29 @@ private struct ActionBar: View {
                 GlassActionButton("Save", systemImage: "square.and.arrow.down", compact: isCompact) {
                     Task { await model.saveSelected() }
                 }
-                .disabled(!model.canEditSelection || model.selectedModifiedCount == 0)
+                .disabled(!model.canPerform(.save))
                 GlassActionButton("Discard", systemImage: "arrow.uturn.backward", compact: isCompact) {
                     presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID)
                 }
                 .disabled(!model.canDiscardChanges(model.selectedFileIDs))
                 .help("Discard pending tags and artwork; keep audio files unchanged.")
-                GlassActionButton("Organize", systemImage: "folder.badge.gearshape", compact: isCompact) {
-                    model.requestOrganizationReview()
-                    presentation.isShowingOrganization = true
-                }
-                .disabled(!model.canEditSelection)
-                .help("Review filenames, folders and conflicts before moving selected files.")
-
-                if model.activeWorkspace?.kind == .library {
-                    GlassActionButton("Library", systemImage: "books.vertical", compact: isCompact) {
+                Menu {
+                    Button("Organize Selected Files…") {
+                        model.requestOrganizationReview()
+                        presentation.isShowingOrganization = true
+                    }.disabled(!model.canPerform(.organize))
+                    if model.activeWorkspace?.kind == .library {
+                        Button("Organize Entire Library…") {
                         model.requestOrganizationReview(entireLibrary: true)
                         presentation.isShowingOrganization = true
+                        }.disabled(!model.canPerform(.organize, scope: .library))
                     }
-                    .disabled(!model.canOrganizeEntireLibrary)
-                    .help("Review filenames, folders and conflicts for the entire library.")
+                } label: {
+                    Label("Organize", systemImage: "folder.badge.gearshape")
+                        .labelStyle(.titleAndIcon)
                 }
+                .buttonStyle(.glass)
+                .help("Choose selected files or the entire library, then review paths before moving.")
 
                 Button { presentation.showsInspector.toggle() } label: {
                     Image(systemName: "sidebar.right")
@@ -245,6 +247,10 @@ private struct WorkspaceStatusBar: View {
                 .lineLimit(2)
                 .help(model.errorMessage ?? model.statusMessage)
             Spacer(minLength: 8)
+            if let message = model.monitoringMessage {
+                Label("Monitor", systemImage: "exclamationmark.circle")
+                    .foregroundStyle(.orange).help(message)
+            }
             if model.isScanningLibrary {
                 Button("Cancel") { model.cancelLibraryRefresh() }
                     .buttonStyle(.borderless)
