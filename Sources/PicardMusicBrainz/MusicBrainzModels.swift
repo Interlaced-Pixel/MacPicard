@@ -119,6 +119,7 @@ public struct MusicBrainzRelease: Codable, Sendable, Equatable, Identifiable {
     public let labelNames: [String]
     public let catalogNumbers: [String]
     public let media: [MusicBrainzMedium]
+    public let coverArtAvailable: Bool?
 
     public init(
         id: String,
@@ -132,7 +133,8 @@ public struct MusicBrainzRelease: Codable, Sendable, Equatable, Identifiable {
         releaseGroupType: String?,
         labelNames: [String],
         catalogNumbers: [String],
-        media: [MusicBrainzMedium]
+        media: [MusicBrainzMedium],
+        coverArtAvailable: Bool? = nil
     ) {
         self.id = id
         self.title = title
@@ -146,6 +148,7 @@ public struct MusicBrainzRelease: Codable, Sendable, Equatable, Identifiable {
         self.labelNames = labelNames
         self.catalogNumbers = catalogNumbers
         self.media = media
+        self.coverArtAvailable = coverArtAvailable
     }
 
     public var artistCredit: String {
@@ -194,6 +197,7 @@ struct APIRelease: Decodable {
     let releaseEvents: [APIReleaseEvent]
     let trackCount: Int?
     let score: Int?
+    let coverArt: APICoverArt?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -209,6 +213,7 @@ struct APIRelease: Decodable {
         case releaseEvents = "release-events"
         case trackCount = "track-count"
         case score
+        case coverArt = "cover-art-archive"
     }
 
     init(from decoder: Decoder) throws {
@@ -226,6 +231,7 @@ struct APIRelease: Decodable {
         releaseEvents = try container.decodeIfPresent([APIReleaseEvent].self, forKey: .releaseEvents) ?? []
         trackCount = try container.decodeIfPresent(Int.self, forKey: .trackCount)
         score = try container.decodeIfPresent(Int.self, forKey: .score)
+        coverArt = try container.decodeIfPresent(APICoverArt.self, forKey: .coverArt)
     }
 
     func summary() -> MusicBrainzReleaseSummary {
@@ -261,7 +267,8 @@ struct APIRelease: Decodable {
             releaseGroupType: releaseGroup?.primaryType,
             labelNames: labelInfo.compactMap(\.label?.name),
             catalogNumbers: labelInfo.compactMap(\.catalogNumber),
-            media: media.map(\.model)
+            media: media.map(\.model),
+            coverArtAvailable: coverArt?.artwork
         )
     }
 
@@ -269,6 +276,8 @@ struct APIRelease: Decodable {
         credits.map { ($0.name ?? $0.artist?.name ?? "") + ($0.joinPhrase ?? "") }.joined()
     }
 }
+
+struct APICoverArt: Decodable { let artwork: Bool? }
 
 struct APIArtistCredit: Decodable {
     let name: String?

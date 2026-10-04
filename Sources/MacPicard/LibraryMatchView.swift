@@ -6,12 +6,21 @@ struct LibraryMatchView: View {
     @ObservedObject var presentation: AppPresentation
     @Environment(\.dismiss) private var dismiss
     @State private var threshold = 0.85
-    @State private var showOnlyReview = false
+    @State private var proposalFilter = "All"
 
     private var run: AppModel.LibraryMatchRun? { model.libraryMatchRun }
     private var visibleProposals: [AppModel.LibraryMatchProposal] {
         guard let proposals = run?.proposals else { return [] }
-        return showOnlyReview ? proposals.filter { $0.status == .review } : proposals
+        return proposals.filter { proposal in
+            switch proposalFilter {
+            case "Ready": return model.isEligibleLibraryProposal(proposal)
+            case "Review": return proposal.status == .review
+            case "Unresolved": return [.noMatch, .failed].contains(proposal.status)
+            case "Rejected": return proposal.status == .rejected
+            case "Stale": return !proposal.baselines.allSatisfy { $0.matches(model.file(id: $0.id)) }
+            default: return true
+            }
+        }
     }
 
     var body: some View {
@@ -43,6 +52,10 @@ struct LibraryMatchView: View {
             threshold = model.configuration.editing.matchThreshold
             if let existing = model.libraryMatchRun { threshold = existing.autoApplyThreshold }
         }
+        .task {
+            await model.restoreReviewCheckpoint()
+            if let run = model.libraryMatchRun { threshold = run.autoApplyThreshold }
+        }
     }
 
     private var header: some View {
@@ -64,8 +77,9 @@ struct LibraryMatchView: View {
                 metric("Review", value: run.needsReview.count, color: .orange)
                 metric("Unresolved", value: run.unresolved.count, color: .secondary)
                 Spacer()
-                Toggle("Review queue only", isOn: $showOnlyReview)
-                    .toggleStyle(.checkbox)
+                Picker("Results", selection: $proposalFilter) {
+                    ForEach(["All", "Ready", "Review", "Unresolved", "Rejected", "Stale"], id: \.self) { Text($0).tag($0) }
+                }.frame(width: 180)
             }
             Text("Only Ready proposals are eligible for the one-click batch apply. Review opens the normal track-by-track matcher for that album. Nothing is written to audio until Save Tags.")
                 .font(.callout)
@@ -105,14 +119,16 @@ struct LibraryMatchView: View {
                 Text(proposal.status.title)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(color(for: proposal.status))
-                if proposal.status == .review {
+                if ![.rejected, .applied].contains(proposal.status) {
                     Button("Review") {
                         model.prepareLibraryProposalForReview(proposal)
                         presentation.isShowingLibraryMatch = false
                         presentation.isShowingLookup = true
-                        if let result = proposal.result { Task { await model.chooseMatch(result) } }
+                        Task { if let result = proposal.result { await model.chooseMatch(result) } else { await model.lookup() } }
                     }
                     .buttonStyle(.glass)
+                    .disabled(model.isBusy)
+                    Button("Reject") { model.setProposalStatus(proposal.id, .rejected) }.disabled(model.isBusy)
                 }
             }
             .padding(.vertical, 4)
@@ -133,19 +149,22 @@ struct LibraryMatchView: View {
             }
             Spacer()
             if let run {
-                Button("Apply \(run.highConfidence.count) Ready Albums") {
-                    model.applyLibraryMatches(run.highConfidence)
+                let eligible = run.highConfidence.filter { model.isEligibleLibraryProposal($0) }
+                Button("Apply \(eligible.count) Ready Albums") {
+                    model.applyLibraryMatches(eligible)
                     dismiss()
                 }
                 .buttonStyle(.glassProminent)
-                .disabled(run.highConfidence.isEmpty || model.isBusy)
-                Button("Run Again") { Task { await model.matchEntireLibrary(autoApplyThreshold: threshold) } }
+                .disabled(eligible.isEmpty || model.isBusy)
+                Button("Resume / Retry Stale") { model.startLibraryMatch(threshold: threshold, resume: true) }.disabled(model.isBusy)
+                Button("Run Again") { model.startLibraryMatch(threshold: threshold) }
                     .disabled(model.isBusy)
             } else {
-                Button("Start Library Match") { Task { await model.matchEntireLibrary(autoApplyThreshold: threshold) } }
+                Button("Start Library Match") { model.startLibraryMatch(threshold: threshold) }
                     .buttonStyle(.glassProminent)
                     .disabled(model.isBusy)
             }
+            if model.isWorking { Button("Cancel Read Job") { model.cancelLibraryMatch() } }
             Button("Cancel") { dismiss() }
         }
         .padding(16)
@@ -157,6 +176,8 @@ struct LibraryMatchView: View {
         case .review: "exclamationmark.triangle.fill"
         case .noMatch: "questionmark.circle"
         case .failed: "xmark.circle.fill"
+        case .rejected: "hand.raised.fill"
+        case .applied: "checkmark.seal.fill"
         }
     }
 
@@ -166,6 +187,7 @@ struct LibraryMatchView: View {
         case .review: .orange
         case .noMatch: .secondary
         case .failed: .red
+        case .rejected, .applied: .secondary
         }
     }
 }

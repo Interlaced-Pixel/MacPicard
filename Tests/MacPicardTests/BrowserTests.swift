@@ -46,10 +46,14 @@ final class BrowserTests: XCTestCase {
             result: result,
             release: release,
             status: .matched,
-            errorMessage: nil
+            errorMessage: nil,
+            baselines: [ReviewFileBaseline(file)]
         )
 
-        XCTAssertEqual(model.applyLibraryMatches([proposal]), 1)
+        XCTAssertEqual(model.applyLibraryMatches([proposal]), 0, "An incomplete album must require explicit review regardless of its score")
+        model.selectionChanged([file.id])
+        await model.chooseMatch(result)
+        XCTAssertTrue(model.applySelectedRelease())
         XCTAssertEqual(model.files.first?.metadata.firstValue(for: "title"), "Second Song")
         XCTAssertEqual(model.files.first?.metadata.firstValue(for: "musicbrainz_trackid"), "recording-two")
         XCTAssertTrue(model.files.first?.isModified == true)

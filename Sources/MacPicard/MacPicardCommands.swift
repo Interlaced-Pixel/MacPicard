@@ -175,6 +175,8 @@ struct MacPicardCommands: Commands {
         }
 
         CommandMenu("Metadata") {
+            Button("Show Release Comparison") { presentation.showsMatchComparison.toggle() }.disabled(!model.canEditSelection)
+            Button("Regroup Selected Files…") { presentation.isRegrouping = true }.disabled(!model.canEditSelection)
             Button("All Tags & Changes…") { presentation.isShowingMetadataEditor = true }
                 .keyboardShortcut("t", modifiers: [.command, .option])
                 .disabled(!model.canEditSelection)

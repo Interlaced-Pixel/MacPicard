@@ -133,7 +133,7 @@ private struct ActionBar: View {
                       : "Import audio references into this session without moving files.")
                 if model.browserPreferences.toolbarActions.contains("lookup") && !isCompact {
                 GlassActionButton("Look Up", systemImage: "magnifyingglass", compact: isCompact) {
-                    isShowingLookup = true
+                    presentation.showsMatchComparison = true
                     Task { await model.lookup() }
                 }
                 .disabled(!model.canLookupSelection)
@@ -179,7 +179,7 @@ private struct ActionBar: View {
                 .buttonStyle(.glass)
                 .help("Choose selected files or the entire library, then review paths before moving.")
                 Menu {
-                    Button("Look Up…") { isShowingLookup = true; Task { await model.lookup() } }.disabled(!model.canLookupSelection)
+                    Button("Look Up…") { presentation.showsMatchComparison = true; Task { await model.lookup() } }.disabled(!model.canLookupSelection)
                     Button("Download Cover Art") { Task { await model.downloadCoverArt() } }.disabled(model.isBusy || !model.canDownloadCoverArt)
                     Button("Edit Script…") { isShowingScript = true }.disabled(!model.canEditSelection)
                     Button("Discard Selected Changes…") { presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID) }.disabled(!model.canPerform(.discard))
@@ -367,11 +367,16 @@ private struct AlbumWorkspace: View {
                 .padding(.bottom, 12)
 
             HSplitView {
+                if presentation.showsMatchComparison {
+                    LookupView(model: model, embedded: true, close: { presentation.showsMatchComparison = false })
+                        .frame(minWidth: 800)
+                } else {
                 TrackListView(model: model, presentation: presentation)
                     .frame(minWidth: 440, idealWidth: 560)
                 if presentation.showsInspector {
                     MetadataInspector(model: model, presentation: presentation)
                         .frame(minWidth: 390, idealWidth: 460)
+                }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

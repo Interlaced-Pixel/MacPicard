@@ -4,9 +4,12 @@ import SwiftUI
 
 struct LookupView: View {
     @ObservedObject var model: AppModel
+    var embedded = false
+    var close: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var albumQuery = ""
     @State private var artistQuery = ""
+    @State private var releaseReference = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,7 +18,7 @@ struct LookupView: View {
                     .font(.title3.weight(.semibold))
                 Spacer()
                 if model.isWorking { ProgressView().controlSize(.small) }
-                Button("Cancel") { model.cancelMatchReview(); dismiss() }
+                Button(embedded ? "Close Comparison" : "Cancel") { model.cancelMatchReview(); finish() }
                     .keyboardShortcut(.cancelAction)
             }.padding(18)
             HStack(spacing: 10) {
@@ -28,13 +31,21 @@ struct LookupView: View {
             .onSubmit(search)
             .disabled(model.isBusy)
             .padding(.horizontal, 18).padding(.bottom, 14)
+            HStack {
+                TextField("MusicBrainz release URL or UUID", text: $releaseReference).textFieldStyle(.roundedBorder)
+                Button("Load Release") { Task { await model.loadReleaseReference(releaseReference) } }.disabled(model.isBusy || releaseReference.isEmpty)
+                if model.libraryMatchRun != nil {
+                    Button("Review Next") { Task { await model.reviewNextLibraryProposal() } }.disabled(model.isBusy)
+                    Button("Reject Proposal") { if let id = model.currentLibraryReviewID { model.setProposalStatus(id, .rejected); model.cancelMatchReview() } }.disabled(model.isBusy || model.currentLibraryReviewID == nil)
+                }
+            }.padding(.horizontal, 18).padding(.bottom, 10)
             Divider()
             HSplitView {
                 ReleaseResultsView(model: model)
-                    .frame(minWidth: 245, idealWidth: 285, maxWidth: 330)
+                    .frame(minWidth: 200, idealWidth: 230, maxWidth: 285)
                 if let review = model.matchReview {
                     MatchReviewPane(model: model, review: review)
-                        .frame(minWidth: 760, maxWidth: .infinity)
+                        .frame(minWidth: 570, maxWidth: .infinity)
                 } else if model.isWorking {
                     ProgressView(model.statusMessage).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -54,7 +65,7 @@ struct LookupView: View {
                 }.font(.caption).lineLimit(3).textSelection(.enabled)
                 Spacer()
                 Button("Apply \(model.matchReview?.assignments.count ?? 0) Reviewed Matches") {
-                    if model.applySelectedRelease() { dismiss() }
+                    if model.applySelectedRelease() { if !embedded { finish() } }
                 }.buttonStyle(.glassProminent)
                     .keyboardShortcut(.return, modifiers: [.command, .shift])
                     .disabled(!model.canApplyReleaseReview)
@@ -72,6 +83,7 @@ struct LookupView: View {
         guard !model.isBusy else { return }
         Task { await model.lookup(albumTitle: albumQuery, albumArtist: artistQuery) }
     }
+    private func finish() { if let close { close() } else { dismiss() } }
 }
 
 private struct ReleaseResultsView: View {
@@ -103,6 +115,10 @@ private struct ReleaseResultsView: View {
                             Text("\(result.release.trackCount) tracks · \(result.release.mediaCount) discs")
                             Text("Release similarity \(result.score.total, format: .percent.precision(.fractionLength(0)))")
                                 .foregroundStyle(.secondary)
+                            Text(result.release.labelNames.joined(separator: ", ") + " · " + result.release.catalogNumbers.joined(separator: ", "))
+                            DisclosureGroup("Score details") {
+                                Text("Title \(Int(result.score.albumTitle * 100))% · Artist \(Int(result.score.artist * 100))% · Tracks \(Int(result.score.tracks * 100))% · Duration \(Int(result.score.duration * 100))% · Variant margin \(Int(result.margin * 100))%")
+                            }
                         }.font(.caption).padding(.vertical, 7).frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain).disabled(model.isBusy)
@@ -121,6 +137,14 @@ private struct MatchReviewPane: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(review.release.title).font(.title2.weight(.semibold)).lineLimit(2)
                 Text(review.release.artistCredit).foregroundStyle(.secondary)
+                Text("\(review.release.country ?? "Unknown country") · \(review.release.date ?? "Undated") · \(review.release.labelNames.joined(separator: ", ")) · \(review.release.catalogNumbers.joined(separator: ", "))")
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Text("Barcode: \(review.release.barcode ?? "Unavailable") · Artwork: \(review.release.coverArtAvailable.map { $0 ? "Available in archive" : "Not reported in archive" } ?? "Unknown")")
+                    .font(.caption).foregroundStyle(.secondary)
+                Link("Open release on MusicBrainz", destination: URL(string: "https://musicbrainz.org/release/\(review.release.id)")!).font(.caption)
+                DisclosureGroup("Release identifiers") {
+                    Text("Release: \(review.release.id)\nRelease group: \(review.release.releaseGroupID ?? "Unavailable")").font(.caption).textSelection(.enabled)
+                }
                 Text("Matching \(review.localTracks.count) selected files against \(review.release.tracks.count) release tracks")
                     .font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: 14) {
@@ -152,9 +176,9 @@ private struct MatchReviewPane: View {
                             }
                         }
                     }.padding(14)
-                }.frame(minWidth: 425, maxWidth: .infinity)
+                }.frame(minWidth: 350, maxWidth: .infinity)
                 ReleaseTrackList(model: model, review: review)
-                    .frame(minWidth: 245, idealWidth: 285, maxWidth: 340)
+                    .frame(minWidth: 220, idealWidth: 250, maxWidth: 300)
             }
         }
     }
@@ -230,6 +254,13 @@ private struct LocalMatchRow: View {
                 Text("No reliable suggestion. Choose a track or leave this file unchanged.").font(.caption).foregroundStyle(.secondary)
             }
         }.padding(12).background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 12))
+        .draggable("macpicard:file:\(file.id.uuidString)")
+        .dropDestination(for: String.self) { values, _ in
+            guard values.count == 1, values[0].hasPrefix("macpicard:track:\(review.release.id):") else { return false }
+            let trackID = String(values[0].dropFirst("macpicard:track:\(review.release.id):".count))
+            guard review.release.tracks.contains(where: { $0.id == trackID }) else { return false }
+            model.assignReviewTrack(fileID: file.id, trackID: trackID); return true
+        }
     }
 }
 
@@ -256,6 +287,11 @@ private struct ReleaseTrackList: View {
                             }
                         }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                             .background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 8))
+                            .draggable("macpicard:track:\(review.release.id):\(track.id)")
+                            .dropDestination(for: String.self) { values, _ in
+                                guard values.count == 1, values[0].hasPrefix("macpicard:file:"), let id = UUID(uuidString: String(values[0].dropFirst("macpicard:file:".count))), review.localTracks.contains(where: { $0.id == id }) else { return false }
+                                model.assignReviewTrack(fileID: id, trackID: track.id); return true
+                            }
                     }
                 }
             }.padding(14)
