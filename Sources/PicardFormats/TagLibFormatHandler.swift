@@ -20,10 +20,13 @@ public struct TagLibFormatHandler: Sendable {
             }
         )
         let artwork = ArtworkCollection(images: file.pictures.map { picture in
-            Artwork(
-                type: Self.artworkType(from: picture.pictureType),
+            let info = try? ArtworkValidation.inspect(picture.data)
+            return Artwork(
+                type: format.storedArtworkType(Self.artworkType(from: picture.pictureType)),
                 mimeType: picture.mimeType,
                 description: picture.description,
+                width: info?.width,
+                height: info?.height,
                 source: .embedded,
                 data: picture.data
             )
@@ -52,6 +55,26 @@ public struct TagLibFormatHandler: Sendable {
         metadata: Metadata,
         artwork: ArtworkCollection
     ) throws -> FormatWriteResult {
+        try format.validateArtwork(artwork)
+        // The writer owns buffered native streams. End its lifetime before opening
+        // a second reader: same-size Ogg/MP4 writes may otherwise appear unchanged.
+        let result = try writeNative(url: url, metadata: metadata, artwork: artwork)
+        let reopened = try read(url: url).artwork.images
+        guard reopened.count == artwork.images.count,
+              zip(reopened, artwork.images).allSatisfy({ actual, requested in
+                  actual.data == requested.data && actual.mimeType == requested.mimeType &&
+                  actual.type == format.storedArtworkType(requested.type) &&
+                  (!format.supportsArtworkDescriptions || actual.description == requested.description)
+              }) else {
+            let differences = zip(reopened, artwork.images).enumerated().map { index, pair in
+                "image \(index + 1): bytes \(pair.0.data == pair.1.data), MIME \(pair.0.mimeType == pair.1.mimeType), role \(pair.0.type.rawValue)/\(format.storedArtworkType(pair.1.type).rawValue), description \(pair.0.description == pair.1.description)"
+            }.joined(separator: "; ")
+            throw FormatError.cannotSave(path: url.path, format: format, reason: "Artwork read-back verification failed: requested \(artwork.images.count), reopened \(reopened.count). \(differences)")
+        }
+        return result
+    }
+
+    private func writeNative(url: URL, metadata: Metadata, artwork: ArtworkCollection) throws -> FormatWriteResult {
         guard let file = TagLibSwift.AudioFile(path: url.path), file.isValid else {
             throw FormatError.cannotOpen(path: url.path, format: format)
         }

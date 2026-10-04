@@ -79,6 +79,7 @@ final class AppModel: ObservableObject {
     var editHistoryNeedsReset = false
     @Published private(set) var isLoading = false
     @Published var isWorking = false
+    @Published var isExportingArtwork = false
     @Published var progress: Double?
     @Published var files: [AudioFile] = [] {
         didSet { rebuildBrowserIndex() }
@@ -159,7 +160,7 @@ final class AppModel: ObservableObject {
     var runtime: PicardRuntime?
     private var audioCoordinator: AudioFileCoordinator?
     var musicBrainzClient: MusicBrainzClient?
-    private var coverArtClient: CoverArtClient?
+    var coverArtClient: CoverArtClient?
     private var saveCoordinator: AudioSaveCoordinator?
     let organizationCoordinator = FileOrganizationCoordinator()
     var sessionManager: SessionManager?
@@ -767,7 +768,7 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         cancelMatchReview()
         scheduleSessionSave()
-        if configuration.automaticCoverArt {
+        if configuration.automaticCoverArt && configuration.editing.embedImportedArtwork {
             let ids = selectedFileIDs
             Task { guard self.selectedFileIDs == ids else { return }; await self.downloadCoverArt() }
         }
@@ -849,9 +850,10 @@ final class AppModel: ObservableObject {
             for index in edited.indices where targets.contains(edited[index].id) {
                 var collection = edited[index].artwork
                 if configuration.editing.replaceFrontCover {
-                    collection.remove(id: collection.first(of: .front)?.id ?? UUID())
+                    collection = ArtworkCollection(images: collection.images.filter { $0.type != .front })
                 }
                 collection.append(artwork)
+                if let format = FormatRegistry.format(forExtension: edited[index].url.pathExtension) { try format.validateArtwork(collection) }
                 try edited[index].updateArtwork(collection)
             }
             commitStagedEdits(edited, action: "Download artwork")

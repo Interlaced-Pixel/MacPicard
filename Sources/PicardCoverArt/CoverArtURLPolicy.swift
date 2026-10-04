@@ -7,7 +7,7 @@ enum CoverArtURLPolicy {
         guard var components = URLComponents(url: url.absoluteURL, resolvingAgainstBaseURL: true),
               let host = components.host?.lowercased(), !host.isEmpty,
               components.user == nil, components.password == nil else {
-            throw CoverArtError.invalidURL(url.absoluteString)
+            throw CoverArtError.invalidURL("An absolute URL without embedded credentials is required.")
         }
         switch components.scheme?.lowercased() {
         case "https":
@@ -15,14 +15,14 @@ enum CoverArtURLPolicy {
         case "http":
             guard host == "coverartarchive.org" || host == "archive.org" || host.hasSuffix(".archive.org"),
                   components.port == nil || components.port == 80 else {
-                throw CoverArtError.insecureURL(url.absoluteString)
+                throw CoverArtError.insecureURL(host)
             }
             components.scheme = "https"
             components.port = nil
-            guard let secured = components.url else { throw CoverArtError.invalidURL(url.absoluteString) }
+            guard let secured = components.url else { throw CoverArtError.invalidURL("Could not upgrade the archive URL.") }
             return secured
         default:
-            throw CoverArtError.invalidURL(url.absoluteString)
+            throw CoverArtError.invalidURL("Use an absolute HTTPS image URL.")
         }
     }
 

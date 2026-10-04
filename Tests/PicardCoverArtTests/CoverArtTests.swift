@@ -224,7 +224,7 @@ final class CoverArtTests: XCTestCase {
 
         XCTAssertEqual(info.width, 1)
         XCTAssertEqual(info.height, 1)
-        XCTAssertEqual(ArtworkProcessor.deduplicate([first, duplicate]).count, 1)
+        XCTAssertEqual(ArtworkProcessor.deduplicate([first, duplicate, first]).count, 2, "Different image roles must survive deduplication")
     }
 
     func testLocalArtworkFinderClassifiesAndDeduplicatesFiles() throws {
@@ -238,8 +238,9 @@ final class CoverArtTests: XCTestCase {
 
         let collection = try LocalArtworkFinder().discover(in: directory)
 
-        XCTAssertEqual(collection.images.count, 1)
+        XCTAssertEqual(collection.images.count, 2)
         XCTAssertEqual(collection.images[0].type, .back)
+        XCTAssertTrue(collection.images.allSatisfy { $0.width == 1 && $0.height == 1 })
     }
 
     private actor StubTransport: CoverArtTransport {

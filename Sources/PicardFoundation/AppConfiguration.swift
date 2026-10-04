@@ -223,6 +223,10 @@ public struct EditingPreferences: Codable, Sendable, Equatable {
     public var preservedTags: [String] = []
     public var coverArtSize: String = "1200"
     public var replaceFrontCover: Bool = true
+    public var artworkMaximumPixels: Int = 1200
+    public var artworkOutputFormat: String = "preserve"
+    public var artworkJPEGQuality: Double = 0.92
+    public var embedImportedArtwork: Bool = true
     public var namingPattern: String = "$if2(%albumartist%,%artist%,Unknown Artist)/$if2(%album%,Unknown Album)/$if($gt(%totaldiscs%,1),$num(%discnumber%,1)-)$if(%tracknumber%,$num($if2(%tracknumber%,0),2) - )$if2(%title%,%filename%).%extension%"
     public var defaultTagScript: String = ""
     /// Legacy preference retained for decoding older workspaces; never used to select executable code.
@@ -235,6 +239,7 @@ public struct EditingPreferences: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case matchThreshold, preservedTags, coverArtSize, replaceFrontCover, namingPattern
         case defaultTagScript, fpcalcPath, appearance, monitoringIntervalSeconds, newLibrariesMonitorAutomatically
+        case artworkMaximumPixels, artworkOutputFormat, artworkJPEGQuality, embedImportedArtwork
     }
     public init(from decoder: Decoder) throws {
         self.init()
@@ -243,6 +248,10 @@ public struct EditingPreferences: Codable, Sendable, Equatable {
         preservedTags = try c.decodeIfPresent([String].self, forKey: .preservedTags) ?? preservedTags
         coverArtSize = try c.decodeIfPresent(String.self, forKey: .coverArtSize) ?? coverArtSize
         replaceFrontCover = try c.decodeIfPresent(Bool.self, forKey: .replaceFrontCover) ?? replaceFrontCover
+        artworkMaximumPixels = try c.decodeIfPresent(Int.self, forKey: .artworkMaximumPixels) ?? artworkMaximumPixels
+        artworkOutputFormat = try c.decodeIfPresent(String.self, forKey: .artworkOutputFormat) ?? artworkOutputFormat
+        artworkJPEGQuality = try c.decodeIfPresent(Double.self, forKey: .artworkJPEGQuality) ?? artworkJPEGQuality
+        embedImportedArtwork = try c.decodeIfPresent(Bool.self, forKey: .embedImportedArtwork) ?? embedImportedArtwork
         namingPattern = try c.decodeIfPresent(String.self, forKey: .namingPattern) ?? namingPattern
         defaultTagScript = try c.decodeIfPresent(String.self, forKey: .defaultTagScript) ?? defaultTagScript
         fpcalcPath = try c.decodeIfPresent(String.self, forKey: .fpcalcPath) ?? fpcalcPath
@@ -254,6 +263,11 @@ public struct EditingPreferences: Codable, Sendable, Equatable {
 
 extension AppConfiguration {
     public func validate() throws {
+        guard (1...ArtworkValidation.maximumSide).contains(editing.artworkMaximumPixels),
+              ["preserve", "jpeg", "png"].contains(editing.artworkOutputFormat),
+              editing.artworkJPEGQuality.isFinite, (0...1).contains(editing.artworkJPEGQuality) else {
+            throw PicardError.invalidConfiguration("Invalid artwork conversion preferences.")
+        }
         guard preferredReleaseCountry.isEmpty || preferredReleaseCountry.range(of: "^[A-Z]{2}$", options: .regularExpression) != nil else {
             throw PicardError.invalidConfiguration("Release country must be a two-letter uppercase country code, or empty for no preference.")
         }

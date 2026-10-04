@@ -310,6 +310,9 @@ public actor AudioFileCoordinator {
 
     public func save(_ file: AudioFile, options: FormatSaveOptions) async throws -> AudioFile {
         var fileToSave = file
+        let format = try engine.registry.detect(url: file.url)
+        try format.validateArtwork(file.artwork)
+        try fileToSave.updateArtwork(format.artworkForStorage(file.artwork))
         try fileToSave.beginSaving()
         _ = try await engine.writeAtomically(
             url: fileToSave.url,

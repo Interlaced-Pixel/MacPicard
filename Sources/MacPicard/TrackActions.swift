@@ -173,10 +173,10 @@ private struct MetadataContextActions: View {
         Button("Scan Audio Fingerprints…", systemImage: "waveform") {
             model.startFingerprintScan(scope: .items(ids)); presentation.isShowingFingerprints = true
         }.disabled(model.isBusy || ids.isEmpty)
-        Button("Download Cover Art", systemImage: "photo.on.rectangle") {
+        Button("Manage Artwork…", systemImage: "photo.on.rectangle") {
             model.selectionChanged(ids)
-            Task { await model.downloadCoverArt() }
-        }.disabled(!model.canGetArtwork(ids))
+            presentation.isShowingArtwork = true
+        }.disabled(!model.canEdit(ids))
         Button("Script Editor…", systemImage: "chevron.left.forwardslash.chevron.right") {
             model.selectionChanged(ids)
             presentation.isShowingScript = true

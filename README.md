@@ -68,7 +68,13 @@ The native player uses Apple's [AVPlayer](https://developer.apple.com/documentat
 
 The **Playback** menu provides Play Selected Track (⌘Return), pause/resume (⌘P), previous/next (⌃⌘← / ⌃⌘→), stop (⌘.), and Show Queue (⇧⌘P). Playback is intentionally transient and never starts automatically after relaunch.
 
-Track and album context menus also provide metadata editing, MusicBrainz lookup, cover-art download, script editing, changed-tag saving, organization, selection, Finder reveal, copying file paths, and the removal actions described above. Batch actions use the current selection only if the clicked track belongs to it; otherwise they target that track. Permanent deletion is not offered.
+Track and album context menus also provide metadata editing, MusicBrainz lookup, artwork management, script editing, changed-tag saving, organization, selection, Finder reveal, copying file paths, and the removal actions described above. Batch actions use the current selection only if the clicked track belongs to it; otherwise they target that track. Permanent deletion is not offered.
+
+## Artwork management
+
+Choose **Metadata → Manage Artwork…** (⌥⌘A), the Cover Art toolbar action, or Manage Artwork in the inspector/context menu. Compare original and staged images, select individual pictures, import local files or drop them from Finder, load a validated HTTPS image URL, and choose which Cover Art Archive images to download. Append or replace images, edit types/descriptions, reorder, remove, restore originals, and undo/redo within the manager.
+
+Scope can be the selection, album, or entire workspace. Edits stay per-file unless you explicitly choose to replace the artwork set on every scoped file with the preview file’s images. **Review & Apply** stages the reviewed batch as one undoable edit; **Save Tags** separately writes it to audio. Cancel leaves the workspace unchanged. Resize/convert to JPEG or PNG, or export images after reviewing filenames and collision handling—existing files are never overwritten. M4A supports multiple ordered cover images but not picture roles/descriptions. See the [Artwork guide](docs/ARTWORK.md) for limits, preferences, and safe batch workflows.
 
 ## Phase 1
 

@@ -140,9 +140,9 @@ private struct ActionBar: View {
                 }
                 if model.browserPreferences.toolbarActions.contains("artwork") && !isCompact {
                 GlassActionButton("Cover Art", systemImage: "photo.on.rectangle", compact: isCompact) {
-                    Task { await model.downloadCoverArt() }
+                    presentation.isShowingArtwork = true
                 }
-                .disabled(model.isBusy || !model.canDownloadCoverArt)
+                .disabled(!model.canEditSelection)
                 }
                 if model.browserPreferences.toolbarActions.contains("script") && !isCompact {
                 GlassActionButton("Script", systemImage: "chevron.left.forwardslash.chevron.right", compact: isCompact) {
@@ -182,7 +182,7 @@ private struct ActionBar: View {
                     Button("Look Up…") { presentation.showsMatchComparison = true; Task { await model.lookup() } }.disabled(!model.canLookupSelection)
                     Button("Scan Selected Audio…") { model.startFingerprintScan(); presentation.isShowingFingerprints = true }.disabled(model.isBusy || model.selectedFiles.isEmpty)
                     Button("Fingerprint Results…") { presentation.isShowingFingerprints = true }
-                    Button("Download Cover Art") { Task { await model.downloadCoverArt() } }.disabled(model.isBusy || !model.canDownloadCoverArt)
+                    Button("Manage Artwork…") { presentation.isShowingArtwork = true }.disabled(!model.canEditSelection)
                     Button("Edit Script…") { isShowingScript = true }.disabled(!model.canEditSelection)
                     Button("Discard Selected Changes…") { presentation.requestDiscard(model.selectedFiles, workspaceID: model.activeWorkspaceID) }.disabled(!model.canPerform(.discard))
                     Button("All Tags & Changes…") { presentation.isShowingMetadataEditor = true }.disabled(!model.canEditSelection)
@@ -632,7 +632,7 @@ private struct MetadataInspector: View {
                     MetadataFieldGroup(title: "Identity", fields: identityFields, model: model)
                     MetadataFieldGroup(title: "Release", fields: releaseFields, model: model)
                     MetadataFieldGroup(title: "Numbering", fields: numberingFields, model: model)
-                    ArtworkInspector(model: model)
+                    ArtworkInspector(model: model, presentation: presentation)
                     if let file = model.primarySelectedFile {
                         VStack(alignment: .leading, spacing: 4) {
                             AudioFileDetailsView(file: file)
@@ -692,11 +692,15 @@ private struct MetadataField: View {
 
 private struct ArtworkInspector: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var presentation: AppPresentation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Artwork")
                 .font(.subheadline.weight(.semibold))
+            Button("Manage Artwork…", systemImage: "photo.on.rectangle.angled") { presentation.isShowingArtwork = true }
+                .buttonStyle(.glass).disabled(!model.canEditSelection)
+            Text("\(model.primarySelectedFile?.artwork.images.count ?? 0) images in preview file").font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 12) {
                 ArtworkThumbnail(artwork: model.primarySelectedFile?.artwork.first(of: .front))
                     .frame(width: 96, height: 96)
@@ -712,7 +716,7 @@ private struct ArtworkInspector: View {
                     } else {
                         Text("No front cover")
                             .foregroundStyle(.secondary)
-                        Text("Use Cover Art after selecting a MusicBrainz release.")
+                        Text("Import images or choose archive artwork in Manage Artwork.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -736,20 +740,7 @@ struct ArtworkThumbnail: View {
     let artwork: Artwork?
 
     var body: some View {
-        Group {
-            if let data = artwork?.data, let image = NSImage(data: data) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                ZStack {
-                    Color.secondary.opacity(0.12)
-                    Image(systemName: "music.note.square")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
+        ArtworkPreview(image: artwork)
         .clipped()
         .accessibilityLabel(artwork == nil ? "No artwork" : "Album artwork")
     }

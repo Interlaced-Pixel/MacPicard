@@ -1,3 +1,4 @@
+import AppKit
 import PicardSessions
 import SwiftUI
 import UniformTypeIdentifiers
@@ -60,8 +61,18 @@ struct OrganizationView: View {
         .onChange(of: model.organizationReview?.id) { acknowledgesOutsideMove = false }
         .onDisappear { model.cancelOrganizationReview() }
         .interactiveDismissDisabled(model.isWorking)
-        .fileImporter(isPresented: $choosingDirectory, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
-            Task { await model.chooseOrganizationDirectory(result) }
+        .onChange(of: choosingDirectory) { _, choosing in
+            guard choosing else { return }
+            let panel = NSOpenPanel()
+            panel.title = "Choose Organization Folder"
+            panel.canChooseFiles = false; panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = false
+            let workspaceID = model.activeWorkspaceID
+            let response = panel.runModal()
+            choosingDirectory = false
+            if response == .OK, let url = panel.url, workspaceID == model.activeWorkspaceID {
+                Task { await model.chooseOrganizationDirectory(.success([url])) }
+            }
         }
         .alert("Move \(confirmationReview?.moveCount ?? 0) files?", isPresented: $confirmsMove, presenting: confirmationReview) { review in
             Button("Move Files", role: .destructive) {

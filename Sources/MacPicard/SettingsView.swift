@@ -103,6 +103,15 @@ struct SettingsView: View {
                 Toggle("Replace existing front cover", isOn: $draft.editing.replaceFrontCover)
                 Text("When replacement is off, the downloaded cover is appended. Artwork is staged until Save Tags.").font(.caption)
             }
+            Section("Artwork manager defaults") {
+                Toggle("Embed imported artwork on Save Tags", isOn: $draft.editing.embedImportedArtwork)
+                TextField("Conversion maximum side (pixels)", value: $draft.editing.artworkMaximumPixels, format: .number)
+                Picker("Conversion format", selection: $draft.editing.artworkOutputFormat) {
+                    Text("Keep format").tag("preserve"); Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
+                }
+                Slider(value: $draft.editing.artworkJPEGQuality, in: 0.1...1) { Text("JPEG quality") }
+                Text("Conversion is explicit in Manage Artwork. Export-only mode never stages embedded-image changes. Exports always require destination review and never overwrite files.").font(.caption)
+            }
         case .naming:
             Section("Default organization pattern") {
                 TextEditor(text: $draft.editing.namingPattern).font(.system(.body, design: .monospaced)).frame(minHeight: 125)

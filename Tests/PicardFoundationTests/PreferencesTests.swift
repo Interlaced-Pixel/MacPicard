@@ -14,7 +14,15 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(config.schemaVersion, 2)
         XCTAssertEqual(config.editing.matchThreshold, 0.9)
         XCTAssertEqual(config.editing.coverArtSize, "1200")
+        XCTAssertEqual(config.editing.artworkMaximumPixels, 1200)
+        XCTAssertEqual(config.editing.artworkOutputFormat, "preserve")
+        XCTAssertEqual(config.editing.artworkJPEGQuality, 0.92)
+        XCTAssertTrue(config.editing.embedImportedArtwork)
         config.editing.preservedTags = ["genre", "rating"]
+        config.editing.artworkMaximumPixels = 800
+        config.editing.artworkOutputFormat = "png"
+        config.editing.artworkJPEGQuality = 0.85
+        config.editing.embedImportedArtwork = false
         try await store.save(config)
         let reloaded = try await ConfigurationStore(fileURL: url).load()
         XCTAssertEqual(reloaded, config)
@@ -34,6 +42,14 @@ final class PreferencesTests: XCTestCase {
         do { try await store.save(config); XCTFail("Expected validation failure") } catch { }
         XCTAssertEqual(try Data(contentsOf: url), before)
         config = AppConfiguration(); config.preferredReleaseCountry = "bad"
+        XCTAssertThrowsError(try config.validate())
+        config = AppConfiguration(); config.editing.artworkMaximumPixels = 0
+        XCTAssertThrowsError(try config.validate())
+        config = AppConfiguration(); config.editing.artworkOutputFormat = "unsupported"
+        XCTAssertThrowsError(try config.validate())
+        config = AppConfiguration(); config.editing.artworkJPEGQuality = .nan
+        XCTAssertThrowsError(try config.validate())
+        config.editing.artworkJPEGQuality = 1.1
         XCTAssertThrowsError(try config.validate())
     }
 }

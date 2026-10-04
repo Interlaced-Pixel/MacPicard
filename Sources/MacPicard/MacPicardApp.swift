@@ -19,10 +19,10 @@ final class MacPicardAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
-        if model.isExecutingOrganization {
+        if model.isExecutingOrganization || model.isExportingArtwork {
             let alert = NSAlert()
-            alert.messageText = "Files are still being organized."
-            alert.informativeText = "Wait for the move to finish before quitting so file locations can be safely saved."
+            alert.messageText = model.isExportingArtwork ? "Artwork is still being exported." : "Files are still being organized."
+            alert.informativeText = "Wait for the file operation to finish before quitting so its results can be safely saved."
             alert.addButton(withTitle: "Keep Open")
             alert.runModal()
             return .terminateCancel
@@ -167,6 +167,7 @@ struct ContentView: View {
         .sheet(isPresented: $presentation.isShowingMetadataEditor) {
             MetadataEditorView(model: model).frame(minWidth: 850, minHeight: 570)
         }
+        .sheet(isPresented: $presentation.isShowingArtwork) { ArtworkManagerView(model: model) }
         .sheet(isPresented: $presentation.isShowingActivity) { ActivityView(model: model) }
         .sheet(isPresented: $presentation.isShowingFingerprints) { FingerprintResultsView(model: model, presentation: presentation) }
         .sheet(item: $model.fingerprintSubmissionReview) { review in FingerprintSubmissionView(model: model, review: review) }
@@ -201,7 +202,7 @@ struct ContentView: View {
         let panel = NSOpenPanel()
         panel.title = relinking ? "Reconnect Music Library" : "Add Music Library"
         panel.canChooseFiles = false; panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false; panel.allowedContentTypes = [.folder]
+        panel.allowsMultipleSelection = false
         guard let window = NSApp.keyWindow else {
             presentation.isAddingLibrary = false; presentation.isRelinkingLibrary = false; return
         }

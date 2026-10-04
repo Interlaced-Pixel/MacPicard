@@ -1,7 +1,7 @@
 # MacPicard end-to-end improvement plan
 
 Date: 2026-10-03  
-Status: Planned; implementation has not started  
+Status: Phases 1–7 implemented; phase 7 interactive acceptance pending. Phases 8–10 remain planned. See IMPROVEMENT_PROGRESS.md for evidence and outstanding gates.
 Baseline: Current native Swift 6 app, including library-wide matching and organization
 
 ## 1. Outcome and scope
@@ -161,6 +161,8 @@ Work:
 Acceptance: untagged and incorrectly tagged fixtures become reviewable candidates; scan cancellation stops subprocess/network work; corrupt files and missing tools yield recoverable per-file errors; no fingerprints/tokens leak into logs; submissions have fixture coverage without unsolicited live writes.
 
 ### Phase 7 — Full artwork management
+
+Implementation delivered on October 4, 2026. Automated model, image-safety, export, persistence and six-format round-trip checks pass; final on-screen artwork workflows remain an acceptance gate. See [ARTWORK.md](ARTWORK.md) and [delivery evidence](IMPROVEMENT_PROGRESS.md).
 
 Work:
 

@@ -202,8 +202,9 @@ struct MacPicardCommands: Commands {
             Button("Review Track Matches…") { presentation.isShowingLookup = true }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
                 .disabled(model.isBusy || model.matchReview == nil)
-            Button("Download Cover Art") { Task { await model.downloadCoverArt() } }
-                .disabled(model.isBusy || !model.canDownloadCoverArt)
+            Button("Manage Artwork…") { presentation.isShowingArtwork = true }
+                .keyboardShortcut("a", modifiers: [.command, .option])
+                .disabled(!model.canEditSelection)
             Divider()
             Button("Script Editor…") { presentation.isShowingScript = true }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
