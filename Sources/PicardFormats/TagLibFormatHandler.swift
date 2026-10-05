@@ -53,12 +53,14 @@ public struct TagLibFormatHandler: Sendable {
     public func write(
         url: URL,
         metadata: Metadata,
-        artwork: ArtworkCollection
+        artwork: ArtworkCollection,
+        verifyArtwork: Bool = true
     ) throws -> FormatWriteResult {
         try format.validateArtwork(artwork)
         // The writer owns buffered native streams. End its lifetime before opening
         // a second reader: same-size Ogg/MP4 writes may otherwise appear unchanged.
         let result = try writeNative(url: url, metadata: metadata, artwork: artwork)
+        guard verifyArtwork else { return result }
         let reopened = try read(url: url).artwork.images
         guard reopened.count == artwork.images.count,
               zip(reopened, artwork.images).allSatisfy({ actual, requested in

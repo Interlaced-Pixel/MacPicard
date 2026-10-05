@@ -3,7 +3,7 @@ import PicardFoundation
 import PicardSessions
 import SwiftUI
 
-struct BrowserEntry {
+struct BrowserEntry: Equatable {
     let artist: String
     let grouping: String
     let searchText: String
@@ -259,22 +259,42 @@ struct CollectionTrackTable: View {
     @ObservedObject var model: AppModel
     @ObservedObject var presentation: AppPresentation
     @State private var sortOrder = [KeyPathComparator(\CollectionTrack.number)]
-    private var rows: [CollectionTrack] { model.visibleFiles.map(CollectionTrack.init).sorted(using: sortOrder) }
+    private struct Projection {
+        let rows: [CollectionTrack]
+        let titleWidth: CGFloat
+        let artistWidth: CGFloat
+        let albumWidth: CGFloat
+        let filenameWidth: CGFloat
+    }
+
+    private func projection() -> Projection {
+        let rows = model.visibleFiles.map(CollectionTrack.init).sorted(using: sortOrder)
+        func width(_ values: KeyPath<CollectionTrack, String>, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
+            let longest = rows.lazy.map { CGFloat($0[keyPath: values].count) }.max() ?? 0
+            return min(max(minimum, longest * 7.2 + 28), maximum)
+        }
+        return Projection(rows: rows,
+                          titleWidth: width(\.title, minimum: 210, maximum: 420),
+                          artistWidth: width(\.artist, minimum: 150, maximum: 300),
+                          albumWidth: width(\.album, minimum: 170, maximum: 340),
+                          filenameWidth: width(\.filename, minimum: 190, maximum: 420))
+    }
     private func idealWidth(_ values: [String], minimum: CGFloat, maximum: CGFloat) -> CGFloat {
         let longest = values.map { CGFloat($0.count) }.max() ?? 0
         return min(max(minimum, longest * 7.2 + 28), maximum)
     }
     var body: some View {
-        Table(rows, selection: Binding(get: { model.selectedFileIDs }, set: { model.selectionChanged($0) }), sortOrder: $sortOrder,
+        let projection = projection()
+        Table(projection.rows, selection: Binding(get: { model.selectedFileIDs }, set: { model.selectionChanged($0) }), sortOrder: $sortOrder,
               columnCustomization: $model.browserPreferences.columns) {
             TableColumn("Title", value: \.title) { row in
                 HStack {
                     if model.playback.currentTrack?.fileID == row.id { Image(systemName: "speaker.wave.2.fill").accessibilityLabel("Now playing") }
                     Text(row.title).lineLimit(1)
                 }
-            }.width(min: 160, ideal: idealWidth(rows.map(\.title), minimum: 210, maximum: 420)).customizationID("title").disabledCustomizationBehavior(.visibility)
-            TableColumn("Artist", value: \.artist).width(min: 120, ideal: idealWidth(rows.map(\.artist), minimum: 150, maximum: 300)).customizationID("artist")
-            TableColumn("Album", value: \.album).width(min: 140, ideal: idealWidth(rows.map(\.album), minimum: 170, maximum: 340)).customizationID("album")
+            }.width(min: 160, ideal: projection.titleWidth).customizationID("title").disabledCustomizationBehavior(.visibility)
+            TableColumn("Artist", value: \.artist).width(min: 120, ideal: projection.artistWidth).customizationID("artist")
+            TableColumn("Album", value: \.album).width(min: 140, ideal: projection.albumWidth).customizationID("album")
             TableColumn("#", value: \.number) { Text($0.number == 0 ? "—" : String($0.number)) }.width(40).customizationID("number")
             TableColumn("Time", value: \.duration) { Text($0.duration == 0 ? "—" : String(format: "%d:%02d", $0.duration / 60_000, $0.duration / 1_000 % 60)) }.width(65).customizationID("duration")
             TableColumn("Format", value: \.format).width(65).customizationID("format")
@@ -286,7 +306,7 @@ struct CollectionTrackTable: View {
                     .padding(.vertical, 4)
                     .background(stateColor(row.state).opacity(0.14), in: .capsule)
             }.width(100).customizationID("state")
-            TableColumn("File", value: \.filename).width(min: 150, ideal: idealWidth(rows.map(\.filename), minimum: 190, maximum: 420)).customizationID("filename")
+            TableColumn("File", value: \.filename).width(min: 150, ideal: projection.filenameWidth).customizationID("filename")
         }
         .contextMenu(forSelectionType: UUID.self) { ids in
             if let id = ids.first { TrackContextMenu(model: model, presentation: presentation, fileID: id) }

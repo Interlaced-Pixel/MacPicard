@@ -243,35 +243,73 @@ public struct TrackMatcher: Sendable {
     }
 
     public func evidence(local: LocalTrackCandidate, remote: MusicBrainzTrack, disc: Int? = nil) -> TrackMatchEvidence {
+        evidence(local: PreparedLocal(local), remote: PreparedRemote(remote), disc: disc)
+    }
+
+    private struct PreparedLocal: Sendable {
+        let source: LocalTrackCandidate
+        let title: Similarity.PreparedText
+        let artist: Similarity.PreparedText?
+        let recordingID: String?
+        let isrcs: Set<String>
+
+        init(_ source: LocalTrackCandidate) {
+            self.source = source
+            title = Similarity.prepare(source.title)
+            artist = source.artist.map(Similarity.prepare)
+            recordingID = source.recordingID?.lowercased()
+            isrcs = Set(source.isrcs.map { $0.uppercased() })
+        }
+    }
+
+    private struct PreparedRemote: Sendable {
+        let source: MusicBrainzTrack
+        let title: Similarity.PreparedText
+        let artist: Similarity.PreparedText
+        let recordingID: String?
+        let isrcs: Set<String>
+        let trackNumber: Int?
+
+        init(_ source: MusicBrainzTrack) {
+            self.source = source
+            title = Similarity.prepare(source.title)
+            artist = Similarity.prepare(source.artistCredit)
+            recordingID = source.recordingID?.lowercased()
+            isrcs = Set(source.isrcs.map { $0.uppercased() })
+            trackNumber = Int(source.number.split(separator: "/").first ?? "")
+        }
+    }
+
+    private func evidence(local: PreparedLocal, remote: PreparedRemote, disc: Int? = nil) -> TrackMatchEvidence {
         var reasons: [String] = []
-        let recording = local.recordingID?.lowercased() == remote.recordingID?.lowercased() && local.recordingID?.isEmpty == false
-        let isrc = !Set(local.isrcs.map { $0.uppercased() }).isDisjoint(with: remote.isrcs.map { $0.uppercased() })
+        let recording = local.recordingID == remote.recordingID && local.recordingID?.isEmpty == false
+        let isrc = !local.isrcs.isDisjoint(with: remote.isrcs)
         let exact = recording || isrc
         if recording { reasons.append("Recording ID matches") }
         if isrc { reasons.append("ISRC matches") }
-        let title = local.title.isEmpty ? 0 : Similarity.text(local.title, remote.title)
+        let title = local.title.hasValue ? Similarity.text(local.title, remote.title) : 0
         var weight = 0.60
         var total = title * weight
         if title >= 0.99 { reasons.append("Title matches") }
         else if title >= 0.70 { reasons.append("Similar title") }
-        if let artist = local.artist, !artist.isEmpty, !remote.artistCredit.isEmpty {
-            let similarity = Similarity.text(artist, remote.artistCredit)
+        if let artist = local.artist, artist.hasValue, remote.artist.hasValue {
+            let similarity = Similarity.text(artist, remote.artist)
             total += similarity * 0.15; weight += 0.15
             if similarity >= 0.85 { reasons.append("Artist matches") }
         }
         var lengthMismatch = false
-        if let duration = local.durationInMilliseconds, let remoteDuration = remote.lengthInMilliseconds, duration > 0, remoteDuration > 0 {
+        if let duration = local.source.durationInMilliseconds, let remoteDuration = remote.source.lengthInMilliseconds, duration > 0, remoteDuration > 0 {
             total += Similarity.duration(duration, remoteDuration) * 0.25; weight += 0.25
             let difference = abs(duration - remoteDuration)
             reasons.append(difference <= 2_000 ? "Length within 2 seconds" : "Length differs by \(difference / 1_000) seconds")
             lengthMismatch = difference > 15_000
         }
         total = exact ? 0.93 : total / weight * 0.95
-        if let localNumber = local.trackNumber, let remoteNumber = Int(remote.number.split(separator: "/").first ?? "") {
+        if let localNumber = local.source.trackNumber, let remoteNumber = remote.trackNumber {
             total += localNumber == remoteNumber ? 0.02 : -0.025
             if localNumber == remoteNumber { reasons.append("Track number matches") }
         }
-        if let localDisc = local.discNumber, let disc {
+        if let localDisc = local.source.discNumber, let disc {
             total += localDisc == disc ? 0.025 : -0.04
             reasons.append(localDisc == disc ? "Disc matches" : "Different disc")
         }
@@ -283,8 +321,12 @@ public struct TrackMatcher: Sendable {
         guard !localTracks.isEmpty else { return [] }
         // Optimize the entire album, not a greedy first-come pairing. Dummy columns
         // allow any file to remain unmatched, including incomplete collections.
-        let evidence = localTracks.map { local in
-            releaseTracks.map { self.evidence(local: local, remote: $0, disc: discs[$0.id]) }
+        let preparedLocals = localTracks.map(PreparedLocal.init)
+        let preparedRemotes = releaseTracks.map(PreparedRemote.init)
+        let evidence = zip(preparedLocals, localTracks).map { local, _ in
+            zip(preparedRemotes, releaseTracks).map { remote, source in
+                self.evidence(local: local, remote: remote, disc: discs[source.id])
+            }
         }
         let exactBonus = Double(localTracks.count + 1)
         let weights = evidence.map { row in
@@ -298,8 +340,12 @@ public struct TrackMatcher: Sendable {
                 return TrackMatch(localTrackID: localTracks[localIndex].id, releaseTrackID: nil, score: 0, decision: .unmatched)
             }
             let item = evidence[localIndex][remoteIndex]
-            let localAlternative = evidence[localIndex].enumerated().filter { $0.offset != remoteIndex }.map(\.element.score).max() ?? 0
-            let competitor = evidence.indices.filter { $0 != localIndex }.map { evidence[$0][remoteIndex].score }.max() ?? 0
+            let localAlternative = evidence[localIndex].enumerated().reduce(0) { best, item in
+                item.offset == remoteIndex ? best : max(best, item.element.score)
+            }
+            let competitor = evidence.indices.reduce(0) { best, index in
+                index == localIndex ? best : max(best, evidence[index][remoteIndex].score)
+            }
             let ambiguous = item.score - max(localAlternative, competitor) < minimumMargin
             return TrackMatch(localTrackID: localTracks[localIndex].id, releaseTrackID: releaseTracks[remoteIndex].id,
                               score: item.score, decision: ambiguous ? .ambiguous : item.exact ? .exact : .matched)
@@ -605,17 +651,32 @@ public struct ReleaseMatcher: Sendable {
 }
 
 private enum Similarity {
+    struct PreparedText: Sendable {
+        let normalized: String
+        let tokens: Set<String>
+        let hasValue: Bool
+    }
+
+    static func prepare(_ value: String?) -> PreparedText {
+        guard let value, !value.isEmpty else { return PreparedText(normalized: "", tokens: [], hasValue: false) }
+        let normalized = normalize(value)
+        return PreparedText(normalized: normalized,
+                            tokens: Set(normalized.split(separator: " ").map(String.init)),
+                            hasValue: !normalized.isEmpty)
+    }
+
     static func text(_ lhs: String?, _ rhs: String?) -> Double {
-        guard let lhs, let rhs, !lhs.isEmpty, !rhs.isEmpty else { return 0.5 }
-        let left = normalize(lhs)
-        let right = normalize(rhs)
-        guard !left.isEmpty, !right.isEmpty else { return 0.5 }
+        text(prepare(lhs), prepare(rhs))
+    }
+
+    static func text(_ lhs: PreparedText, _ rhs: PreparedText) -> Double {
+        guard lhs.hasValue, rhs.hasValue else { return 0.5 }
+        let left = lhs.normalized
+        let right = rhs.normalized
         if left == right { return 1 }
 
-        let leftTokens = Set(left.split(separator: " ").map(String.init))
-        let rightTokens = Set(right.split(separator: " ").map(String.init))
-        let unionCount = leftTokens.union(rightTokens).count
-        let tokenScore = unionCount == 0 ? 0 : Double(leftTokens.intersection(rightTokens).count) / Double(unionCount)
+        let unionCount = lhs.tokens.union(rhs.tokens).count
+        let tokenScore = unionCount == 0 ? 0 : Double(lhs.tokens.intersection(rhs.tokens).count) / Double(unionCount)
         let editScore = levenshteinRatio(left, right)
         return (tokenScore * 0.55) + (editScore * 0.45)
     }
@@ -653,16 +714,16 @@ private enum Similarity {
         guard !left.isEmpty, !right.isEmpty else { return 0 }
 
         var previous = Array(0...right.count)
+        var current = [Int](repeating: 0, count: right.count + 1)
         for (leftIndex, leftCharacter) in left.enumerated() {
-            var current = [leftIndex + 1]
-            current.reserveCapacity(right.count + 1)
+            current[0] = leftIndex + 1
             for (rightIndex, rightCharacter) in right.enumerated() {
                 let insertion = current[rightIndex] + 1
                 let deletion = previous[rightIndex + 1] + 1
                 let substitution = previous[rightIndex] + (leftCharacter == rightCharacter ? 0 : 1)
-                current.append(min(insertion, deletion, substitution))
+                current[rightIndex + 1] = min(insertion, deletion, substitution)
             }
-            previous = current
+            swap(&previous, &current)
         }
 
         let distance = previous[right.count]

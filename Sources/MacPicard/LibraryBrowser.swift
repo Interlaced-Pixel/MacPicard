@@ -114,9 +114,10 @@ struct LibrarySidebar: View {
                     .padding(.top, 8)
 
                     if model.groupsByArtist {
-                        ForEach(Array(Set(model.browserAlbumGroups.map(\.artist))).sorted(), id: \.self) { artist in
+                        let groupsByArtist = Dictionary(grouping: model.browserAlbumGroups, by: \.artist)
+                        ForEach(groupsByArtist.keys.sorted(), id: \.self) { artist in
                             DisclosureGroup {
-                                ForEach(model.browserAlbumGroups.filter { $0.artist == artist }) { group in
+                                ForEach(groupsByArtist[artist] ?? []) { group in
                                     AlbumBrowserRow(model: model, presentation: presentation, group: group)
                                 }
                             } label: {

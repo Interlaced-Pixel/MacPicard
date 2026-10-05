@@ -344,8 +344,15 @@ public struct ScriptEvaluator: Sendable {
         self.parser = parser
     }
 
+    public func compile(_ source: String) throws -> ScriptProgram {
+        try parser.parse(source)
+    }
+
     public func evaluate(_ source: String, context: ScriptContext = ScriptContext()) throws -> ScriptEvaluation {
-        let program = try parser.parse(source)
+        try evaluate(compile(source), context: context)
+    }
+
+    public func evaluate(_ program: ScriptProgram, context: ScriptContext = ScriptContext()) throws -> ScriptEvaluation {
         var context = context
         let value = try evaluateSequence(program.nodes, context: &context)
         return ScriptEvaluation(output: value.rendered(separator: context.multiValueSeparator), metadata: context.metadata, variables: context.variables)
@@ -370,6 +377,7 @@ public struct ScriptEvaluator: Sendable {
             return try evaluate(nodes[0], context: &context)
         }
         var output = String()
+        output.reserveCapacity(nodes.reduce(0) { $0 + $1.estimatedOutputLength })
         for node in nodes {
             output += try evaluate(node, context: &context).rendered(separator: context.multiValueSeparator)
         }
@@ -586,5 +594,16 @@ public struct ScriptEvaluator: Sendable {
         guard let first = value.values.first else { return false }
         let normalized = first.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return !normalized.isEmpty && normalized != "0" && normalized != "false" && normalized != "no"
+    }
+}
+
+private extension ScriptNode {
+    var estimatedOutputLength: Int {
+        switch self {
+        case let .literal(value, _): return value.utf8.count
+        case .variable: return 16
+        case let .sequence(nodes): return nodes.reduce(0) { $0 + $1.estimatedOutputLength }
+        case let .function(_, arguments, _): return arguments.reduce(0) { $0 + $1.estimatedOutputLength }
+        }
     }
 }

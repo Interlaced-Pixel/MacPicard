@@ -69,6 +69,7 @@ extension AppModel {
             let parser = try pattern.map { try FilenameTagParser(pattern: $0) }
             let evaluator = ScriptEvaluator()
             let enabled = scripts.filter { $0.enabled && $0.kind == .tagging }
+            let programs = try enabled.map { (script: $0, program: try evaluator.compile($0.source)) }
             if parser == nil && enabled.isEmpty { throw WorkflowFailure.invalid("Enable at least one tagging script, or choose a naming script for path preview.") }
             let now = Date()
             let rows = try targets.map { file -> WorkflowReview.Row in
@@ -79,10 +80,10 @@ extension AppModel {
                     if let parser { metadata = try parser.metadata(for: file.url, original: metadata, mappings: mappings) }
                     else {
                         var variables: [String: [String]] = ["filename": [file.url.deletingPathExtension().lastPathComponent], "extension": [file.url.pathExtension]]
-                        for script in enabled {
-                            let result = try evaluator.evaluate(script.source, context: ScriptContext(metadata: metadata, variables: variables, now: now))
+                        for item in programs {
+                            let result = try evaluator.evaluate(item.program, context: ScriptContext(metadata: metadata, variables: variables, now: now))
                             metadata = result.metadata; variables = result.variables
-                            if !result.output.isEmpty { output.append("\(script.name): \(result.output)") }
+                            if !result.output.isEmpty { output.append("\(item.script.name): \(result.output)") }
                         }
                     }
                     return .init(file: file, proposed: metadata, output: output.joined(separator: "\n"), error: nil)

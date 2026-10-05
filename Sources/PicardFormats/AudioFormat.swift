@@ -97,9 +97,11 @@ public struct FormatWriteResult: Sendable, Equatable {
 
 public struct FormatSaveOptions: Sendable, Equatable {
     public let preserveModificationDate: Bool
+    public let verifyArtwork: Bool
 
-    public init(preserveModificationDate: Bool = true) {
+    public init(preserveModificationDate: Bool = true, verifyArtwork: Bool = true) {
         self.preserveModificationDate = preserveModificationDate
+        self.verifyArtwork = verifyArtwork
     }
 }
 
@@ -271,7 +273,9 @@ public actor FormatEngine {
 
         do {
             try fileManager.copyItem(at: url, to: temporaryURL)
-            let result = try registry.handler(for: format).write(url: temporaryURL, metadata: metadata, artwork: artwork)
+            let result = try registry.handler(for: format).write(
+                url: temporaryURL, metadata: metadata, artwork: artwork, verifyArtwork: options.verifyArtwork
+            )
             guard try AudioFileIdentity.capture(url: url).matches(originalIdentity) else {
                 throw PicardError.fileSystem(path: url.path, operation: "commit audio tags",
                     reason: "The source changed while tags were being written. It was not overwritten.")
@@ -316,6 +320,7 @@ public actor AudioFileCoordinator {
 
     public func save(_ file: AudioFile, options: FormatSaveOptions) async throws -> AudioFile {
         var fileToSave = file
+        let artworkChanged = file.artwork != file.originalArtwork
         let format = try engine.registry.detect(url: file.url)
         try format.validateArtwork(file.artwork)
         try fileToSave.updateArtwork(format.artworkForStorage(file.artwork))
@@ -324,7 +329,10 @@ public actor AudioFileCoordinator {
             url: fileToSave.url,
             metadata: fileToSave.metadata,
             artwork: fileToSave.artwork,
-            options: options
+            options: FormatSaveOptions(
+                preserveModificationDate: options.preserveModificationDate,
+                verifyArtwork: options.verifyArtwork && artworkChanged
+            )
         )
         let identity = try AudioFileIdentity.capture(url: fileToSave.url)
         try fileToSave.finishSaving(identity: identity)

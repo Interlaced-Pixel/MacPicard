@@ -159,7 +159,8 @@ public actor FileOrganizationCoordinator {
 
         let destinations = operations.map(\.destination.path)
         guard Set(destinations).count == destinations.count else {
-            let duplicate = destinations.first { path in destinations.filter { $0 == path }.count > 1 } ?? ""
+            var seen = Set<String>()
+            let duplicate = destinations.first { !seen.insert($0).inserted } ?? ""
             throw SaveError.duplicateDestination(path: duplicate)
         }
         return FileMovePlan(operations: operations)
@@ -210,8 +211,9 @@ public actor FileOrganizationCoordinator {
         var completedMoves: [FileMoveOperation] = []
         var backups: [(destination: URL, backup: URL)] = []
         var journal = journal
+        let journalIndices = Dictionary(journal?.items.enumerated().map { ($0.element.id, $0.offset) } ?? [], uniquingKeysWith: { _, last in last })
         func checkpoint(_ operation: FileMoveOperation, temporary: URL?, state: FileOperationItemState) throws {
-            guard let url = journalURL, let index = journal?.items.firstIndex(where: { $0.id == operation.fileID }) else { return }
+            guard let url = journalURL, let index = journalIndices[operation.fileID] else { return }
             journal?.items[index].temporary = temporary
             journal?.items[index].state = state
             try journal?.persist(to: url)
@@ -333,10 +335,11 @@ public actor FileOrganizationCoordinator {
         fileManager: FileManager
     ) -> [String] {
         var issues: [String] = []
+        let temporaryByID = Dictionary(temporaryLocations.map { ($0.operation.id, $0.temporary) }, uniquingKeysWith: { _, last in last })
         // Stage completed destinations back into their temporary slots first.
         // Restoring directly to source paths fails for a rename cycle/swap.
         for operation in completedMoves.reversed() {
-            if let temporary = temporaryLocations.first(where: { $0.operation.id == operation.id })?.temporary,
+            if let temporary = temporaryByID[operation.id],
                fileManager.fileExists(atPath: operation.destination.path) {
                 do { try exclusiveMove(from: operation.destination, to: temporary, fileManager: fileManager) }
                 catch { issues.append("Recover \(operation.destination.path) to \(operation.source.path): \(error.localizedDescription)") }

@@ -141,6 +141,7 @@ final class AppModel: ObservableObject {
     var browserPreferencesURL: URL?
     var searchTask: Task<Void, Never>?
     var appliedSearchQuery = ""
+    var appliedSearchTokens: [String] = []
     var browserIndexUpdates = 0
     @Published var lookupResults: [MusicBrainzReleaseSummary] = []
     @Published var matchResults: [ReleaseMatchResult] = []
@@ -239,7 +240,17 @@ final class AppModel: ObservableObject {
     }
 
     private func rebuildBrowserIndex() {
-        let changed = files.filter { filesByID[$0.id] != $0 }
+        let changed = files.filter { file in
+            guard let previous = filesByID[file.id] else { return true }
+            let entryChanged = browserEntries[file.id] != BrowserEntry(file)
+            let availabilityChanged = previous.state != file.state || previous.isModified != file.isModified
+            let metadataChanged = previous.metadata != file.metadata || previous.originalMetadata != file.originalMetadata
+                || previous.url != file.url || previous.durationInMilliseconds != file.durationInMilliseconds
+                || previous.lastError != file.lastError
+            let artworkFilterChanged = (previous.artwork.first(of: .front) == nil) != (file.artwork.first(of: .front) == nil)
+            let artworkChanged = metadataChanged ? false : previous.artwork != file.artwork || previous.originalArtwork != file.originalArtwork
+            return entryChanged || availabilityChanged || metadataChanged || artworkFilterChanged || artworkChanged
+        }
         let incomingIDs = Set(files.map(\.id))
         let removed = Set(filesByID.keys).subtracting(incomingIDs)
         guard !changed.isEmpty || !removed.isEmpty else { return }
@@ -290,13 +301,13 @@ final class AppModel: ObservableObject {
 
     func applyBrowserSearch() {
         appliedSearchQuery = searchQuery
+        appliedSearchTokens = searchQuery.split(whereSeparator: \.isWhitespace).map(String.init)
         rebuildBrowserMatches()
         keepSelectionInSearchResults()
     }
 
     func indexedSearchMatches(_ id: UUID) -> Bool {
-        let tokens = appliedSearchQuery.split(whereSeparator: \.isWhitespace).map(String.init)
-        return tokens.allSatisfy { browserEntries[id]?.searchText.localizedStandardContains($0) == true }
+        appliedSearchTokens.allSatisfy { browserEntries[id]?.searchText.localizedStandardContains($0) == true }
     }
 
     private func keepSelectionInSearchResults() {
@@ -531,8 +542,9 @@ final class AppModel: ObservableObject {
             items: expandedURLs.map { FileOperationItem(file: AudioFile(url: $0)) })
         do { try await flushSession(); try await persistOperation(importJournal) }
         catch { present(error); return }
-        var knownPaths = Set(files.map { $0.url.resolvingSymlinksInPath().standardizedFileURL.path })
-        var loadedFiles: [AudioFile] = []
+        var workingFiles = files
+        var fileIndices = Dictionary(uniqueKeysWithValues: workingFiles.enumerated().map { ($0.element.id, $0.offset) })
+        var knownPaths = Set(workingFiles.map { $0.url.resolvingSymlinksInPath().standardizedFileURL.path })
         for (index, url) in expandedURLs.enumerated() {
             importJournal.items[index].state = .inProgress
             do { try await persistOperation(importJournal) } catch { present(error); cancelled = true; break }
@@ -544,22 +556,22 @@ final class AppModel: ObservableObject {
                 }
                 let file: AudioFile
                 statusMessage = "Copying and organizing \(url.lastPathComponent)…"
-                let result = try await libraryImporter.importFile(at: url, into: libraryRoot, existing: files + loadedFiles)
+                let result = try await libraryImporter.importFile(at: url, into: libraryRoot, existing: workingFiles)
                 file = result.file
                 if result.copied { copied += 1 } else { alreadyPresent += 1 }
                 if let path = LibraryPaths.relativePath(of: file.url, in: libraryRoot) { restoredPaths.insert(path) }
-                if let existingIndex = files.firstIndex(where: { $0.id == file.id }) {
-                    files[existingIndex] = file
+                if let existingIndex = fileIndices[file.id] {
+                    workingFiles[existingIndex] = file
                 } else if knownPaths.insert(file.url.resolvingSymlinksInPath().standardizedFileURL.path).inserted {
-                    loadedFiles.append(file)
+                    fileIndices[file.id] = workingFiles.count
+                    workingFiles.append(file)
                 }
                 importJournal.items[index].state = .completed
                 importJournal.items[index].destination = file.url
                 importJournal.items[index].result = file
-                // Commit each imported item rather than waiting for the batch.
-                if !files.contains(where: { $0.id == file.id }) { files.append(file) }
-                loadedFiles.removeAll { $0.id == file.id }
-                try await flushSession()
+                // The journal commits each item for crash recovery. Defer the
+                // observable library/index rebuild and full session encoding
+                // until the batch completes.
                 try await persistOperation(importJournal)
             } catch is CancellationError {
                 cancelled = true
@@ -574,7 +586,7 @@ final class AppModel: ObservableObject {
             }
             progress = Double(index + 1) / Double(expandedURLs.count)
         }
-        files.append(contentsOf: loadedFiles)
+        files = workingFiles
         if var workspace = activeWorkspace, !restoredPaths.isDisjoint(with: workspace.excludedRelativePaths) {
             workspace.excludedRelativePaths.subtract(restoredPaths)
             do {
@@ -750,7 +762,10 @@ final class AppModel: ObservableObject {
             let results = try await musicBrainzClient.searchReleases(for: local)
             guard generation == lookupGeneration, targets == selectedFileIDs else { return }
             lookupResults = results
-            matchResults = ReleaseMatcher(preferences: releaseMatchPreferences).rank(local: local, candidates: results)
+            let matcher = ReleaseMatcher(preferences: releaseMatchPreferences)
+            matchResults = await Task.detached(priority: .userInitiated) {
+                matcher.rank(local: local, candidates: results)
+            }.value
             statusMessage = results.isEmpty ? "No matching releases found." : "Found \(results.count) releases."
         } catch {
             guard generation == lookupGeneration else { return }
@@ -1016,6 +1031,8 @@ final class AppModel: ObservableObject {
             progress = nil
         }
         var saved: [AudioFile] = []
+        var workingFiles = files
+        let fileIndices = Dictionary(uniqueKeysWithValues: workingFiles.enumerated().map { ($0.element.id, $0.offset) })
         var failures: [String] = []
         var journal = FileOperationRecord(workspaceID: activeWorkspaceID ?? UUID(), kind: .save,
             items: targets.map { FileOperationItem(file: $0) })
@@ -1033,7 +1050,7 @@ final class AppModel: ObservableObject {
                     preserveModificationDate: configuration.preserveFileTimestamps
                 ))
                 saved.append(result)
-                replaceFiles([result])
+                if let fileIndex = fileIndices[result.id] { workingFiles[fileIndex] = result }
                 journal.items[index].result = result
                 journal.items[index].state = .completed
                 lastSaveOutcomes.append(FileSaveOutcome(fileID: file.id, filename: file.url.lastPathComponent, saved: true, message: "Saved"))
@@ -1043,9 +1060,9 @@ final class AppModel: ObservableObject {
                 failures.append("\(file.url.lastPathComponent): \(error.localizedDescription)")
                 lastSaveOutcomes.append(FileSaveOutcome(fileID: file.id, filename: file.url.lastPathComponent, saved: false, message: error.localizedDescription))
             }
-            // Every successful write is reflected in the workspace before the
-            // next file is attempted. A journal failure stops further writes.
-            do { try await flushSession(); try await persistOperation(journal) }
+            // The operation journal is durable after every item. The in-memory
+            // library and full session document are published once at the end.
+            do { try await persistOperation(journal) }
             catch {
                 present(error)
                 statusMessage = "Tags were written, but recovery information could not be saved. Further writes stopped."
@@ -1054,8 +1071,10 @@ final class AppModel: ObservableObject {
             }
             progress = Double(index + 1) / Double(targets.count)
         }
-        if !saved.isEmpty { clearEditHistory() }
-        replaceFiles(saved)
+        if !saved.isEmpty {
+            files = workingFiles
+            clearEditHistory()
+        }
         let remaining = targets.count - lastSaveOutcomes.count
         journal.state = remaining > 0 ? .interrupted : (failures.isEmpty ? .completed : .failed)
         journal.finishedAt = Date()
@@ -1073,12 +1092,13 @@ final class AppModel: ObservableObject {
         }
         do {
             let evaluator = ScriptEvaluator()
+            let program = try evaluator.compile(scriptSource)
             let targets = selectedFiles
             var edited = files
             let indices = Dictionary(uniqueKeysWithValues: edited.enumerated().map { ($0.element.id, $0.offset) })
             var outputs: [String] = []
             for file in targets {
-                let evaluation = try evaluator.evaluate(scriptSource, context: ScriptContext(metadata: file.metadata))
+                let evaluation = try evaluator.evaluate(program, context: ScriptContext(metadata: file.metadata))
                 if outputs.count < 3 { outputs.append(evaluation.output) }
                 if applying, let index = indices[file.id] { try edited[index].updateMetadata(evaluation.metadata) }
             }

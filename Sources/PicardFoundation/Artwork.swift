@@ -18,6 +18,22 @@ public enum ArtworkSource: Codable, Sendable, Equatable {
     case generated
 }
 
+private final class ArtworkHashCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue: String?
+
+    var value: String? {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return storedValue
+        }
+        set {
+            lock.lock(); defer { lock.unlock() }
+            storedValue = newValue
+        }
+    }
+}
+
 public struct Artwork: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
     public var type: ArtworkType
@@ -26,7 +42,18 @@ public struct Artwork: Codable, Sendable, Equatable, Identifiable {
     public var width: Int?
     public var height: Int?
     public var source: ArtworkSource
-    public var data: Data?
+    public var data: Data? {
+        didSet { hashCache.value = nil }
+    }
+
+    // Hashing image bytes is useful for SwiftUI task identities, but doing it on
+    // every body evaluation turns large artwork into a repeated O(bytes) cost.
+    // The cache is deliberately not serialized; it is derived from `data`.
+    private let hashCache: ArtworkHashCache
+
+    private enum CodingKeys: String, CodingKey {
+        case id, type, mimeType, description, width, height, source, data
+    }
 
     public init(
         id: UUID = UUID(),
@@ -46,13 +73,48 @@ public struct Artwork: Codable, Sendable, Equatable, Identifiable {
         self.height = height
         self.source = source
         self.data = data
+        self.hashCache = ArtworkHashCache()
     }
 
     public var contentHash: String? {
         guard let data else {
             return nil
         }
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        if let cachedContentHash = hashCache.value { return cachedContentHash }
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        hashCache.value = hash
+        return hash
+    }
+
+    public static func == (lhs: Artwork, rhs: Artwork) -> Bool {
+        lhs.id == rhs.id && lhs.type == rhs.type && lhs.mimeType == rhs.mimeType &&
+            lhs.description == rhs.description && lhs.width == rhs.width && lhs.height == rhs.height &&
+            lhs.source == rhs.source && lhs.data == rhs.data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        type = try values.decode(ArtworkType.self, forKey: .type)
+        mimeType = try values.decode(String.self, forKey: .mimeType)
+        description = try values.decode(String.self, forKey: .description)
+        width = try values.decodeIfPresent(Int.self, forKey: .width)
+        height = try values.decodeIfPresent(Int.self, forKey: .height)
+        source = try values.decode(ArtworkSource.self, forKey: .source)
+        data = try values.decodeIfPresent(Data.self, forKey: .data)
+        hashCache = ArtworkHashCache()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(type, forKey: .type)
+        try values.encode(mimeType, forKey: .mimeType)
+        try values.encode(description, forKey: .description)
+        try values.encodeIfPresent(width, forKey: .width)
+        try values.encodeIfPresent(height, forKey: .height)
+        try values.encode(source, forKey: .source)
+        try values.encodeIfPresent(data, forKey: .data)
     }
 }
 

@@ -139,7 +139,13 @@ public struct AudioFile: Codable, Sendable, Equatable, Identifiable {
     }
 
     public var isModified: Bool {
-        !metadataDiff.isEmpty || artwork != originalArtwork
+        // Normal library files spend most of their lifetime in one of these
+        // states. Their original/current values are synchronized at load and
+        // after save, so avoid diffing metadata and comparing image bytes on
+        // every browser/body/filter evaluation.
+        if state == .ready || state == .saved { return false }
+        if state == .changed || state == .saving { return true }
+        return !metadataDiff.isEmpty || artwork != originalArtwork
     }
 
     /// Revision comparison across persisted documents. Date representation may

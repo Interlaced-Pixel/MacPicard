@@ -85,11 +85,12 @@ extension AppModel {
         defer { isWorking = false; progress = nil }
         let country = configuration.preferredReleaseCountry
         let groups = orderedAlbumGroups
+        let groupsByID = Dictionary(groups.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var proposals: [LibraryMatchProposal] = []
         if resume, let url = checkpointLocation, let checkpoint = try? await ReviewCheckpointStore.shared.load(url),
            checkpoint.workspaceID == workspaceID, checkpoint.country == country, checkpoint.run.autoApplyThreshold == threshold {
             proposals = checkpoint.run.proposals.filter { proposal in
-                groups.contains { $0.id == proposal.id && $0.fileIDs == proposal.fileIDs }
+                groupsByID[proposal.id]?.fileIDs == proposal.fileIDs
                     && !proposal.baselines.isEmpty && proposal.baselines.allSatisfy { $0.matches(file(id: $0.id)) }
             }
         }

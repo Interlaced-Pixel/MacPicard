@@ -175,7 +175,8 @@ public actor SessionStore {
         do {
             var normalized = document
             normalized.savedAt = Date(timeIntervalSince1970: 0)
-            let content = try JSONEncoder.makeSessionEncoder().encode(normalized)
+            let encoder = JSONEncoder.makeSessionEncoder()
+            let content = try encoder.encode(normalized)
             if savedContent[url] == nil, var previous = try? load(from: url) {
                 previous.savedAt = normalized.savedAt
                 savedContent[url] = try JSONEncoder.makeSessionEncoder().encode(previous)
@@ -192,7 +193,7 @@ public actor SessionStore {
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            let data = try JSONEncoder.makeSessionEncoder().encode(document)
+            let data = try encoder.encode(document)
             try data.write(to: url, options: [.atomic])
             savedContent[url] = content
             writeCount += 1
