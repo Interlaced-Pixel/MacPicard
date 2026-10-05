@@ -226,7 +226,7 @@ struct MacPicardCommands: Commands {
             }
         }
 
-        CommandGroup(replacing: .help) {
+        CommandMenu("Help") {
             Button("MacPicard Guide") { presentation.isShowingGuide = true }
         }
     }
