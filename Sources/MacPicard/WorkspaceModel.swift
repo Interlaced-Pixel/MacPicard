@@ -44,17 +44,25 @@ extension AppModel {
     }
 
     var orderedAlbumGroups: [AlbumGroup] {
-        guard albumSort == .artist else { return albumGroups }
-        return albumGroups.sorted {
+        let cache = browserDerivedCache
+        if cache.groupSource == albumGroups, cache.groupSort == albumSort { return cache.orderedGroups }
+        cache.groupSource = albumGroups; cache.groupSort = albumSort
+        cache.orderedGroups = albumSort == .title ? albumGroups : albumGroups.sorted {
             if $0.artist == $1.artist { return $0.title.localizedStandardCompare($1.title) == .orderedAscending }
             return $0.artist.localizedStandardCompare($1.artist) == .orderedAscending
         }
+        return cache.orderedGroups
     }
 
     var browserAlbumGroups: [AlbumGroup] {
-        orderedAlbumGroups.filter { group in
+        let source = orderedAlbumGroups
+        let cache = browserDerivedCache
+        if cache.filteredSource == source, cache.filteredMatches == matchingFileIDs { return cache.filteredGroups }
+        cache.filteredSource = source; cache.filteredMatches = matchingFileIDs
+        cache.filteredGroups = source.filter { group in
             group.fileIDs.contains { matchingFileIDs.contains($0) }
         }
+        return cache.filteredGroups
     }
 
     var workspaceFilesCount: Int { files.count }
@@ -381,6 +389,7 @@ extension AppModel {
                 libraryMonitor = nil
             }
             let existing = files
+            let revision = fileRevision
             let scanner = libraryScanner
             let workspaceID = workspace.id
             guard cancelledLibraryScanID != scanID else { throw CancellationError() }
@@ -392,6 +401,7 @@ extension AppModel {
                         existing: existing,
                         excludingRelativePaths: workspace.excludedRelativePaths,
                         affectedPaths: affectedPaths,
+                        revision: revision,
                         progress: nil
                     )
                 }
@@ -401,6 +411,7 @@ extension AppModel {
                         directory: directory,
                         existing: existing,
                         excludingRelativePaths: workspace.excludedRelativePaths,
+                        revision: revision,
                         progress: { [weak self] value in
                             guard let self else { return }
                             await self.updateSaveProgress(value)

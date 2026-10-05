@@ -106,7 +106,7 @@ final class AppModel: ObservableObject {
     @Published var isExportingArtwork = false
     @Published var progress: Double?
     @Published var files: [AudioFile] = [] {
-        didSet { rebuildBrowserIndex() }
+        didSet { rebuildBrowserIndex(previous: oldValue) }
     }
     @Published private(set) var albumGroups: [AlbumGroup] = []
     @Published var searchQuery = "" {
@@ -205,6 +205,16 @@ final class AppModel: ObservableObject {
     private let lookupAudioEngine = FormatEngine()
     private var filesByID: [UUID: AudioFile] = [:]
     private var browserEntries: [UUID: BrowserEntry] = [:]
+    private var filePositions: [UUID: Int] = [:]
+    private var albumMembers: [String: Set<UUID>] = [:]
+    private var pendingFileChanges: Set<UUID>?
+    private(set) var fileRevision: UInt64 = 0
+    private(set) var albumRevision: UInt64 = 0
+    private(set) var lastFileChangeRevision: UInt64 = 0
+    private(set) var lastFileChanges = Set<UUID>()
+    let browserDerivedCache = BrowserDerivedCache()
+    private var sessionFilesRevision: UInt64?
+    private var cachedSessionFiles: [AudioFileSessionRecord] = []
     var workspaceStore: WorkspaceStore?
     let playback = PlaybackController()
     let libraryScanner = LibraryScanner()
@@ -229,6 +239,7 @@ final class AppModel: ObservableObject {
     @Published var operationHistory: [FileOperationRecord] = []
     @Published var checkingOperationID: UUID?
     var recoveryCheckTask: Task<Void, Never>?
+    var operationCheckpointTicks: [UUID: Int] = [:]
     private let updateService = AppUpdateService()
 
     init(musicBrainzClient: MusicBrainzClient? = nil, coverArtClient: CoverArtClient? = nil, audioCoordinator: AudioFileCoordinator? = nil) {
@@ -239,61 +250,85 @@ final class AppModel: ObservableObject {
         editUndoManager.levelsOfUndo = 80
     }
 
-    private func rebuildBrowserIndex() {
-        let changed = files.filter { file in
-            guard let previous = filesByID[file.id] else { return true }
-            let entryChanged = browserEntries[file.id] != BrowserEntry(file)
-            let availabilityChanged = previous.state != file.state || previous.isModified != file.isModified
-            let metadataChanged = previous.metadata != file.metadata || previous.originalMetadata != file.originalMetadata
-                || previous.url != file.url || previous.durationInMilliseconds != file.durationInMilliseconds
-                || previous.lastError != file.lastError
-            let artworkFilterChanged = (previous.artwork.first(of: .front) == nil) != (file.artwork.first(of: .front) == nil)
-            let artworkChanged = metadataChanged ? false : previous.artwork != file.artwork || previous.originalArtwork != file.originalArtwork
-            return entryChanged || availabilityChanged || metadataChanged || artworkFilterChanged || artworkChanged
-        }
-        let incomingIDs = Set(files.map(\.id))
-        let removed = Set(filesByID.keys).subtracting(incomingIDs)
-        guard !changed.isEmpty || !removed.isEmpty else { return }
-        let regroup = !removed.isEmpty || changed.contains { browserEntries[$0.id]?.grouping != BrowserEntry($0).grouping }
-        filesByID = Dictionary(files.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-        for id in removed { browserEntries.removeValue(forKey: id); matchingFileIDs.remove(id) }
-        for file in changed { browserEntries[file.id] = BrowserEntry(file) }
-        browserIndexUpdates += changed.count
-        if regroup {
-        var grouped: [String: (title: String, artist: String, ids: [UUID])] = [:]
-        for file in files {
-            let title = file.metadata.firstValue(for: "album")?.trimmedNonEmpty ?? "Unmatched files"
-            let artist = (file.metadata.firstValue(for: "albumartist")
-                ?? file.metadata.firstValue(for: "artist"))?.trimmedNonEmpty ?? "Unknown artist"
-            let key: String
-            if title == "Unmatched files" {
-                key = "unmatched"
-            } else {
-                key = "\(artist.lowercased())\u{1F}\(title.lowercased())"
+    private func rebuildBrowserIndex(previous: [AudioFile]) {
+        let dirtyIDs = pendingFileChanges
+        pendingFileChanges = nil
+        if dirtyIDs == nil, files == previous { return }
+        let changed: [AudioFile]
+        let removed: Set<UUID>
+        if let dirtyIDs {
+            changed = dirtyIDs.compactMap { id in
+                guard let index = filePositions[id], files.indices.contains(index) else { return nil }
+                let file = files[index]
+                return filesByID[id] == file ? nil : file
             }
-            grouped[key, default: (title, artist, [])].ids.append(file.id)
+            removed = []
+        } else {
+            changed = files.filter { filesByID[$0.id] != $0 }
+            let incomingIDs = Set(files.map(\.id))
+            removed = Set(filesByID.keys).subtracting(incomingIDs)
+            filePositions = Dictionary(files.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { _, last in last })
         }
-
-        albumGroups = grouped.map { key, value in
-            AlbumGroup(
-                id: key,
-                title: value.title,
-                artist: value.artist,
-                fileIDs: value.ids.compactMap { file(id: $0) }.sorted(by: isFileBefore).map(\.id)
-            )
-        }
-        .sorted {
-            if $0.title == $1.title { return $0.artist.localizedStandardCompare($1.artist) == .orderedAscending }
-            return $0.title.localizedStandardCompare($1.title) == .orderedAscending
-        }
-        }
+        guard !changed.isEmpty || !removed.isEmpty else { return }
+        lastFileChangeRevision = fileRevision
+        lastFileChanges = Set(changed.map(\.id)).union(removed)
+        fileRevision &+= 1
+        var affectedAlbums = Set<String>()
         var matches = matchingFileIDs
+        for id in removed {
+            if let entry = browserEntries.removeValue(forKey: id) {
+                affectedAlbums.insert(entry.albumKey)
+                albumMembers[entry.albumKey]?.remove(id)
+            }
+            filesByID.removeValue(forKey: id)
+            matches.remove(id)
+        }
+        for file in changed {
+            let entry = BrowserEntry(file)
+            let old = browserEntries[file.id]
+            if old?.albumKey != entry.albumKey {
+                if let old { albumMembers[old.albumKey]?.remove(file.id); affectedAlbums.insert(old.albumKey) }
+                albumMembers[entry.albumKey, default: []].insert(file.id)
+                affectedAlbums.insert(entry.albumKey)
+            } else if old?.grouping != entry.grouping {
+                affectedAlbums.insert(entry.albumKey)
+            }
+            filesByID[file.id] = file
+            browserEntries[file.id] = entry
+        }
+        browserIndexUpdates += changed.count
+        if !affectedAlbums.isEmpty {
+            var groups = Dictionary(albumGroups.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+            for key in affectedAlbums {
+                let ids = albumMembers[key] ?? []
+                guard let firstID = ids.min(by: { (filePositions[$0] ?? 0) < (filePositions[$1] ?? 0) }),
+                      let entry = browserEntries[firstID] else {
+                    groups.removeValue(forKey: key); albumMembers.removeValue(forKey: key); continue
+                }
+                let orderedIDs = ids.sorted { browserEntries[$0]!.isBefore(browserEntries[$1]!) }
+                groups[key] = AlbumGroup(id: key, title: entry.albumTitle, artist: entry.artist, fileIDs: orderedIDs)
+            }
+            let ordered = groups.values.sorted {
+                if $0.title == $1.title { return $0.artist.localizedStandardCompare($1.artist) == .orderedAscending }
+                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+            if ordered != albumGroups { albumGroups = ordered; albumRevision &+= 1 }
+        }
         for file in changed {
             if matchesBrowser(file) { matches.insert(file.id) } else { matches.remove(file.id) }
         }
         if matches != matchingFileIDs { matchingFileIDs = matches }
-        playback.updateTracks(files)
+        playback.updateTracks(changed)
     }
+
+    /// A known-ID edit avoids re-diffing and re-indexing the entire collection.
+    func publishFileEdits(_ edited: [AudioFile], changedIDs: Set<UUID>) {
+        precondition(edited.count == files.count)
+        pendingFileChanges = changedIDs
+        files = edited
+    }
+
+    func position(of id: UUID) -> Int? { filePositions[id] }
 
     private func rebuildBrowserMatches() {
         matchingFileIDs = Set(files.filter { matchesBrowser($0) }.map(\.id))
@@ -316,6 +351,18 @@ final class AppModel: ObservableObject {
     }
 
     var visibleFiles: [AudioFile] {
+        let key = BrowserDerivedCache.VisibleKey(revision: fileRevision, groupRevision: albumRevision, matches: matchingFileIDs,
+            album: selectedAlbumID, artist: selectedArtist, sort: albumSort, query: appliedSearchQuery)
+        if browserDerivedCache.visibleKey == key { return browserDerivedCache.visibleFiles }
+        if let previous = browserDerivedCache.visibleKey, previous.revision == lastFileChangeRevision,
+           previous.sameNavigation(as: key), selectedArtist == nil {
+            var result = browserDerivedCache.visibleFiles
+            for id in lastFileChanges {
+                if let index = browserDerivedCache.visiblePositions[id], let file = filesByID[id] { result[index] = file }
+            }
+            browserDerivedCache.visibleKey = key; browserDerivedCache.visibleFiles = result
+            return result
+        }
         let candidates: [AudioFile]
         if appliedSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let group = albumGroups.first(where: { $0.id == selectedAlbumID }) {
@@ -323,11 +370,22 @@ final class AppModel: ObservableObject {
         } else {
             candidates = orderedAlbumGroups.flatMap { $0.fileIDs.compactMap { filesByID[$0] } }
         }
-        return candidates.filter { matchingFileIDs.contains($0.id) && (selectedArtist == nil || BrowserEntry($0).artist == selectedArtist) }
+        let result = candidates.filter { matchingFileIDs.contains($0.id) && (selectedArtist == nil || browserEntries[$0.id]?.artist == selectedArtist) }
+        browserDerivedCache.visibleKey = key
+        browserDerivedCache.visibleFiles = result
+        browserDerivedCache.visiblePositions = Dictionary(uniqueKeysWithValues: result.enumerated().map { ($0.element.id, $0.offset) })
+        return result
     }
 
     var selectedFiles: [AudioFile] {
-        selectedFileIDs.compactMap { filesByID[$0] }.sorted(by: isFileBefore)
+        if browserDerivedCache.selectionRevision == fileRevision, browserDerivedCache.selectionIDs == selectedFileIDs {
+            return browserDerivedCache.selectedFiles
+        }
+        let result = selectedFileIDs.compactMap { filesByID[$0] }.sorted { browserEntries[$0.id]!.isBefore(browserEntries[$1.id]!) }
+        browserDerivedCache.selectionRevision = fileRevision
+        browserDerivedCache.selectionIDs = selectedFileIDs
+        browserDerivedCache.selectedFiles = result
+        return result
     }
 
     var primarySelectedFile: AudioFile? {
@@ -545,9 +603,10 @@ final class AppModel: ObservableObject {
         var workingFiles = files
         var fileIndices = Dictionary(uniqueKeysWithValues: workingFiles.enumerated().map { ($0.element.id, $0.offset) })
         var knownPaths = Set(workingFiles.map { $0.url.resolvingSymlinksInPath().standardizedFileURL.path })
+        await libraryImporter.beginBatch(existing: workingFiles)
         for (index, url) in expandedURLs.enumerated() {
             importJournal.items[index].state = .inProgress
-            do { try await persistOperation(importJournal) } catch { present(error); cancelled = true; break }
+            do { try await persistOperation(importJournal, changedItemIDs: [importJournal.items[index].id]) } catch { present(error); cancelled = true; break }
             do {
                 try Task.checkCancellation()
                 let accessed = url.startAccessingSecurityScopedResource()
@@ -556,7 +615,7 @@ final class AppModel: ObservableObject {
                 }
                 let file: AudioFile
                 statusMessage = "Copying and organizing \(url.lastPathComponent)…"
-                let result = try await libraryImporter.importFile(at: url, into: libraryRoot, existing: workingFiles)
+                let result = try await libraryImporter.importIndexedFile(at: url, into: libraryRoot)
                 file = result.file
                 if result.copied { copied += 1 } else { alreadyPresent += 1 }
                 if let path = LibraryPaths.relativePath(of: file.url, in: libraryRoot) { restoredPaths.insert(path) }
@@ -572,7 +631,7 @@ final class AppModel: ObservableObject {
                 // The journal commits each item for crash recovery. Defer the
                 // observable library/index rebuild and full session encoding
                 // until the batch completes.
-                try await persistOperation(importJournal)
+                try await persistOperation(importJournal, changedItemIDs: [importJournal.items[index].id])
             } catch is CancellationError {
                 cancelled = true
                 break
@@ -580,12 +639,13 @@ final class AppModel: ObservableObject {
                 failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
                 importJournal.items[index].message = error.localizedDescription
                 if importJournal.items[index].result == nil { importJournal.items[index].state = .failed }
-                do { try await persistOperation(importJournal) }
+                do { try await persistOperation(importJournal, changedItemIDs: [importJournal.items[index].id]) }
                 catch { present(error); cancelled = true; break }
                 if importJournal.items[index].result != nil { cancelled = true; break }
             }
             progress = Double(index + 1) / Double(expandedURLs.count)
         }
+        await libraryImporter.endBatch()
         files = workingFiles
         if var workspace = activeWorkspace, !restoredPaths.isDisjoint(with: workspace.excludedRelativePaths) {
             workspace.excludedRelativePaths.subtract(restoredPaths)
@@ -763,9 +823,9 @@ final class AppModel: ObservableObject {
             guard generation == lookupGeneration, targets == selectedFileIDs else { return }
             lookupResults = results
             let matcher = ReleaseMatcher(preferences: releaseMatchPreferences)
-            matchResults = await Task.detached(priority: .userInitiated) {
+            matchResults = try await BackgroundComputation.run {
                 matcher.rank(local: local, candidates: results)
-            }.value
+            }
             statusMessage = results.isEmpty ? "No matching releases found." : "Found \(results.count) releases."
         } catch {
             guard generation == lookupGeneration else { return }
@@ -805,9 +865,9 @@ final class AppModel: ObservableObject {
             guard generation == lookupGeneration, targets == selectedFileIDs,
                   originals.allSatisfy({ file(id: $0.id) == $0 }) else { return }
             let localTracks = candidates
-            let review = try await Task.detached(priority: .userInitiated) {
+            let review = try await BackgroundComputation.run {
                 try ReleaseMatchReview(release: release, localTracks: localTracks)
-            }.value
+            }
             guard generation == lookupGeneration, targets == selectedFileIDs,
                   originals.allSatisfy({ file(id: $0.id) == $0 }) else { return }
             selectedRelease = release
@@ -1043,7 +1103,7 @@ final class AppModel: ObservableObject {
         for (index, file) in targets.enumerated() {
             if Task.isCancelled { break }
             journal.items[index].state = .inProgress
-            do { try await persistOperation(journal) }
+            do { try await persistOperation(journal, changedItemIDs: [file.id]) }
             catch { present(error); break }
             do {
                 let result = try await saveCoordinator.save(file, options: AudioSaveOptions(
@@ -1062,7 +1122,7 @@ final class AppModel: ObservableObject {
             }
             // The operation journal is durable after every item. The in-memory
             // library and full session document are published once at the end.
-            do { try await persistOperation(journal) }
+            do { try await persistOperation(journal, changedItemIDs: [file.id]) }
             catch {
                 present(error)
                 statusMessage = "Tags were written, but recovery information could not be saved. Further writes stopped."
@@ -1084,32 +1144,46 @@ final class AppModel: ObservableObject {
         errorMessage = failures.isEmpty ? nil : failures.prefix(3).joined(separator: "\n")
     }
 
-    func runScript(applying: Bool) {
+    func runScript(applying: Bool) async {
         guard !isBusy else { return }
         guard !selectedFiles.isEmpty else {
             scriptOutput = "Select a file first."
             return
         }
+        let targets = selectedFiles, source = scriptSource, workspaceID = activeWorkspaceID
+        isWorking = true
+        defer { isWorking = false }
         do {
-            let evaluator = ScriptEvaluator()
-            let program = try evaluator.compile(scriptSource)
-            let targets = selectedFiles
-            var edited = files
-            let indices = Dictionary(uniqueKeysWithValues: edited.enumerated().map { ($0.element.id, $0.offset) })
-            var outputs: [String] = []
-            for file in targets {
-                let evaluation = try evaluator.evaluate(program, context: ScriptContext(metadata: file.metadata))
-                if outputs.count < 3 { outputs.append(evaluation.output) }
-                if applying, let index = indices[file.id] { try edited[index].updateMetadata(evaluation.metadata) }
+            let (replacements, outputs) = try await BackgroundComputation.run {
+                let evaluator = ScriptEvaluator()
+                let program = try evaluator.compile(source)
+                var edited = targets
+                var outputs: [String] = []
+                for (index, file) in targets.enumerated() {
+                    try Task.checkCancellation()
+                    let evaluation = try evaluator.evaluate(program, context: ScriptContext(metadata: file.metadata))
+                    if outputs.count < 3 { outputs.append(evaluation.output) }
+                    if applying { try edited[index].updateMetadata(evaluation.metadata) }
+                }
+                return (edited, outputs)
+            }
+            try Task.checkCancellation()
+            guard activeWorkspaceID == workspaceID, targets.allSatisfy({ file(id: $0.id) == $0 }) else {
+                throw PicardError.invalidConfiguration("Files changed while the script was running. Run it again.")
             }
             scriptOutput = outputs.joined(separator: "\n")
             if applying {
-                commitStagedEdits(edited, action: "Apply script")
-                statusMessage = "Applied script output to \(selectedFiles.count) files."
+                var edited = files
+                for file in replacements { if let index = position(of: file.id) { edited[index] = file } }
+                commitStagedEdits(edited, action: "Apply script", changedIDs: Set(targets.map(\.id)))
+                statusMessage = "Applied script output to \(targets.count) files."
                 scheduleSessionSave()
             } else {
                 statusMessage = "Script evaluated successfully."
             }
+        } catch is CancellationError {
+            scriptOutput = "Script cancelled."
+            statusMessage = "Script cancelled. No edits were staged."
         } catch {
             scriptOutput = error.localizedDescription
             present(error)
@@ -1144,7 +1218,7 @@ final class AppModel: ObservableObject {
                   let path = LibraryPaths.relativePath(of: file.url, in: directory) else { return true }
             return activeWorkspace?.excludedRelativePaths.contains(path) != true
         }
-        selectedFileIDs = Set(loaded.document.selectedFileIDs.filter { id in files.contains(where: { $0.id == id }) })
+        selectedFileIDs = Set(loaded.document.selectedFileIDs).intersection(filesByID.keys)
         selectedAlbumID = loaded.document.selectedAlbumKey
         accessBookmarkKeys = loaded.document.accessBookmarkKeys
         expandedAlbumIDs.removeAll()
@@ -1154,10 +1228,14 @@ final class AppModel: ObservableObject {
     }
 
     func makeSessionDocument() -> SessionDocument {
-        SessionDocument(
+        if sessionFilesRevision != fileRevision {
+            cachedSessionFiles = files.map { $0.sessionRecord() }
+            sessionFilesRevision = fileRevision
+        }
+        return SessionDocument(
             createdAt: sessionCreatedAt,
             savedAt: Date(),
-            files: files.map { $0.sessionRecord() },
+            files: cachedSessionFiles,
             selectedFileIDs: selectedFileIDs.sorted { $0.uuidString < $1.uuidString },
             expandedNodeIDs: [],
             selectedAlbumKey: selectedAlbumID,
@@ -1212,8 +1290,13 @@ final class AppModel: ObservableObject {
     }
 
     private func replaceFiles(_ replacements: [AudioFile]) {
-        let replacementByID = Dictionary(uniqueKeysWithValues: replacements.map { ($0.id, $0) })
-        files = files.map { replacementByID[$0.id] ?? $0 }
+        var edited = files
+        var ids = Set<UUID>()
+        for replacement in replacements {
+            guard let index = filePositions[replacement.id] else { continue }
+            edited[index] = replacement; ids.insert(replacement.id)
+        }
+        publishFileEdits(edited, changedIDs: ids)
     }
 
     private func isFileBefore(_ lhs: AudioFile, _ rhs: AudioFile) -> Bool {
@@ -1255,7 +1338,7 @@ final class AppModel: ObservableObject {
     }
 }
 
-private extension String {
+extension String {
     var trimmedNonEmpty: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value

@@ -4,6 +4,72 @@ import XCTest
 @testable import PicardMusicBrainz
 
 final class MusicBrainzTests: XCTestCase {
+    func testConcurrentReleaseLookupsCoalesceAndDecodedValuesAreReused() async throws {
+        let transport = SlowReleaseTransport(data: Data(Self.releaseResponse.utf8))
+        let client = MusicBrainzClient(userAgent: "Tests/1", transport: transport, minimumRequestInterval: .zero)
+        let id = "11111111-1111-1111-1111-111111111111"
+        try await withThrowingTaskGroup(of: MusicBrainzRelease.self) { group in
+            for _ in 0..<8 { group.addTask { try await client.lookupRelease(id: id) } }
+            for try await release in group { XCTAssertEqual(release.id, id) }
+        }
+        _ = try await client.lookupRelease(id: id)
+        let count = await transport.count; XCTAssertEqual(count, 1)
+        _ = try await client.lookupRelease(id: id, includes: Set(MusicBrainzInclude.allCases))
+        let differentIncludes = await transport.count; XCTAssertEqual(differentIncludes, 2)
+    }
+    func testKnownReleaseIDBypassesSearchWithoutRemovingIdentityChecks() async throws {
+        let transport = StubTransport(responses: [Data(Self.releaseResponse.utf8)])
+        let client = MusicBrainzClient(userAgent: "Tests/1", transport: transport, minimumRequestInterval: .zero)
+        let id = "11111111-1111-1111-1111-111111111111"
+        let results = try await client.searchReleases(for: LocalAlbumCandidate(releaseID: id, albumTitle: "Example Album", albumArtist: "Example Artist"))
+        _ = try await client.lookupRelease(id: id)
+        let requests = await transport.requests()
+        XCTAssertEqual(requests.count, 1); XCTAssertEqual(requests[0].url?.lastPathComponent, id)
+        XCTAssertEqual(results.first?.id, id)
+    }
+    func testDecodedCacheHonorsResponseExpiry() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let transport = StubTransport(responses: [Data(Self.releaseResponse.utf8)])
+        let client = MusicBrainzClient(userAgent: "Tests/1", transport: transport, cache: MusicBrainzResponseCache(directory: root, lifetime: -1), minimumRequestInterval: .zero)
+        _ = try await client.lookupRelease(id: "11111111-1111-1111-1111-111111111111")
+        _ = try await client.lookupRelease(id: "11111111-1111-1111-1111-111111111111")
+        let requests = await transport.requests(); XCTAssertEqual(requests.count, 2)
+    }
+    func testDecodedExpiryIsPreservedWhenRawResponseExceedsMemoryCacheBudget() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        var json = Self.releaseResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+        json.removeLast()
+        json.append(",\"ignored\":\"")
+        json.append(String(repeating: "x", count: 16 * 1024 * 1024 + 1))
+        json.append("\"}")
+        let body = Data(json.utf8)
+        let transport = StubTransport(responses: [body])
+        let cache = MusicBrainzResponseCache(directory: root, lifetime: -1)
+        let client = MusicBrainzClient(userAgent: "Tests/1", transport: transport, cache: cache, minimumRequestInterval: .zero)
+        _ = try await client.lookupRelease(id: "11111111-1111-1111-1111-111111111111")
+        _ = try await client.lookupRelease(id: "11111111-1111-1111-1111-111111111111")
+        let requests = await transport.requests(); XCTAssertEqual(requests.count, 2)
+    }
+    func testCancellingOneSubscriberDoesNotCancelAnother() async throws {
+        let transport = SlowReleaseTransport(data: Data(Self.releaseResponse.utf8))
+        let client = MusicBrainzClient(userAgent: "Tests/1", transport: transport, minimumRequestInterval: .zero)
+        let first = Task { try await client.lookupRelease(id: "11111111-1111-1111-1111-111111111111") }
+        for _ in 0..<100 { if await transport.count > 0 { break }; try await Task.sleep(for: .milliseconds(1)) }
+        let second = Task { try await client.lookupRelease(id: "11111111-1111-1111-1111-111111111111") }
+        try await Task.sleep(for: .milliseconds(5)); first.cancel()
+        do { _ = try await first.value; XCTFail("Cancelled subscriber should not receive a result") } catch is CancellationError {}
+        let result = try await second.value; XCTAssertEqual(result.tracks.count, 2)
+        let count = await transport.count; XCTAssertEqual(count, 1)
+    }
+    private actor SlowReleaseTransport: MusicBrainzTransport {
+        let data: Data
+        var count = 0
+        init(data: Data) { self.data = data }
+        func data(for request: URLRequest) async throws -> MusicBrainzHTTPResponse {
+            count += 1; try await Task.sleep(for: .milliseconds(50))
+            return MusicBrainzHTTPResponse(statusCode: 200, data: data)
+        }
+    }
     func testClientBuildsRequestsDecodesAndCachesSearchResults() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -58,7 +124,7 @@ final class MusicBrainzTests: XCTestCase {
         XCTAssertEqual(release.tracks[0].isrcs, ["USAAA1234567"])
         let requests = await transport.requests()
         let items = URLComponents(url: try XCTUnwrap(requests.first?.url), resolvingAgainstBaseURL: false)?.queryItems
-        XCTAssertEqual(items?.first(where: { $0.name == "inc" })?.value, "artist-credits genres isrcs labels media recordings release-groups tags")
+        XCTAssertEqual(items?.first(where: { $0.name == "inc" })?.value, "artist-credits isrcs labels media recordings release-groups")
         XCTAssertEqual(items?.first(where: { $0.name == "fmt" })?.value, "json")
         XCTAssertFalse(requests[0].url!.absoluteString.contains(","))
     }

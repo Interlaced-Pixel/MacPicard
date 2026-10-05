@@ -103,24 +103,16 @@ public struct URLSessionCoverArtTransport: CoverArtTransport, Sendable {
     public func data(for request: URLRequest) async throws -> CoverArtHTTPResponse {
         do {
             let secured = try CoverArtURLPolicy.secureRequest(request)
-            let (bytes, response) = try await URLSession.shared.bytes(for: secured, delegate: CoverArtRedirectDelegate.shared)
-            defer { bytes.task.cancel() }
-            guard response.expectedContentLength <= ArtworkValidation.maximumBytes else {
-                throw CoverArtError.invalidImage("The response exceeds 32 MiB.")
-            }
-            var data = Data()
-            for try await byte in bytes {
-                if data.count >= ArtworkValidation.maximumBytes { throw CoverArtError.invalidImage("The response exceeds 32 MiB.") }
-                data.append(byte)
-            }
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw CoverArtError.network("The server returned a non-HTTP response.")
-            }
+            let transfer = try await BoundedHTTPTransfer.receive(secured, maximumBytes: ArtworkValidation.maximumBytes,
+                redirect: { try? CoverArtURLPolicy.secureRequest($0) })
+            let httpResponse = transfer.response
             var headers: [String: String] = [:]
             for (key, value) in httpResponse.allHeaderFields {
                 headers[String(describing: key).lowercased()] = String(describing: value)
             }
-            return CoverArtHTTPResponse(statusCode: httpResponse.statusCode, headers: headers, data: data)
+            return CoverArtHTTPResponse(statusCode: httpResponse.statusCode, headers: headers, data: transfer.data)
+        } catch BoundedHTTPFailure.oversized {
+            throw CoverArtError.invalidImage("The response exceeds 32 MiB.")
         } catch let error as CoverArtError {
             throw error
         } catch is CancellationError {

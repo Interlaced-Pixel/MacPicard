@@ -138,7 +138,7 @@ struct ArtworkManagerView: View {
             List(selection: $imageID) {
                 ForEach(images) { image in
                     HStack(spacing: 10) {
-                        ArtworkPreview(image: image).frame(width: 44, height: 44)
+                        ArtworkPreview(image: image, pointSize: 44).frame(width: 44, height: 44)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(image.type.rawValue.capitalized).fontWeight(.medium)
                             Text(image.description.isEmpty ? image.mimeType : image.description).font(.caption).lineLimit(1).foregroundStyle(.secondary)
@@ -193,7 +193,7 @@ struct ArtworkManagerView: View {
     private func preview(_ image: Artwork?, title: String, missing: String) -> some View {
         VStack(spacing: 8) {
             Text(title).font(.subheadline.weight(.semibold))
-            ArtworkPreview(image: image).frame(height: 190).frame(maxWidth: .infinity)
+            ArtworkPreview(image: image, pointSize: 300).frame(height: 190).frame(maxWidth: .infinity)
                 .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
             if let image {
                 ArtworkInfoLabel(image: image)
@@ -558,22 +558,21 @@ private struct ArtworkInfoLabel: View {
 /// Aspect-fit, orientation-correct bounded decode. Never allocate a full raster merely to draw a thumbnail.
 struct ArtworkPreview: View {
     let image: Artwork?
+    var pointSize: CGFloat = 300
+    @Environment(\.displayScale) private var displayScale
     @State private var thumbnail: NSImage?
+    private struct Request: Hashable { let revision: UUID?; let pixels: Int }
     var body: some View {
         Group {
             if let thumbnail { Image(nsImage: thumbnail).resizable().scaledToFit() }
             else { Image(systemName: "photo").font(.largeTitle).foregroundStyle(.tertiary).frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         .accessibilityLabel(image.map { "\($0.type.rawValue) artwork preview" } ?? "No image")
-        .task(id: image?.contentHash) {
+        .task(id: Request(revision: image?.dataRevision, pixels: Int(pointSize * displayScale))) {
             thumbnail = nil
-            guard let data = image?.data else { return }
-            let worker = Task.detached(priority: .utility) { () -> Data? in
-                guard (try? ArtworkValidation.inspect(data)) != nil else { return nil }
-                return try? ArtworkProcessor.resize(data, maximumPixelSize: 600, format: .png)
-            }
-            let preview = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
-            if !Task.isCancelled, let preview { thumbnail = NSImage(data: preview) }
+            guard let image else { return }
+            let preview = try? await ArtworkThumbnailCache.shared.thumbnail(image, pixels: Int(pointSize * displayScale))
+            if !Task.isCancelled, let preview { thumbnail = NSImage(cgImage: preview.image, size: .zero) }
         }
     }
 }

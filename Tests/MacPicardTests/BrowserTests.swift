@@ -119,7 +119,7 @@ final class BrowserTests: XCTestCase {
     }
 
     @MainActor
-    func testBatchScriptEvaluatesEachTrackAndLookupRejectsMixedAlbums() throws {
+    func testBatchScriptEvaluatesEachTrackAndLookupRejectsMixedAlbums() async throws {
         let model = AppModel()
         let first = try audioFile(title: "One", artist: "Alice", album: "Album One", track: "1")
         let second = try audioFile(title: "Two", artist: "Bob", album: "Album Two", track: "1")
@@ -127,7 +127,7 @@ final class BrowserTests: XCTestCase {
         model.selectAllVisible()
         XCTAssertFalse(model.canLookupSelection)
         model.scriptSource = "$set(title,%title% edited)"
-        model.runScript(applying: true)
+        await model.runScript(applying: true)
         XCTAssertEqual(model.file(id: first.id)?.metadata.firstValue(for: "title"), "One edited")
         XCTAssertEqual(model.file(id: second.id)?.metadata.firstValue(for: "title"), "Two edited")
         model.selectionChanged([first.id])

@@ -246,8 +246,13 @@ final class PersistenceTests: XCTestCase {
         )
 
         try await autosave.start(interval: .milliseconds(20)) { document }
-        try await Task.sleep(for: .milliseconds(80))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while await store.writeCount == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         await autosave.stop()
+        let writes = await store.writeCount
+        XCTAssertGreaterThan(writes, 0, "Autosave did not commit within the bounded wait")
 
         let recovery = try await store.loadRecovery()
         XCTAssertEqual(recovery, document)

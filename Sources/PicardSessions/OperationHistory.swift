@@ -34,7 +34,7 @@ public struct FileOperationItem: Codable, Sendable, Identifiable, Equatable {
 /// Written before touching audio; each file result is durable before the UI
 /// announces completion. Incomplete writes are checked, never blindly replayed.
 public struct FileOperationRecord: Codable, Sendable, Identifiable, Equatable {
-    public let schemaVersion: Int
+    public var schemaVersion: Int
     public let id: UUID
     public let workspaceID: UUID
     public let kind: FileOperationKind
@@ -43,9 +43,11 @@ public struct FileOperationRecord: Codable, Sendable, Identifiable, Equatable {
     public var state: FileOperationState = .running
     public var items: [FileOperationItem]
     public var message = ""
+    public var summary: FileOperationSummary?
+    public var itemCount: Int { summary?.itemCount ?? items.count }
 
     public init(workspaceID: UUID, kind: FileOperationKind, items: [FileOperationItem]) {
-        schemaVersion = 1
+        schemaVersion = 2
         id = UUID()
         self.workspaceID = workspaceID
         self.kind = kind
@@ -53,30 +55,39 @@ public struct FileOperationRecord: Codable, Sendable, Identifiable, Equatable {
         self.items = items
     }
 
-    public func persist(to url: URL) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        try encoder.encode(self).write(to: url, options: .atomic)
+    init(schemaVersion: Int, id: UUID, workspaceID: UUID, kind: FileOperationKind,
+         startedAt: Date, finishedAt: Date?, state: FileOperationState, message: String,
+         summary: FileOperationSummary) {
+        self.schemaVersion = schemaVersion
+        self.id = id; self.workspaceID = workspaceID; self.kind = kind
+        self.startedAt = startedAt; self.finishedAt = finishedAt
+        self.state = state; self.message = message; self.summary = summary
+        items = []
+    }
+
+    @discardableResult
+    public func persist(to url: URL, changedItemIDs: Set<UUID>? = nil) throws -> Int {
+        try OperationJournal.shared.persist(self, to: url, changedItemIDs: changedItemIDs)
     }
 }
 
 public actor OperationHistoryStore {
     public init() {}
-    public func load(directory: URL, workspaceID: UUID, markInterrupted: Bool = false) throws -> [FileOperationRecord] {
+    public func load(directory: URL, workspaceID: UUID, markInterrupted: Bool = false, summariesOnly: Bool = false) throws -> [FileOperationRecord] {
         guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
         let urls = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
         var records: [FileOperationRecord] = []
         for url in urls {
-            var record = try JSONDecoder().decode(FileOperationRecord.self, from: Data(contentsOf: url))
-            guard record.schemaVersion == 1, record.workspaceID == workspaceID,
+            var record = try OperationJournal.read(url, summaryOnly: summariesOnly)
+            guard (1...2).contains(record.schemaVersion), record.workspaceID == workspaceID,
                 url.deletingPathExtension().lastPathComponent == record.id.uuidString
             else {
                 throw SaveError.session(
                     "The operation history needs a newer app or contains an invalid record. It was not replaced.")
             }
             if markInterrupted && record.state == .running {
+                if record.summary != nil { record = try OperationJournal.read(url) }
                 record.state = .interrupted
                 record.message = "Interrupted. Check the files before trying again."
                 try record.persist(to: url)
@@ -85,8 +96,16 @@ public actor OperationHistoryStore {
         }
         return records.sorted { $0.startedAt > $1.startedAt }
     }
-    public func save(_ record: FileOperationRecord, directory: URL) throws {
-        try record.persist(to: directory.appendingPathComponent(record.id.uuidString).appendingPathExtension("json"))
+    public func save(_ record: FileOperationRecord, directory: URL, changedItemIDs: Set<UUID>? = nil) throws {
+        try record.persist(to: directory.appendingPathComponent(record.id.uuidString).appendingPathExtension("json"), changedItemIDs: changedItemIDs)
+    }
+
+    public func details(id: UUID, directory: URL) throws -> FileOperationRecord {
+        try OperationJournal.read(directory.appendingPathComponent(id.uuidString).appendingPathExtension("json"))
+    }
+
+    public func summary(id: UUID, directory: URL) throws -> FileOperationRecord {
+        try OperationJournal.read(directory.appendingPathComponent(id.uuidString).appendingPathExtension("json"), summaryOnly: true)
     }
 
     /// Read-only recovery: locate the one item with the reviewed identity. An

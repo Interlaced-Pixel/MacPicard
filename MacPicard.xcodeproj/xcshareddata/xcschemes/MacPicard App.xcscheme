@@ -28,7 +28,7 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A93E1C2741BAB0BCBC6E299B7E999738"
+               BlueprintIdentifier = "2904A2766C18B8368892B889A9163724"
                BuildableName = "MacPicardTests.xctest"
                BlueprintName = "MacPicardTests"
                ReferencedContainer = "container:MacPicard.xcodeproj">
@@ -84,7 +84,7 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "FB924AE6206FE68D7E332FD8BE891EEE"
+               BlueprintIdentifier = "CA824BA41204ACE86E60F68AF894B534"
                BuildableName = "PicardFoundationTests.xctest"
                BlueprintName = "PicardFoundationTests"
                ReferencedContainer = "container:MacPicard.xcodeproj">
@@ -126,7 +126,7 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "727C3F59A7783F8C92E23CBA237A5786"
+               BlueprintIdentifier = "C4700E77C1DBEF02A81A67796C61F8A4"
                BuildableName = "PicardSessionsTests.xctest"
                BlueprintName = "PicardSessionsTests"
                ReferencedContainer = "container:MacPicard.xcodeproj">
@@ -154,7 +154,7 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A93E1C2741BAB0BCBC6E299B7E999738"
+               BlueprintIdentifier = "2904A2766C18B8368892B889A9163724"
                BuildableName = "MacPicardTests.xctest"
                BlueprintName = "MacPicardTests"
                ReferencedContainer = "container:MacPicard.xcodeproj">
@@ -198,7 +198,7 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "FB924AE6206FE68D7E332FD8BE891EEE"
+               BlueprintIdentifier = "CA824BA41204ACE86E60F68AF894B534"
                BuildableName = "PicardFoundationTests.xctest"
                BlueprintName = "PicardFoundationTests"
                ReferencedContainer = "container:MacPicard.xcodeproj">
@@ -231,7 +231,7 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "727C3F59A7783F8C92E23CBA237A5786"
+               BlueprintIdentifier = "C4700E77C1DBEF02A81A67796C61F8A4"
                BuildableName = "PicardSessionsTests.xctest"
                BlueprintName = "PicardSessionsTests"
                ReferencedContainer = "container:MacPicard.xcodeproj">

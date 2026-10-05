@@ -3,6 +3,17 @@ import XCTest
 @testable import PicardFoundation
 
 final class FoundationHardeningTests: XCTestCase {
+    func testArtworkHashCacheDoesNotPoisonIndependentCopies() throws {
+        let original = Artwork(mimeType: "image/png", source: .embedded, data: Data([1, 2, 3]))
+        let originalHash = try XCTUnwrap(original.contentHash)
+        var copy = original
+        copy.data = Data([4, 5, 6])
+        XCTAssertNotEqual(copy.contentHash, originalHash)
+        XCTAssertEqual(original.contentHash, originalHash)
+        copy.data = nil
+        XCTAssertNil(copy.contentHash)
+        XCTAssertEqual(original.contentHash, originalHash)
+    }
     func testIdentityMatchesJSONTimestampPrecisionButRejectsRealChanges() throws {
         let precise = Date(timeIntervalSinceReferenceDate: 813_152_099.1234567)
         let identity = AudioFileIdentity(resourceIdentifier: "inode", byteCount: 123,

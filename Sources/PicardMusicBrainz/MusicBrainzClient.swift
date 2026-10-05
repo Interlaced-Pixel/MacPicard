@@ -88,6 +88,10 @@ public enum MusicBrainzInclude: String, CaseIterable, Sendable {
 }
 
 public actor MusicBrainzResponseCache {
+    public struct CachedResponse: Sendable {
+        public let data: Data
+        public let expiresAt: Date
+    }
     private struct Entry: Codable {
         let expiresAt: Date
         let data: Data
@@ -95,6 +99,9 @@ public actor MusicBrainzResponseCache {
 
     private let directory: URL
     private let lifetime: TimeInterval
+    private var memory: [String: Entry] = [:]
+    private var order: [String] = []
+    private var memoryBytes = 0
 
     public init(directory: URL, lifetime: TimeInterval = 86_400) {
         self.directory = directory
@@ -102,6 +109,13 @@ public actor MusicBrainzResponseCache {
     }
 
     public func data(for key: String) throws -> Data? {
+        try response(for: key)?.data
+    }
+    public func response(for key: String) throws -> CachedResponse? {
+        if let entry = memory[key] {
+            if entry.expiresAt > Date() { return CachedResponse(data: entry.data, expiresAt: entry.expiresAt) }
+            discardMemory(key)
+        }
         let fileURL = directory.appendingPathComponent(key).appendingPathExtension("json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return nil
@@ -113,7 +127,8 @@ public actor MusicBrainzResponseCache {
                 try? FileManager.default.removeItem(at: fileURL)
                 return nil
             }
-            return entry.data
+            remember(entry, key: key)
+            return CachedResponse(data: entry.data, expiresAt: entry.expiresAt)
         } catch {
             try? FileManager.default.removeItem(at: fileURL)
             return nil
@@ -128,14 +143,27 @@ public actor MusicBrainzResponseCache {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let encoded = try JSONEncoder().encode(entry)
             try encoded.write(to: fileURL, options: [.atomic])
+            remember(entry, key: key)
         } catch {
             throw MusicBrainzError.transport("Could not write cache: \(error.localizedDescription)")
         }
     }
 
     public func remove(_ key: String) {
+        discardMemory(key)
         let fileURL = directory.appendingPathComponent(key).appendingPathExtension("json")
         try? FileManager.default.removeItem(at: fileURL)
+    }
+    public func freshExpiration() -> Date { Date().addingTimeInterval(lifetime) }
+    private func discardMemory(_ key: String) {
+        if let entry = memory.removeValue(forKey: key) { memoryBytes -= entry.data.count }
+        order.removeAll { $0 == key }
+    }
+    private func remember(_ entry: Entry, key: String) {
+        discardMemory(key)
+        guard entry.data.count <= 16 * 1024 * 1024 else { return }
+        memory[key] = entry; memoryBytes += entry.data.count; order.append(key)
+        while memoryBytes > 16 * 1024 * 1024 || order.count > 64 { discardMemory(order[0]) }
     }
 }
 
@@ -149,6 +177,21 @@ public actor MusicBrainzClient {
     private let cache: MusicBrainzResponseCache?
     private let minimumRequestInterval: Duration
     private let rateLimiter: APIRequestRateLimiter
+    public static let matchingIncludes: Set<MusicBrainzInclude> = [.artistCredits, .labels, .media, .recordings, .releaseGroups, .isrcs]
+    private struct DecodedRelease {
+        let release: MusicBrainzRelease
+        let expiresAt: Date
+        let cost: Int
+    }
+    private struct ReleaseFlight {
+        let generation: UUID
+        let task: Task<MusicBrainzRelease, Error>
+        var waiters: Set<UUID>
+    }
+    private var decodedReleases: [String: DecodedRelease] = [:]
+    private var decodedOrder: [String] = []
+    private var decodedBytes = 0
+    private var releaseFlights: [String: ReleaseFlight] = [:]
 
     public init(
         baseURL: URL = MusicBrainzClient.defaultBaseURL,
@@ -183,6 +226,11 @@ public actor MusicBrainzClient {
     }
 
     public func searchReleases(for album: LocalAlbumCandidate, limit: Int = 25) async throws -> [MusicBrainzReleaseSummary] {
+        if let id = album.releaseID, UUID(uuidString: id) != nil {
+            do { return [try await lookupRelease(id: id).summary] }
+            catch is CancellationError { throw CancellationError() }
+            catch { /* An unavailable saved ID falls back to ordinary search. */ }
+        }
         let clauses = [
             album.albumTitle.flatMap { Self.searchClause("release", value: $0) },
             album.albumArtist.flatMap { Self.searchClause("artist", value: $0) },
@@ -198,7 +246,7 @@ public actor MusicBrainzClient {
 
     public func lookupRelease(
         id: String,
-        includes: Set<MusicBrainzInclude> = Set(MusicBrainzInclude.allCases)
+        includes: Set<MusicBrainzInclude> = MusicBrainzClient.matchingIncludes
     ) async throws -> MusicBrainzRelease {
         let identifier = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !identifier.isEmpty else {
@@ -207,14 +255,58 @@ public actor MusicBrainzClient {
         guard let uuid = UUID(uuidString: identifier) else { throw MusicBrainzError.invalidIdentifier(identifier) }
         var includes = includes
         if includes.contains(.isrcs) { includes.insert(.recordings) }
-
-        let response: APIRelease = try await get(
-            path: "release/\(uuid.uuidString.lowercased())",
-            queryItems: includes.isEmpty ? [] : [
+        try Task.checkCancellation()
+        let path = "release/\(uuid.uuidString.lowercased())"
+        let queryItems = includes.isEmpty ? [] : [
                 URLQueryItem(name: "inc", value: includes.map(\.rawValue).sorted().joined(separator: " "))
             ]
-        )
-        return response.release()
+        let key = Self.cacheKey(for: try makeURL(path: path, queryItems: queryItems), authorization: authorizationHeader)
+        if let entry = decodedReleases[key], entry.expiresAt > Date() { return entry.release }
+        let waiter = UUID()
+        let flight: ReleaseFlight
+        if var existing = releaseFlights[key] {
+            existing.waiters.insert(waiter); releaseFlights[key] = existing; flight = existing
+        } else {
+            let generation = UUID()
+            let task = Task { try await self.loadRelease(path: path, queryItems: queryItems, key: key) }
+            flight = ReleaseFlight(generation: generation, task: task, waiters: [waiter])
+            releaseFlights[key] = flight
+        }
+        defer { if releaseFlights[key]?.generation == flight.generation { releaseFlights.removeValue(forKey: key) } }
+        let release = try await withTaskCancellationHandler {
+            try await flight.task.value
+        } onCancel: {
+            Task { await self.cancelReleaseWaiter(key: key, generation: flight.generation, waiter: waiter) }
+        }
+        try Task.checkCancellation()
+        return release
+    }
+
+    private func cancelReleaseWaiter(key: String, generation: UUID, waiter: UUID) {
+        guard var flight = releaseFlights[key], flight.generation == generation else { return }
+        flight.waiters.remove(waiter)
+        if flight.waiters.isEmpty { flight.task.cancel(); releaseFlights.removeValue(forKey: key) }
+        else { releaseFlights[key] = flight }
+    }
+    private func loadRelease(path: String, queryItems: [URLQueryItem], key: String) async throws -> MusicBrainzRelease {
+        let (response, expiration): (APIRelease, Date?) = try await getResponse(path: path, queryItems: queryItems)
+        try Task.checkCancellation()
+        let release = response.release()
+        guard release.id.lowercased() == path.split(separator: "/").last?.lowercased() else {
+            throw MusicBrainzError.invalidResponse("The response does not identify the requested release.")
+        }
+        let expiresAt = expiration ?? Date().addingTimeInterval(60)
+        let cost = 1024 + release.tracks.reduce(0) { $0 + 1024 + $1.title.utf8.count + $1.artistCredit.utf8.count }
+        if let old = decodedReleases.removeValue(forKey: key) { decodedBytes -= old.cost }
+        decodedOrder.removeAll { $0 == key }
+        if cost <= 8 * 1024 * 1024 {
+            decodedReleases[key] = DecodedRelease(release: release, expiresAt: expiresAt, cost: cost)
+            decodedOrder.append(key); decodedBytes += cost
+            while decodedBytes > 8 * 1024 * 1024 || decodedOrder.count > 64 {
+                if let removed = decodedReleases.removeValue(forKey: decodedOrder.removeFirst()) { decodedBytes -= removed.cost }
+            }
+        }
+        return release
     }
 
     public func releasesForRecording(id: String, limit: Int = 25) async throws -> [MusicBrainzReleaseSummary] {
@@ -231,14 +323,18 @@ public actor MusicBrainzClient {
         path: String,
         queryItems: [URLQueryItem]
     ) async throws -> Response {
+        let (response, _): (Response, Date?) = try await getResponse(path: path, queryItems: queryItems)
+        return response
+    }
+    private func getResponse<Response: Decodable>(path: String, queryItems: [URLQueryItem]) async throws -> (Response, Date?) {
         try Task.checkCancellation()
         let url = try makeURL(path: path, queryItems: queryItems)
         let key = Self.cacheKey(for: url, authorization: authorizationHeader)
 
-        if let cache, let cachedData = try await cache.data(for: key) {
+        if let cache, let cached = try await cache.response(for: key) {
             try Task.checkCancellation()
             do {
-                return try decode(Response.self, from: cachedData)
+                return (try decode(Response.self, from: cached.data), cached.expiresAt)
             } catch {
                 await cache.remove(key)
             }
@@ -278,10 +374,11 @@ public actor MusicBrainzClient {
                 }
 
                 let decoded = try decode(Response.self, from: response.data)
+                let expiration = await cache?.freshExpiration()
                 if let cache {
                     try? await cache.store(response.data, for: key)
                 }
-                return decoded
+                return (decoded, expiration)
             } catch let error as MusicBrainzError {
                 lastError = error
                 if attempt == 2 || !Self.isRetryable(error) {

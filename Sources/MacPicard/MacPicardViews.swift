@@ -701,7 +701,7 @@ struct ArtworkThumbnail: View {
     let artwork: Artwork?
 
     var body: some View {
-        ArtworkPreview(image: artwork)
+        ArtworkPreview(image: artwork, pointSize: 34)
         .clipped()
         .accessibilityLabel(artwork == nil ? "No artwork" : "Album artwork")
     }
@@ -742,9 +742,9 @@ struct ScriptView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                 Spacer()
-                Button("Preview") { model.runScript(applying: false) }
+                Button("Preview") { Task { await model.runScript(applying: false) } }
                     .disabled(model.selectedFiles.isEmpty)
-                Button("Apply") { model.runScript(applying: true) }
+                Button("Apply") { Task { await model.runScript(applying: true) } }
                     .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
                     .disabled(model.selectedFiles.isEmpty)
             }

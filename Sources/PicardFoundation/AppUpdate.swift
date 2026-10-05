@@ -169,56 +169,39 @@ public actor AppUpdateService {
         _ release: AppUpdateRelease,
         progress: @escaping @Sendable (AppUpdateProgress) -> Void = { _ in }
     ) async throws -> URL {
-        guard let archiveURL = release.archiveURL, let checksumURL = release.checksumURL else {
+        guard let archiveURL = release.archiveURL.flatMap(Self.trustedDownloadURL),
+              let checksumURL = release.checksumURL.flatMap(Self.trustedDownloadURL) else {
             throw AppUpdateError.checksumMissing
         }
         let checksumData: Data
         let checksumResponse: URLResponse
         do {
-            (checksumData, checksumResponse) = try await session.data(for: makeRequest(url: checksumURL, accept: "text/plain"))
-        } catch { throw AppUpdateError.network(error.localizedDescription) }
+            let transfer = try await BoundedHTTPTransfer.receive(makeRequest(url: checksumURL, accept: "text/plain"), session: session,
+                maximumBytes: 64 * 1024, requireSuccess: true, redirect: Self.trustedRedirect)
+            checksumData = transfer.data; checksumResponse = transfer.response
+        } catch is CancellationError { throw CancellationError() }
+        catch { throw AppUpdateError.network(error.localizedDescription) }
         try validate(checksumResponse)
         let expected = try Self.parseChecksum(String(decoding: checksumData, as: UTF8.self), archiveURL: archiveURL)
-
-        let archiveRequest = makeRequest(url: archiveURL, accept: "application/zip")
-        let bytes: URLSession.AsyncBytes
-        let response: URLResponse
-        do { (bytes, response) = try await session.bytes(for: archiveRequest) }
-        catch { throw AppUpdateError.network(error.localizedDescription) }
-        try validate(response)
-        let expectedLength = response.expectedContentLength > 0 ? response.expectedContentLength : nil
-        var archiveData = Data()
-        if let expectedLength { archiveData.reserveCapacity(Int(min(expectedLength, Int64(Int.max)))) }
-        var digest = SHA256()
-        var digestBuffer = Data()
-        digestBuffer.reserveCapacity(64 * 1024)
-        var completed: Int64 = 0
-        for try await byte in bytes {
-            try Task.checkCancellation()
-            digestBuffer.append(byte)
-            completed += 1
-            if digestBuffer.count == 64 * 1024 {
-                archiveData.append(digestBuffer)
-                digest.update(data: digestBuffer)
-                digestBuffer.removeAll(keepingCapacity: true)
-            }
-            if completed.isMultiple(of: 256 * 1024) {
-                progress(AppUpdateProgress(phase: .downloading, completedBytes: completed, totalBytes: expectedLength))
-            }
-        }
-        if !digestBuffer.isEmpty {
-            archiveData.append(digestBuffer)
-            digest.update(data: digestBuffer)
-        }
-        progress(AppUpdateProgress(phase: .downloading, completedBytes: completed, totalBytes: expectedLength ?? completed))
-        let actual = digest.finalize().map { String(format: "%02x", $0) }.joined()
-        guard expected == actual else { throw AppUpdateError.checksumMismatch(expected: expected, actual: actual) }
 
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("MacPicard-update-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let archivePath = directory.appendingPathComponent("MacPicard.zip")
-        try archiveData.write(to: archivePath, options: [.atomic])
-        return archivePath
+        do {
+            let transfer = try await BoundedHTTPTransfer.receive(makeRequest(url: archiveURL, accept: "application/zip"), session: session,
+                maximumBytes: 512 * 1024 * 1024, file: archivePath, requireSuccess: true, redirect: Self.trustedRedirect) { completed, total in
+                    progress(AppUpdateProgress(phase: .downloading, completedBytes: completed, totalBytes: total))
+                }
+            let actual = transfer.checksum ?? ""
+            guard expected == actual else { throw AppUpdateError.checksumMismatch(expected: expected, actual: actual) }
+            return archivePath
+        } catch {
+            // This exact temporary directory was created solely for this download.
+            try? FileManager.default.removeItem(at: directory)
+            if error is CancellationError { throw CancellationError() }
+            if let error = error as? AppUpdateError { throw error }
+            throw AppUpdateError.network(error.localizedDescription)
+        }
     }
 
     private func makeRequest(url: URL, accept: String) -> URLRequest {
@@ -239,9 +222,13 @@ public actor AppUpdateService {
     }
 
     private static func trustedDownloadURL(_ url: URL) -> URL? {
-        guard url.scheme == "https", let host = url.host?.lowercased(),
+        guard APIRequestPolicy.isSecure(url), url.port == nil || url.port == 443, let host = url.host?.lowercased(),
               host == "github.com" || host == "objects.githubusercontent.com" || host.hasSuffix(".githubusercontent.com") else { return nil }
         return url
+    }
+    private static func trustedRedirect(_ request: URLRequest) -> URLRequest? {
+        guard let url = request.url, trustedDownloadURL(url) != nil else { return nil }
+        return request
     }
 
     private static func parseChecksum(_ text: String, archiveURL: URL) throws -> String {

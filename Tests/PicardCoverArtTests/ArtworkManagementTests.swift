@@ -7,6 +7,34 @@ import XCTest
 @testable import PicardCoverArt
 
 final class ArtworkManagementTests: XCTestCase {
+    func testThumbnailRequestsShareOneDecodeAndRespectPixelSize() async throws {
+        let artwork = Artwork(mimeType: "image/png", source: .generated, data: try png())
+        let cache = ArtworkThumbnailCache()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<10 { group.addTask {
+                let raster = try await cache.thumbnail(artwork, pixels: 6)
+                XCTAssertEqual(raster.image.width, 6); XCTAssertEqual(raster.image.height, 4)
+            } }
+            try await group.waitForAll()
+        }
+        let decodes = await cache.decodeCount
+        XCTAssertEqual(decodes, 1)
+        _ = try await cache.thumbnail(artwork, pixels: 6)
+        let stillOne = await cache.decodeCount; XCTAssertEqual(stillOne, 1)
+        let larger = try await cache.thumbnail(artwork, pixels: 12)
+        XCTAssertEqual(larger.image.width, 12)
+        let differentSize = await cache.decodeCount; XCTAssertEqual(differentSize, 2)
+        let malformed = Artwork(mimeType: "image/png", source: .embedded, data: Data("invalid".utf8))
+        do { _ = try await cache.thumbnail(malformed, pixels: 6); XCTFail("No raster for invalid data") } catch {}
+    }
+    func testThumbnailCacheHasBoundedRetention() async throws {
+        let cache = ArtworkThumbnailCache(costLimit: 1)
+        let artwork = Artwork(mimeType: "image/png", source: .generated, data: try png())
+        _ = try await cache.thumbnail(artwork, pixels: 6)
+        _ = try await cache.thumbnail(artwork, pixels: 6)
+        let count = await cache.decodeCount
+        XCTAssertEqual(count, 2, "An image larger than the budget is not retained")
+    }
     func testBoundsMalformedAndAnimatedImages() throws {
         XCTAssertThrowsError(try ArtworkProcessor.inspect(Data("invalid".utf8)))
         XCTAssertThrowsError(try ArtworkProcessor.inspect(Data(repeating: 0, count: ArtworkValidation.maximumBytes + 1)))

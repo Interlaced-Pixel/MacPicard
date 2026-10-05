@@ -137,6 +137,15 @@ public actor FileOrganizationCoordinator {
         destinationDirectory: URL,
         namingScript: String
     ) throws -> FileMovePlan {
+        let program: ScriptProgram
+        do { program = try evaluator.compile(namingScript) }
+        catch { throw SaveError.invalidName(error.localizedDescription) }
+        return try plan(files: files, destinationDirectory: destinationDirectory, program: program)
+    }
+
+    public func prepare(namingScript: String) throws -> ScriptProgram { try evaluator.compile(namingScript) }
+
+    public func plan(files: [AudioFile], destinationDirectory: URL, program: ScriptProgram) throws -> FileMovePlan {
         var operations: [FileMoveOperation] = []
         for file in files {
             let context = ScriptContext(metadata: file.metadata, variables: [
@@ -145,7 +154,7 @@ public actor FileOrganizationCoordinator {
             ])
             let rendered: String
             do {
-                rendered = try evaluator.evaluate(namingScript, context: context).output
+                rendered = try evaluator.evaluate(program, context: context).output
             } catch {
                 throw SaveError.invalidName(error.localizedDescription)
             }
@@ -216,7 +225,7 @@ public actor FileOrganizationCoordinator {
             guard let url = journalURL, let index = journalIndices[operation.fileID] else { return }
             journal?.items[index].temporary = temporary
             journal?.items[index].state = state
-            try journal?.persist(to: url)
+            try journal?.persist(to: url, changedItemIDs: [operation.fileID])
         }
         do {
             if let journalURL { try journal?.persist(to: journalURL) }
@@ -271,14 +280,14 @@ public actor FileOrganizationCoordinator {
             let recovery = rollback(completedMoves: completedMoves, temporaryLocations: temporaryLocations, backups: backups, fileManager: fileManager)
             journal?.state = .interrupted
             journal?.message = error.localizedDescription
-            if let journalURL { try? journal?.persist(to: journalURL) }
+            if let journalURL { _ = try? journal?.persist(to: journalURL) }
             if !recovery.isEmpty { throw SaveError.moveFailed(path: active.first?.source.path ?? "", reason: error.localizedDescription + " Recovery required: " + recovery.joined(separator: "; ")) }
             throw error
         } catch {
             let recovery = rollback(completedMoves: completedMoves, temporaryLocations: temporaryLocations, backups: backups, fileManager: fileManager)
             journal?.state = .interrupted
             journal?.message = error.localizedDescription
-            if let journalURL { try? journal?.persist(to: journalURL) }
+            if let journalURL { _ = try? journal?.persist(to: journalURL) }
             throw SaveError.moveFailed(path: active.first?.source.path ?? "", reason: error.localizedDescription + (recovery.isEmpty ? "" : " Recovery required: " + recovery.joined(separator: "; ")))
         }
     }

@@ -28,13 +28,72 @@ struct LibraryReviewCheckpoint: Codable, Sendable {
 
 actor ReviewCheckpointStore {
     static let shared = ReviewCheckpointStore()
-    func save(_ checkpoint: LibraryReviewCheckpoint, to url: URL) throws {
+    private struct Root: Codable { let storageSchema: Int; let generation: UUID; let checkpoint: LibraryReviewCheckpoint }
+    private struct Delta: Codable { let generation: UUID; let completedAt: Date; let proposals: [AppModel.LibraryMatchProposal] }
+    private struct State { let generation: UUID; var length: UInt64; var positions: [String: Int] }
+    private var states: [URL: State] = [:]
+    private var stateOrder: [URL] = []
+
+    private func remember(_ state: State, for url: URL) {
+        states[url] = state
+        stateOrder.removeAll { $0 == url }; stateOrder.append(url)
+        while stateOrder.count > 4 { states.removeValue(forKey: stateOrder.removeFirst()) }
+    }
+
+    func reset(_ checkpoint: LibraryReviewCheckpoint, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(checkpoint).write(to: url, options: .atomic)
+        let generation = UUID()
+        try DurableArchive.replace(JSONEncoder().encode(Root(storageSchema: 2, generation: generation, checkpoint: checkpoint)), at: url)
+        // A generation tag prevents old deltas from replaying if the app dies
+        // between the atomic root replacement and clearing its append log.
+        try DurableArchive.replace(Data(), at: url.appendingPathExtension("jsonl"))
+        remember(State(generation: generation, length: 0, positions: Dictionary(uniqueKeysWithValues: checkpoint.run.proposals.enumerated().map { ($0.element.id, $0.offset) })), for: url)
+    }
+    func save(_ checkpoint: LibraryReviewCheckpoint, to url: URL, changedProposalIDs: Set<String>? = nil) throws {
+        guard var state = states[url] else { try reset(checkpoint, to: url); return }
+        let proposals = changedProposalIDs.map { ids in ids.sorted().compactMap { id -> AppModel.LibraryMatchProposal? in
+            let index = state.positions[id] ?? (checkpoint.run.proposals.last?.id == id ? checkpoint.run.proposals.count - 1 : checkpoint.run.proposals.firstIndex { $0.id == id })
+            guard let index, checkpoint.run.proposals.indices.contains(index), checkpoint.run.proposals[index].id == id else { return nil }
+            state.positions[id] = index
+            return checkpoint.run.proposals[index]
+        } } ?? checkpoint.run.proposals
+        if let changedProposalIDs, proposals.count != changedProposalIDs.count {
+            throw PicardError.invalidConfiguration("The review checkpoint contains an unknown proposal.")
+        }
+        var data = try JSONEncoder().encode(Delta(generation: state.generation, completedAt: checkpoint.run.completedAt, proposals: proposals))
+        data.append(0x0A)
+        let handle = try FileHandle(forWritingTo: url.appendingPathExtension("jsonl")); defer { try? handle.close() }
+        try handle.truncate(atOffset: state.length); try handle.seekToEnd()
+        try handle.write(contentsOf: data); try handle.synchronize()
+        state.length += UInt64(data.count); remember(state, for: url)
     }
     func load(_ url: URL) throws -> LibraryReviewCheckpoint {
-        let checkpoint = try JSONDecoder().decode(LibraryReviewCheckpoint.self, from: Data(contentsOf: url))
+        let decoder = JSONDecoder(), data = try Data(contentsOf: url)
+        guard let root = try? decoder.decode(Root.self, from: data) else {
+            let legacy = try decoder.decode(LibraryReviewCheckpoint.self, from: data)
+            guard legacy.schema == 1 else { throw PicardError.invalidConfiguration("This review checkpoint uses an unsupported version.") }
+            return legacy
+        }
+        guard root.storageSchema == 2 else { throw PicardError.invalidConfiguration("This review checkpoint uses an unsupported version.") }
+        var checkpoint = root.checkpoint
         guard checkpoint.schema == 1 else { throw PicardError.invalidConfiguration("This review checkpoint uses an unsupported version.") }
+        var positions = Dictionary(uniqueKeysWithValues: checkpoint.run.proposals.enumerated().map { ($0.element.id, $0.offset) })
+        let deltaURL = url.appendingPathExtension("jsonl")
+        var length = 0
+        if FileManager.default.fileExists(atPath: deltaURL.path) {
+            let deltas = try Data(contentsOf: deltaURL)
+            length = deltas.lastIndex(of: 0x0A).map { $0 + 1 } ?? 0
+            for line in deltas.prefix(length).split(separator: 0x0A) {
+                let delta = try decoder.decode(Delta.self, from: Data(line))
+                guard delta.generation == root.generation else { continue }
+                for proposal in delta.proposals {
+                    if let index = positions[proposal.id] { checkpoint.run.proposals[index] = proposal }
+                    else { positions[proposal.id] = checkpoint.run.proposals.count; checkpoint.run.proposals.append(proposal) }
+                }
+                checkpoint.run = AppModel.LibraryMatchRun(proposals: checkpoint.run.proposals, autoApplyThreshold: checkpoint.run.autoApplyThreshold, completedAt: delta.completedAt)
+            }
+        }
+        remember(State(generation: root.generation, length: UInt64(length), positions: positions), for: url)
         return checkpoint
     }
 }
@@ -96,6 +155,10 @@ extension AppModel {
         }
         let completed = Set(proposals.map(\.id))
         libraryMatchRun = LibraryMatchRun(proposals: proposals, autoApplyThreshold: threshold, completedAt: Date())
+        if let url = checkpointLocation, let run = libraryMatchRun {
+            do { try await ReviewCheckpointStore.shared.reset(LibraryReviewCheckpoint(workspaceID: workspaceID, country: country, groups: groups, run: run), to: url) }
+            catch { present(error); return }
+        }
         let matcher = ReleaseMatcher(preferences: releaseMatchPreferences)
         for (offset, group) in groups.enumerated() where !completed.contains(group.id) {
             if Task.isCancelled || workspaceID != activeWorkspaceID { break }
@@ -108,7 +171,7 @@ extension AppModel {
             do {
                 let summaries = try await musicBrainzClient.searchReleases(for: local, limit: 10)
                 var releases: [MusicBrainzRelease] = []
-                let ranked = await Task.detached { matcher.rank(local: local, candidates: summaries) }.value
+                let ranked = try await BackgroundComputation.run { matcher.rank(local: local, candidates: summaries) }
                 for candidate in ranked.prefix(3) {
                     try Task.checkCancellation()
                     do { releases.append(try await musicBrainzClient.lookupRelease(id: candidate.release.id)) }
@@ -116,7 +179,8 @@ extension AppModel {
                     catch { recordActivity("A release variant could not be loaded; other variants will still be reviewed.") }
                 }
                 let details = releases
-                let result = await Task.detached { matcher.rank(local: local, candidates: details).first }.value
+                let result = try await BackgroundComputation.run { matcher.rank(local: local, candidates: details).first }
+                try Task.checkCancellation()
                 let release = releases.first { $0.id == result?.release.id }
                 proposal = LibraryMatchProposal(id: group.id, albumTitle: group.title, artist: group.artist, fileIDs: group.fileIDs,
                     result: result, release: release, status: .review, errorMessage: result == nil ? "No detailed release match found." : nil, baselines: baselines)
@@ -133,7 +197,7 @@ extension AppModel {
             libraryMatchRun = LibraryMatchRun(proposals: proposals, autoApplyThreshold: threshold, completedAt: Date())
             progress = Double(proposals.count) / Double(max(1, groups.count))
             if let url = checkpointLocation, let run = libraryMatchRun {
-                do { try await ReviewCheckpointStore.shared.save(LibraryReviewCheckpoint(workspaceID: workspaceID, country: country, groups: groups, run: run), to: url) }
+                do { try await ReviewCheckpointStore.shared.save(LibraryReviewCheckpoint(workspaceID: workspaceID, country: country, groups: groups, run: run), to: url, changedProposalIDs: [proposal.id]) }
                 catch { present(error); break }
             }
         }
@@ -160,9 +224,11 @@ extension AppModel {
         guard let index = libraryMatchRun?.proposals.firstIndex(where: { $0.id == id }) else { return }
         libraryMatchRun?.proposals[index].status = status
         let run = libraryMatchRun, workspaceID = activeWorkspaceID, country = configuration.preferredReleaseCountry, groups = orderedAlbumGroups, url = checkpointLocation
+        let previous = reviewCheckpointTask
         reviewCheckpointTask = Task {
+            await previous?.value
             guard let run, let workspaceID, let url else { return }
-            do { try await ReviewCheckpointStore.shared.save(LibraryReviewCheckpoint(workspaceID: workspaceID, country: country, groups: groups, run: run), to: url) }
+            do { try await ReviewCheckpointStore.shared.save(LibraryReviewCheckpoint(workspaceID: workspaceID, country: country, groups: groups, run: run), to: url, changedProposalIDs: [id]) }
             catch { present(error) }
         }
     }
@@ -177,14 +243,15 @@ extension AppModel {
         do {
             let id = try ReleaseReference.identifier(text)
             isWorking = true
-            let workspace = activeWorkspaceID, ids = selectedFileIDs
-            let release: MusicBrainzRelease
-            do { release = try await musicBrainzClient.lookupRelease(id: id) } catch { isWorking = false; throw error }
+            let workspace = activeWorkspaceID, ids = selectedFileIDs, originals = selectedFiles
+            let release = try await musicBrainzClient.lookupRelease(id: id)
+            let local = LocalAlbumCandidate(metadata: originals.first?.metadata ?? Metadata(), tracks: originals.map { Self.localCandidate($0) })
+            let matcher = ReleaseMatcher(preferences: releaseMatchPreferences)
+            let result = try await BackgroundComputation.run { matcher.rank(local: local, candidates: [release]).first }
             isWorking = false
-            guard activeWorkspaceID == workspace, selectedFileIDs == ids else { return }
-            let local = LocalAlbumCandidate(metadata: primarySelectedFile?.metadata ?? Metadata(), tracks: selectedFiles.map { Self.localCandidate($0) })
-            if let result = ReleaseMatcher(preferences: releaseMatchPreferences).rank(local: local, candidates: [release]).first { await chooseMatch(result) }
-        } catch { present(error) }
+            guard activeWorkspaceID == workspace, selectedFileIDs == ids, originals.allSatisfy({ file(id: $0.id) == $0 }) else { return }
+            if let result { await chooseMatch(result) }
+        } catch { isWorking = false; present(error) }
     }
 
     func regroupSelected(album: String, artist: String) {

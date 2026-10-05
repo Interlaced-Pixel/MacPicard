@@ -196,6 +196,7 @@ public actor WorkspaceStore {
 
 public struct LibraryScanResult: Sendable {
     public let files: [AudioFile]
+    public let changedFiles: [AudioFile]
     public let addedCount: Int
     public let updatedCount: Int
     public let missingCount: Int
@@ -207,14 +208,18 @@ public struct LibraryScanResult: Sendable {
     /// Apply deltas, never an old whole-library snapshot. Files edited, imported,
     /// moved or removed after the scan began always win over its baseline.
     public func merging(baseline: [AudioFile], current: [AudioFile]) -> [AudioFile] {
-        let before = Dictionary(baseline.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-        let after = Dictionary(files.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        guard !changedFiles.isEmpty else { return current }
+        let changedIDs = Set(changedFiles.map(\.id))
+        let before = Dictionary(baseline.filter { changedIDs.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let after = Dictionary(changedFiles.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var merged = current.map { file in
-            file == before[file.id] ? (after[file.id] ?? file) : file
+            after[file.id] != nil && file == before[file.id] ? (after[file.id] ?? file) : file
         }
+        let additions = changedFiles.filter { before[$0.id] == nil }
+        guard !additions.isEmpty else { return merged }
         let currentPaths = Set(current.map { $0.url.standardizedFileURL.path })
         let currentIDs = Set(current.map(\.id))
-        merged.append(contentsOf: files.filter {
+        merged.append(contentsOf: additions.filter {
             before[$0.id] == nil && !currentIDs.contains($0.id) && !currentPaths.contains($0.url.standardizedFileURL.path)
         })
         return merged
@@ -224,6 +229,14 @@ public struct LibraryScanResult: Sendable {
 /// Enumeration and metadata reads run outside the main actor. A scan never writes audio.
 public actor LibraryScanner {
     private let coordinator = AudioFileCoordinator()
+    private var indexedFiles: [AudioFile] = []
+    private var indexedByID: [UUID: AudioFile] = [:]
+    private var indexedByPath: [String: AudioFile] = [:]
+    private var pathsByID: [UUID: String] = [:]
+    private var orderedPaths: [String] = []
+    private var indexedByResource: [String: [AudioFile]] = [:]
+    private var indexRevision: UInt64?
+    private var indexRoot: URL?
 
     public init() {}
 
@@ -232,6 +245,7 @@ public actor LibraryScanner {
         existing: [AudioFile],
         excludingRelativePaths: Set<String> = [],
         affectedPaths: Set<URL>? = nil,
+        revision: UInt64? = nil,
         progress: (@Sendable (Double) async -> Void)? = nil
     ) async throws -> LibraryScanResult {
         guard try directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
@@ -241,25 +255,19 @@ public actor LibraryScanner {
         // be mistaken for hundreds of deleted files.
         _ = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
         let root = directory.resolvingSymlinksInPath().standardizedFileURL
+        updateIndex(existing: existing, root: root, revision: revision)
         let hints = affectedPaths.map { paths in
-            paths.map { $0.resolvingSymlinksInPath().standardizedFileURL }.filter {
+            Self.coalesced(paths.map { $0.resolvingSymlinksInPath().standardizedFileURL }.filter {
                 $0 == root || $0.path.hasPrefix(root.path + "/")
-            }
+            })
         }
-        func affected(_ url: URL) -> Bool {
-            guard let hints else { return true }
-            let normalized = url.resolvingSymlinksInPath().standardizedFileURL
-            return hints.contains { normalized == $0 || normalized.path.hasPrefix($0.path + "/") }
-        }
+        let affectedIDs = hints.map { paths in Set(paths.flatMap { ids(under: $0.path) }) }
         let roots = hints?.filter { FileManager.default.fileExists(atPath: $0.path) } ?? [root]
         let urls = try Self.audioURLs(in: roots).filter {
             !excludingRelativePaths.contains(LibraryPaths.relativePath(of: $0, in: directory) ?? "")
         }
-        var byPath: [String: AudioFile] = [:]
-        for file in existing { byPath[file.url.resolvingSymlinksInPath().standardizedFileURL.path] = file }
-        let byResource = Dictionary(grouping: existing.filter { $0.identity?.resourceIdentifier != nil },
-            by: { $0.identity!.resourceIdentifier! })
-        var scanned: [AudioFile] = existing.filter { !affected($0.url) }
+        let byPath = indexedByPath, byResource = indexedByResource
+        var scanned: [AudioFile] = affectedIDs.map { ids in existing.filter { !ids.contains($0.id) } } ?? []
         let availablePaths = Set(urls.map { $0.standardizedFileURL.path })
         var renamedIDs = Set<UUID>()
         var seen = Set<String>()
@@ -270,7 +278,7 @@ public actor LibraryScanner {
         var reads = 0
         for (offset, url) in urls.enumerated() {
             try Task.checkCancellation()
-            let key = url.resolvingSymlinksInPath().standardizedFileURL.path
+            let key = url.standardizedFileURL.path
             seen.insert(key)
             var previous = byPath[key]
             do {
@@ -319,21 +327,86 @@ public actor LibraryScanner {
             }
         }
         var missing = 0
-        for var file in existing where affected(file.url) && !renamedIDs.contains(file.id)
-            && !seen.contains(file.url.resolvingSymlinksInPath().standardizedFileURL.path) {
+        let affectedFiles = affectedIDs.map { $0.compactMap { indexedByID[$0] } } ?? existing
+        for var file in affectedFiles where !renamedIDs.contains(file.id)
+            && !seen.contains(pathsByID[file.id] ?? file.url.path) {
             if excludingRelativePaths.contains(LibraryPaths.relativePath(of: file.url, in: directory) ?? "") { continue }
             // Imported files outside the library root remain members of the workspace.
-            let root = directory.resolvingSymlinksInPath().standardizedFileURL.path + "/"
-            if file.url.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(root) {
+            let rootPath = root.path + "/"
+            if (pathsByID[file.id] ?? file.url.path).hasPrefix(rootPath) {
                 if file.state != .removed { file.markRemoved(); missing += 1 }
             }
             scanned.append(file)
         }
         return LibraryScanResult(
-            files: scanned, addedCount: added, updatedCount: updated,
+            files: scanned, changedFiles: scanned.filter { indexedByID[$0.id] != $0 }, addedCount: added, updatedCount: updated,
             missingCount: missing, conflicts: conflicts, failures: failures,
             metadataReadCount: reads, inspectedFileCount: urls.count
         )
+    }
+
+    private func updateIndex(existing: [AudioFile], root: URL, revision: UInt64?) {
+        if indexRoot != root {
+            indexedFiles = []; indexedByID = [:]; indexedByPath = [:]; indexedByResource = [:]
+            pathsByID = [:]; orderedPaths = []; indexRevision = nil
+        }
+        if indexRoot == root, let revision, revision == indexRevision { return }
+        if existing == indexedFiles, indexRoot == root { indexRevision = revision; return }
+        let incoming = Set(existing.map(\.id))
+        var pathsChanged = false
+        for id in Set(indexedByID.keys).subtracting(incoming) {
+            if let resource = indexedByID[id]?.identity?.resourceIdentifier {
+                indexedByResource[resource]?.removeAll { $0.id == id }
+                if indexedByResource[resource]?.isEmpty == true { indexedByResource.removeValue(forKey: resource) }
+            }
+            if let path = pathsByID.removeValue(forKey: id) { indexedByPath.removeValue(forKey: path); pathsChanged = true }
+            indexedByID.removeValue(forKey: id)
+        }
+        for file in existing where indexedByID[file.id] != file {
+            if let oldResource = indexedByID[file.id]?.identity?.resourceIdentifier {
+                indexedByResource[oldResource]?.removeAll { $0.id == file.id }
+                if indexedByResource[oldResource]?.isEmpty == true { indexedByResource.removeValue(forKey: oldResource) }
+            }
+            if let resource = file.identity?.resourceIdentifier { indexedByResource[resource, default: []].append(file) }
+            if indexedByID[file.id]?.url != file.url || pathsByID[file.id] == nil {
+                if let path = pathsByID[file.id] { indexedByPath.removeValue(forKey: path) }
+                pathsByID[file.id] = file.url.resolvingSymlinksInPath().standardizedFileURL.path
+                pathsChanged = true
+            }
+            indexedByID[file.id] = file
+            indexedByPath[pathsByID[file.id]!] = file
+        }
+        if pathsChanged { orderedPaths = indexedByPath.keys.sorted() }
+        indexedFiles = existing; indexRoot = root; indexRevision = revision
+    }
+    private func ids(under path: String) -> [UUID] {
+        var low = 0, high = orderedPaths.count
+        while low < high { let middle = (low + high) / 2; if orderedPaths[middle] < path { low = middle + 1 } else { high = middle } }
+        var result: [UUID] = []
+        if low < orderedPaths.count, orderedPaths[low] == path {
+            if let file = indexedByPath[path] { result.append(file.id) }; low += 1
+        }
+        // '/' sorts after '.', so locate the prefix independently of the exact path.
+        let prefix = path + "/"
+        low = 0; high = orderedPaths.count
+        while low < high { let middle = (low + high) / 2; if orderedPaths[middle] < prefix { low = middle + 1 } else { high = middle } }
+        while low < orderedPaths.count, orderedPaths[low].hasPrefix(prefix) {
+            if let file = indexedByPath[orderedPaths[low]] { result.append(file.id) }; low += 1
+        }
+        return result
+    }
+    private static func coalesced(_ urls: [URL]) -> [URL] {
+        var result: [URL] = []
+        var accepted = Set<String>()
+        for url in urls.sorted(by: { $0.path < $1.path }) {
+            var parent = url.deletingLastPathComponent()
+            var covered = accepted.contains(url.path) || accepted.contains("/")
+            while !covered, parent.path != "/" { covered = accepted.contains(parent.path); parent.deleteLastPathComponent() }
+            if covered { continue }
+            accepted.insert(url.path)
+            result.append(url)
+        }
+        return result
     }
 
     public func expand(_ urls: [URL]) throws -> [URL] {

@@ -243,7 +243,8 @@ public struct TrackMatcher: Sendable {
     }
 
     public func evidence(local: LocalTrackCandidate, remote: MusicBrainzTrack, disc: Int? = nil) -> TrackMatchEvidence {
-        evidence(local: PreparedLocal(local), remote: PreparedRemote(remote), disc: disc)
+        var workspace = Similarity.Workspace()
+        return evidence(local: PreparedLocal(local), remote: PreparedRemote(remote), disc: disc, workspace: &workspace)
     }
 
     private struct PreparedLocal: Sendable {
@@ -280,38 +281,39 @@ public struct TrackMatcher: Sendable {
         }
     }
 
-    private func evidence(local: PreparedLocal, remote: PreparedRemote, disc: Int? = nil) -> TrackMatchEvidence {
+    private func evidence(local: PreparedLocal, remote: PreparedRemote, disc: Int? = nil,
+                          collectingReasons: Bool = true, workspace: inout Similarity.Workspace) -> TrackMatchEvidence {
         var reasons: [String] = []
         let recording = local.recordingID == remote.recordingID && local.recordingID?.isEmpty == false
         let isrc = !local.isrcs.isDisjoint(with: remote.isrcs)
         let exact = recording || isrc
-        if recording { reasons.append("Recording ID matches") }
-        if isrc { reasons.append("ISRC matches") }
-        let title = local.title.hasValue ? Similarity.text(local.title, remote.title) : 0
+        if collectingReasons && recording { reasons.append("Recording ID matches") }
+        if collectingReasons && isrc { reasons.append("ISRC matches") }
+        let title = local.title.hasValue && (collectingReasons || !exact) ? Similarity.text(local.title, remote.title, workspace: &workspace) : 0
         var weight = 0.60
         var total = title * weight
-        if title >= 0.99 { reasons.append("Title matches") }
-        else if title >= 0.70 { reasons.append("Similar title") }
-        if let artist = local.artist, artist.hasValue, remote.artist.hasValue {
-            let similarity = Similarity.text(artist, remote.artist)
+        if collectingReasons && title >= 0.99 { reasons.append("Title matches") }
+        else if collectingReasons && title >= 0.70 { reasons.append("Similar title") }
+        if let artist = local.artist, artist.hasValue, remote.artist.hasValue, collectingReasons || !exact {
+            let similarity = Similarity.text(artist, remote.artist, workspace: &workspace)
             total += similarity * 0.15; weight += 0.15
-            if similarity >= 0.85 { reasons.append("Artist matches") }
+            if collectingReasons && similarity >= 0.85 { reasons.append("Artist matches") }
         }
         var lengthMismatch = false
         if let duration = local.source.durationInMilliseconds, let remoteDuration = remote.source.lengthInMilliseconds, duration > 0, remoteDuration > 0 {
             total += Similarity.duration(duration, remoteDuration) * 0.25; weight += 0.25
             let difference = abs(duration - remoteDuration)
-            reasons.append(difference <= 2_000 ? "Length within 2 seconds" : "Length differs by \(difference / 1_000) seconds")
+            if collectingReasons { reasons.append(difference <= 2_000 ? "Length within 2 seconds" : "Length differs by \(difference / 1_000) seconds") }
             lengthMismatch = difference > 15_000
         }
         total = exact ? 0.93 : total / weight * 0.95
         if let localNumber = local.source.trackNumber, let remoteNumber = remote.trackNumber {
             total += localNumber == remoteNumber ? 0.02 : -0.025
-            if localNumber == remoteNumber { reasons.append("Track number matches") }
+            if collectingReasons && localNumber == remoteNumber { reasons.append("Track number matches") }
         }
         if let localDisc = local.source.discNumber, let disc {
             total += localDisc == disc ? 0.025 : -0.04
-            reasons.append(localDisc == disc ? "Disc matches" : "Different disc")
+            if collectingReasons { reasons.append(localDisc == disc ? "Disc matches" : "Different disc") }
         }
         if lengthMismatch && !exact { total = min(total, 0.68) }
         return TrackMatchEvidence(score: max(0, min(1, total)), exact: exact, reasons: reasons)
@@ -323,10 +325,16 @@ public struct TrackMatcher: Sendable {
         // allow any file to remain unmatched, including incomplete collections.
         let preparedLocals = localTracks.map(PreparedLocal.init)
         let preparedRemotes = releaseTracks.map(PreparedRemote.init)
-        let evidence = zip(preparedLocals, localTracks).map { local, _ in
-            zip(preparedRemotes, releaseTracks).map { remote, source in
-                self.evidence(local: local, remote: remote, disc: discs[source.id])
-            }
+        struct PairScore { let score: Double; let exact: Bool }
+        var workspace = Similarity.Workspace()
+        var evidence: [[PairScore]] = []
+        evidence.reserveCapacity(preparedLocals.count)
+        for local in preparedLocals {
+            if Task.isCancelled { return [] }
+            evidence.append(preparedRemotes.map { remote in
+                let item = self.evidence(local: local, remote: remote, disc: discs[remote.source.id], collectingReasons: false, workspace: &workspace)
+                return PairScore(score: item.score, exact: item.exact)
+            })
         }
         let exactBonus = Double(localTracks.count + 1)
         let weights = evidence.map { row in
@@ -370,6 +378,7 @@ private enum MaximumTrackAssignment {
         var p = [Int](repeating: 0, count: columns + 1)
         var way = [Int](repeating: 0, count: columns + 1)
         for row in 1...rows {
+            if Task.isCancelled { return Array(repeating: columns, count: rows) }
             p[0] = row
             var column = 0
             var minimum = [Double](repeating: .infinity, count: columns + 1)
@@ -655,14 +664,16 @@ private enum Similarity {
         let normalized: String
         let tokens: Set<String>
         let hasValue: Bool
+        let characters: [Character]
     }
+    struct Workspace { var previous: [Int] = []; var current: [Int] = [] }
 
     static func prepare(_ value: String?) -> PreparedText {
-        guard let value, !value.isEmpty else { return PreparedText(normalized: "", tokens: [], hasValue: false) }
+        guard let value, !value.isEmpty else { return PreparedText(normalized: "", tokens: [], hasValue: false, characters: []) }
         let normalized = normalize(value)
         return PreparedText(normalized: normalized,
                             tokens: Set(normalized.split(separator: " ").map(String.init)),
-                            hasValue: !normalized.isEmpty)
+                            hasValue: !normalized.isEmpty, characters: Array(normalized))
     }
 
     static func text(_ lhs: String?, _ rhs: String?) -> Double {
@@ -670,14 +681,19 @@ private enum Similarity {
     }
 
     static func text(_ lhs: PreparedText, _ rhs: PreparedText) -> Double {
+        var workspace = Workspace()
+        return text(lhs, rhs, workspace: &workspace)
+    }
+    static func text(_ lhs: PreparedText, _ rhs: PreparedText, workspace: inout Workspace) -> Double {
         guard lhs.hasValue, rhs.hasValue else { return 0.5 }
         let left = lhs.normalized
         let right = rhs.normalized
         if left == right { return 1 }
 
-        let unionCount = lhs.tokens.union(rhs.tokens).count
-        let tokenScore = unionCount == 0 ? 0 : Double(lhs.tokens.intersection(rhs.tokens).count) / Double(unionCount)
-        let editScore = levenshteinRatio(left, right)
+        let intersectionCount = lhs.tokens.reduce(0) { $0 + (rhs.tokens.contains($1) ? 1 : 0) }
+        let unionCount = lhs.tokens.count + rhs.tokens.count - intersectionCount
+        let tokenScore = unionCount == 0 ? 0 : Double(intersectionCount) / Double(unionCount)
+        let editScore = levenshteinRatio(lhs.characters, rhs.characters, workspace: &workspace)
         return (tokenScore * 0.55) + (editScore * 0.45)
     }
 
@@ -707,26 +723,27 @@ private enum Similarity {
         value.filter { $0.isLetter || $0.isNumber }.uppercased()
     }
 
-    private static func levenshteinRatio(_ lhs: String, _ rhs: String) -> Double {
-        let left = Array(lhs)
-        let right = Array(rhs)
+    private static func levenshteinRatio(_ left: [Character], _ right: [Character], workspace: inout Workspace) -> Double {
         guard !left.isEmpty || !right.isEmpty else { return 1 }
         guard !left.isEmpty, !right.isEmpty else { return 0 }
 
-        var previous = Array(0...right.count)
-        var current = [Int](repeating: 0, count: right.count + 1)
+        if workspace.previous.count < right.count + 1 {
+            workspace.previous = [Int](repeating: 0, count: right.count + 1)
+            workspace.current = [Int](repeating: 0, count: right.count + 1)
+        }
+        for index in 0...right.count { workspace.previous[index] = index }
         for (leftIndex, leftCharacter) in left.enumerated() {
-            current[0] = leftIndex + 1
+            workspace.current[0] = leftIndex + 1
             for (rightIndex, rightCharacter) in right.enumerated() {
-                let insertion = current[rightIndex] + 1
-                let deletion = previous[rightIndex + 1] + 1
-                let substitution = previous[rightIndex] + (leftCharacter == rightCharacter ? 0 : 1)
-                current[rightIndex + 1] = min(insertion, deletion, substitution)
+                let insertion = workspace.current[rightIndex] + 1
+                let deletion = workspace.previous[rightIndex + 1] + 1
+                let substitution = workspace.previous[rightIndex] + (leftCharacter == rightCharacter ? 0 : 1)
+                workspace.current[rightIndex + 1] = min(insertion, deletion, substitution)
             }
-            swap(&previous, &current)
+            swap(&workspace.previous, &workspace.current)
         }
 
-        let distance = previous[right.count]
+        let distance = workspace.previous[right.count]
         return 1 - (Double(distance) / Double(max(left.count, right.count)))
     }
 }

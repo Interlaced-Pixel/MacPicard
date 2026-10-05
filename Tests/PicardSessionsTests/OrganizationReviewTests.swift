@@ -69,6 +69,22 @@ final class OrganizationReviewTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: occupied), Data("existing".utf8))
     }
 
+    func testDenseNumberedCollisionsAdvancePastExistingNamesAndKeepThemUntouched() async throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let destination = try folder("Library", in: root)
+        for name in ["Same.mp3", "Same (2).mp3", "Same (4).mp3"] {
+            try Data("existing".utf8).write(to: destination.appendingPathComponent(name))
+        }
+        let files = try (0..<200).map { try audio("source-\($0).mp3", in: root) }
+        let review = try await FileOrganizationCoordinator().preview(files: files, directory: destination,
+            namingScript: "Same", policy: .numbered)
+        let names = review.rows.compactMap { $0.destination?.lastPathComponent }
+        XCTAssertEqual(names.count, 200); XCTAssertEqual(Set(names).count, 200)
+        XCTAssertEqual(Array(names.prefix(3)), ["Same (3).mp3", "Same (5).mp3", "Same (6).mp3"])
+        XCTAssertTrue(review.rows.allSatisfy { $0.status == .move })
+        XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("Same (4).mp3")), Data("existing".utf8))
+    }
+
     func testExcludedFilesStayUntouchedAndCanResolveDuplicateTargets() async throws {
         let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
         let destination = try folder("Library", in: root)

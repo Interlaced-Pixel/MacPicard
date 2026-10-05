@@ -9,10 +9,16 @@ public struct FilenameFieldMapping: Codable, Sendable, Equatable, Identifiable {
     public init(token: String, tag: String, enabled: Bool = true) { self.token = token; self.tag = tag; self.enabled = enabled }
 }
 
+public struct PreparedFilenameMappings: Sendable {
+    fileprivate let entries: [FilenameFieldMapping]
+    fileprivate let tokens: Set<String>
+}
+
 /// Literal delimiters with explicit capture names; all possible splits are considered, not just a greedy regex guess.
 public struct FilenameTagParser: Sendable {
     private enum Part: Sendable { case literal(String), field(String) }
     private let parts: [Part]
+    private let tokenSet: Set<String>
     public let tokens: [String]
     public let componentCount: Int
     public init(pattern: String) throws {
@@ -31,7 +37,7 @@ public struct FilenameTagParser: Sendable {
         guard !tokens.isEmpty, !pattern.contains(".."), !pattern.hasPrefix("/"), !pattern.contains("\\") else {
             throw WorkflowFailure.invalid("Use relative path components and at least one named capture; / separates folders.")
         }
-        self.parts = parts; self.tokens = tokens; componentCount = pattern.split(separator: "/", omittingEmptySubsequences: false).count
+        self.parts = parts; self.tokens = tokens; tokenSet = Set(tokens); componentCount = pattern.split(separator: "/", omittingEmptySubsequences: false).count
     }
     public func sample(for url: URL) -> String {
         url.deletingPathExtension().pathComponents.suffix(componentCount).joined(separator: "/")
@@ -65,12 +71,21 @@ public struct FilenameTagParser: Sendable {
         return results.first.map(Result.matched) ?? .unmatched
     }
     public func metadata(for url: URL, original: Metadata, mappings: [FilenameFieldMapping]) throws -> Metadata {
+        try metadata(for: url, original: original, mappings: prepareMappings(mappings))
+    }
+    public func prepareMappings(_ mappings: [FilenameFieldMapping]) throws -> PreparedFilenameMappings {
         let enabled = mappings.filter(\.enabled)
         guard !enabled.isEmpty, Set(enabled.map(\.token)).count == enabled.count,
               Set(enabled.map { $0.tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }).count == enabled.count,
-              enabled.allSatisfy({ tokens.contains($0.token) && !$0.tag.trimmingCharacters(in: .whitespaces).isEmpty && !$0.tag.trimmingCharacters(in: .whitespaces).hasPrefix("~") && !$0.tag.contains(where: { $0.isNewline || $0 == "\0" }) }) else {
+              enabled.allSatisfy({ tokenSet.contains($0.token) && !$0.tag.trimmingCharacters(in: .whitespaces).isEmpty && !$0.tag.trimmingCharacters(in: .whitespaces).hasPrefix("~") && !$0.tag.contains(where: { $0.isNewline || $0 == "\0" }) }) else {
             throw WorkflowFailure.invalid("Map each enabled capture to a distinct, non-empty tag.")
         }
+        return PreparedFilenameMappings(entries: enabled.map {
+            FilenameFieldMapping(token: $0.token, tag: $0.tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }, tokens: tokenSet)
+    }
+    public func metadata(for url: URL, original: Metadata, mappings: PreparedFilenameMappings) throws -> Metadata {
+        guard mappings.tokens == tokenSet else { throw WorkflowFailure.invalid("Prepare the mappings for this filename pattern.") }
         let fields: [String: String]
         switch parse(sample(for: url)) {
         case let .matched(values): fields = values
@@ -78,9 +93,9 @@ public struct FilenameTagParser: Sendable {
         case .ambiguous: throw WorkflowFailure.invalid("More than one filename split is possible. Refine the pattern; no tags were guessed.")
         }
         var result = original
-        for mapping in enabled {
+        for mapping in mappings.entries {
             guard var value = fields[mapping.token] else { continue }
-            if ["tracknumber", "discnumber", "totaltracks", "totaldiscs"].contains(mapping.tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+            if ["tracknumber", "discnumber", "totaltracks", "totaldiscs"].contains(mapping.tag) {
                 guard value.allSatisfy(\.isNumber), let number = Int(value), (1...9999).contains(number) else { throw WorkflowFailure.invalid("\(mapping.token) must be a positive track/disc number.") }
                 value = String(number)
             }

@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import PicardFormats
 import PicardFoundation
+import PicardScripts
 
 public enum LibraryPaths {
     public static func relativePath(of file: URL, in directory: URL) -> String? {
@@ -22,14 +23,26 @@ public actor LibraryImporter {
     public static let defaultNamingScript = "$if2(%albumartist%,%artist%,Unknown Artist)/$if2(%album%,Unknown Album)/$if($gt(%totaldiscs%,1),$num(%discnumber%,1)-)$if(%tracknumber%,$num($if2(%tracknumber%,0),2) - )$if2(%title%,%filename%).%extension%"
     private let audio = AudioFileCoordinator()
     private let organizer = FileOrganizationCoordinator()
+    private var namingProgram: ScriptProgram?
+    private var batchFilesByPath: [String: AudioFile]?
 
     public init() {}
+
+    public func beginBatch(existing: [AudioFile]) {
+        batchFilesByPath = Dictionary(existing.map { ($0.url.resolvingSymlinksInPath().standardizedFileURL.path, $0) }, uniquingKeysWith: { _, last in last })
+    }
+    public func endBatch() { batchFilesByPath = nil }
+    public func importIndexedFile(at source: URL, into directory: URL) async throws -> LibraryImportResult {
+        guard batchFilesByPath != nil else { throw SaveError.session("Begin an import batch first.") }
+        return try await importFile(at: source, into: directory)
+    }
 
     public func importFile(at source: URL, into directory: URL, existing: [AudioFile] = []) async throws -> LibraryImportResult {
         try Task.checkCancellation()
         let source = source.resolvingSymlinksInPath().standardizedFileURL
         let root = directory.resolvingSymlinksInPath().standardizedFileURL
-        let previous = existing.first { $0.url.resolvingSymlinksInPath().standardizedFileURL == source }
+        let index = batchFilesByPath ?? Dictionary(existing.map { ($0.url.resolvingSymlinksInPath().standardizedFileURL.path, $0) }, uniquingKeysWith: { _, last in last })
+        let previous = index[source.path]
         if LibraryPaths.relativePath(of: source, in: root) != nil {
             // Importing the library itself must not duplicate or move its collection.
             if let previous, [.ready, .changed, .saved].contains(previous.state) {
@@ -42,21 +55,27 @@ public actor LibraryImporter {
         try namingFile.updateMetadata(Self.namingMetadata(loaded.metadata))
         let filename = Self.safeComponent(source.deletingPathExtension().lastPathComponent)
         try namingFile.updateURL(source.deletingLastPathComponent().appendingPathComponent(filename).appendingPathExtension(source.pathExtension))
-        let plan = try await organizer.plan(files: [namingFile], destinationDirectory: root, namingScript: Self.defaultNamingScript)
+        if namingProgram == nil { namingProgram = try await organizer.prepare(namingScript: Self.defaultNamingScript) }
+        let plan = try await organizer.plan(files: [namingFile], destinationDirectory: root, program: namingProgram!)
         guard let destination = plan.operations.first?.destination else { throw SaveError.invalidName("No destination was produced.") }
         let storage = try LibraryImportStorage(root: root)
         let result = try storage.copy(loaded, to: destination)
-        let known = existing.first { $0.url.resolvingSymlinksInPath().standardizedFileURL == result.url }
+        let known = index[result.url.standardizedFileURL.path]
         if !result.copied, let known, [.ready, .changed, .saved].contains(known.state) {
             return LibraryImportResult(file: known, copied: false)
         }
-        // A copy has a new filesystem identity. Re-read it so saves check the copy,
-        // not the source's inode, and preserve pending edits on legacy linked items.
-        var file = try await audio.load(url: result.url, id: known?.id ?? loaded.id)
+        // The copy was fully written and verified while the source identity was
+        // stable. Reuse its tags/artwork, but capture the destination's identity.
+        var file: AudioFile
+        if result.copied, known == nil {
+            file = loaded
+            try file.updateURL(result.url, identity: AudioFileIdentity.capture(url: result.url))
+        } else { file = try await audio.load(url: result.url, id: known?.id ?? loaded.id) }
         if let pending = known ?? previous, pending.isModified {
             try file.updateMetadata(pending.metadata)
             try file.updateArtwork(pending.artwork)
         }
+        if batchFilesByPath != nil { batchFilesByPath?[result.url.standardizedFileURL.path] = file }
         return LibraryImportResult(file: file, copied: result.copied)
     }
 

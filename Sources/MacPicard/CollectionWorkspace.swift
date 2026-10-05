@@ -5,16 +5,140 @@ import SwiftUI
 
 struct BrowserEntry: Equatable {
     let artist: String
+    let albumTitle: String
+    let albumKey: String
+    let disc: Int
+    let track: Int
+    let filename: String
     let grouping: String
     let searchText: String
     init(_ file: AudioFile) {
-        artist = file.metadata.firstValue(for: "albumartist") ?? file.metadata.firstValue(for: "artist") ?? "Unknown artist"
-        grouping = [artist, file.metadata.firstValue(for: "album") ?? "", file.metadata.firstValue(for: "discnumber") ?? "", file.metadata.firstValue(for: "tracknumber") ?? "", file.metadata.firstValue(for: "title") ?? ""].joined(separator: "\u{1F}")
+        artist = (file.metadata.firstValue(for: "albumartist") ?? file.metadata.firstValue(for: "artist"))?.trimmedNonEmpty ?? "Unknown artist"
+        albumTitle = file.metadata.firstValue(for: "album")?.trimmedNonEmpty ?? "Unmatched files"
+        albumKey = albumTitle == "Unmatched files" ? "unmatched" : "\(artist.lowercased())\u{1F}\(albumTitle.lowercased())"
+        disc = Int(file.metadata.firstValue(for: "discnumber")?.split(separator: "/").first ?? "1") ?? 1
+        track = Int(file.metadata.firstValue(for: "tracknumber")?.split(separator: "/").first ?? "") ?? Int.max
+        filename = file.url.lastPathComponent
+        grouping = [artist, albumTitle, String(disc), String(track), filename].joined(separator: "\u{1F}")
         searchText = ([file.url.lastPathComponent] + ["title", "artist", "album", "albumartist", "genre"].flatMap { file.metadata.values(for: $0) }).joined(separator: " ")
+    }
+    func isBefore(_ other: BrowserEntry) -> Bool {
+        if disc != other.disc { return disc < other.disc }
+        if track != other.track { return track < other.track }
+        return filename.localizedStandardCompare(other.filename) == .orderedAscending
     }
 }
 
-struct CollectionTrack: Identifiable {
+@MainActor
+final class BrowserDerivedCache {
+    struct VisibleKey: Equatable {
+        let revision: UInt64
+        let groupRevision: UInt64
+        let matches: Set<UUID>
+        let album: String?
+        let artist: String?
+        let sort: AlbumSort
+        let query: String
+        func sameNavigation(as other: Self) -> Bool {
+            groupRevision == other.groupRevision && matches == other.matches && album == other.album && artist == other.artist && sort == other.sort && query == other.query
+        }
+    }
+    var visibleKey: VisibleKey?
+    var visibleFiles: [AudioFile] = []
+    var visiblePositions: [UUID: Int] = [:]
+    var selectionRevision: UInt64?
+    var selectionIDs = Set<UUID>()
+    var selectedFiles: [AudioFile] = []
+    var metadataRevision: UInt64?
+    var metadataIDs = Set<UUID>()
+    var metadataRows: [MetadataRow] = []
+    var groupSource: [AppModel.AlbumGroup] = []
+    var groupSort: AlbumSort?
+    var orderedGroups: [AppModel.AlbumGroup] = []
+    var filteredSource: [AppModel.AlbumGroup] = []
+    var filteredMatches = Set<UUID>()
+    var filteredGroups: [AppModel.AlbumGroup] = []
+    var projectionKey: VisibleKey?
+    var projectionSort: [KeyPathComparator<CollectionTrack>] = []
+    var projectionPositions: [UUID: Int] = [:]
+    var sourcePositions: [UUID: Int] = [:]
+    var widths = CollectionWidths()
+    var projection = CollectionProjection(rows: [], titleWidth: 210, artistWidth: 150, albumWidth: 170, filenameWidth: 190)
+}
+
+struct CollectionWidths {
+    private var counts = [[Int: Int]](repeating: [:], count: 4)
+    mutating func add(_ row: CollectionTrack, delta: Int) {
+        for (index, text) in [row.title, row.artist, row.album, row.filename].enumerated() {
+            let length = min(100, text.count)
+            counts[index][length, default: 0] += delta
+            if counts[index][length] == 0 { counts[index].removeValue(forKey: length) }
+        }
+    }
+    func width(_ index: Int, _ minimum: CGFloat, _ maximum: CGFloat) -> CGFloat {
+        min(max(minimum, CGFloat(counts[index].keys.max() ?? 0) * 7.2 + 28), maximum)
+    }
+}
+
+struct CollectionProjection {
+    let rows: [CollectionTrack]
+    let titleWidth: CGFloat
+    let artistWidth: CGFloat
+    let albumWidth: CGFloat
+    let filenameWidth: CGFloat
+}
+
+extension AppModel {
+    func collectionProjection(sortOrder: [KeyPathComparator<CollectionTrack>]) -> CollectionProjection {
+        let visible = visibleFiles
+        let cache = browserDerivedCache
+        if cache.projectionKey == cache.visibleKey, cache.projectionSort == sortOrder { return cache.projection }
+        func before(_ lhs: CollectionTrack, _ rhs: CollectionTrack) -> Bool {
+            for comparator in sortOrder {
+                let result = comparator.compare(lhs, rhs)
+                if result != .orderedSame { return result == .orderedAscending }
+            }
+            return (cache.sourcePositions[lhs.id] ?? 0) < (cache.sourcePositions[rhs.id] ?? 0)
+        }
+        var rows: [CollectionTrack]
+        if let old = cache.projectionKey, let key = cache.visibleKey,
+           old.revision == lastFileChangeRevision, old.sameNavigation(as: key), cache.projectionSort == sortOrder,
+           lastFileChanges.count <= max(8, visible.count / 100) {
+            rows = cache.projection.rows
+            let replacements = lastFileChanges.compactMap { id -> CollectionTrack? in
+                guard cache.projectionPositions[id] != nil, let file = file(id: id) else { return nil }; return CollectionTrack(file)
+            }
+            var reordered = false
+            for replacement in replacements {
+                guard let index = reordered ? rows.firstIndex(where: { $0.id == replacement.id }) : cache.projectionPositions[replacement.id] else { continue }
+                let original = rows[index]
+                guard original != replacement else { continue }
+                cache.widths.add(original, delta: -1); cache.widths.add(replacement, delta: 1)
+                if sortOrder.allSatisfy({ $0.compare(original, replacement) == .orderedSame }) { rows[index] = replacement }
+                else {
+                    rows.remove(at: index)
+                    var low = 0, high = rows.count
+                    while low < high { let middle = (low + high) / 2; if before(rows[middle], replacement) { low = middle + 1 } else { high = middle } }
+                    rows.insert(replacement, at: low); reordered = true
+                }
+            }
+            if reordered { cache.projectionPositions = Dictionary(uniqueKeysWithValues: rows.enumerated().map { ($0.element.id, $0.offset) }) }
+        } else {
+            cache.sourcePositions = Dictionary(uniqueKeysWithValues: visible.enumerated().map { ($0.element.id, $0.offset) })
+            rows = visible.map(CollectionTrack.init).sorted(by: before)
+            cache.projectionPositions = Dictionary(uniqueKeysWithValues: rows.enumerated().map { ($0.element.id, $0.offset) })
+            cache.widths = CollectionWidths()
+            for row in rows { cache.widths.add(row, delta: 1) }
+        }
+        cache.projection = CollectionProjection(rows: rows, titleWidth: cache.widths.width(0, 210, 420),
+            artistWidth: cache.widths.width(1, 150, 300), albumWidth: cache.widths.width(2, 170, 340), filenameWidth: cache.widths.width(3, 190, 420))
+        cache.projectionKey = cache.visibleKey
+        cache.projectionSort = sortOrder
+        return cache.projection
+    }
+}
+
+struct CollectionTrack: Identifiable, Equatable {
     let id: UUID
     let title: String
     let artist: String
@@ -106,7 +230,7 @@ extension AppModel {
     func reloadOperationHistory(markInterrupted: Bool = false) async {
         guard let directory = operationHistoryDirectory, let id = activeWorkspaceID else { return }
         do {
-            let records = try await operationHistoryStore.load(directory: directory, workspaceID: id, markInterrupted: markInterrupted)
+            let records = try await operationHistoryStore.load(directory: directory, workspaceID: id, markInterrupted: markInterrupted, summariesOnly: true)
             guard activeWorkspaceID == id, operationHistoryDirectory == directory else { return }
             operationHistory = records
             if records.contains(where: { $0.state == .interrupted }) {
@@ -115,13 +239,29 @@ extension AppModel {
         } catch { present(error) }
     }
 
-    func persistOperation(_ record: FileOperationRecord) async throws {
+    func persistOperation(_ record: FileOperationRecord, changedItemIDs: Set<UUID>? = nil) async throws {
         guard let directory = operationHistoryDirectory else { return }
-        try await operationHistoryStore.save(record, directory: directory)
+        try await operationHistoryStore.save(record, directory: directory, changedItemIDs: changedItemIDs)
+        let publication = record.state == .completed
+            ? try await operationHistoryStore.summary(id: record.id, directory: directory) : record
         if activeWorkspaceID == record.workspaceID {
+            operationCheckpointTicks[record.id, default: 0] += 1
+            if changedItemIDs != nil, record.state == .running,
+               operationCheckpointTicks[record.id, default: 0] % 25 != 0 { return }
+            if record.state != .running { operationCheckpointTicks.removeValue(forKey: record.id) }
             operationHistory.removeAll { $0.id == record.id }
-            operationHistory.insert(record, at: 0)
+            operationHistory.insert(publication, at: 0)
         }
+    }
+
+    func loadOperationDetails(_ record: FileOperationRecord) async {
+        guard record.summary != nil, let directory = operationHistoryDirectory else { return }
+        do {
+            let details = try await operationHistoryStore.details(id: record.id, directory: directory)
+            guard activeWorkspaceID == record.workspaceID,
+                  let index = operationHistory.firstIndex(where: { $0.id == record.id }) else { return }
+            operationHistory[index] = details
+        } catch { present(error) }
     }
 
     func retryableSaveIDs(_ record: FileOperationRecord) -> Set<UUID> {
@@ -268,16 +408,9 @@ struct CollectionTrackTable: View {
     }
 
     private func projection() -> Projection {
-        let rows = model.visibleFiles.map(CollectionTrack.init).sorted(using: sortOrder)
-        func width(_ values: KeyPath<CollectionTrack, String>, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
-            let longest = rows.lazy.map { CGFloat($0[keyPath: values].count) }.max() ?? 0
-            return min(max(minimum, longest * 7.2 + 28), maximum)
-        }
-        return Projection(rows: rows,
-                          titleWidth: width(\.title, minimum: 210, maximum: 420),
-                          artistWidth: width(\.artist, minimum: 150, maximum: 300),
-                          albumWidth: width(\.album, minimum: 170, maximum: 340),
-                          filenameWidth: width(\.filename, minimum: 190, maximum: 420))
+        let value = model.collectionProjection(sortOrder: sortOrder)
+        return Projection(rows: value.rows, titleWidth: value.titleWidth, artistWidth: value.artistWidth,
+            albumWidth: value.albumWidth, filenameWidth: value.filenameWidth)
     }
     private func idealWidth(_ values: [String], minimum: CGFloat, maximum: CGFloat) -> CGFloat {
         let longest = values.map { CGFloat($0.count) }.max() ?? 0
@@ -439,6 +572,9 @@ struct ActivityView: View {
                     Section("File Operations") {
                         ForEach(model.operationHistory) { operation in
                             DisclosureGroup {
+                                if operation.summary != nil {
+                                    ProgressView().task { await model.loadOperationDetails(operation) }
+                                }
                                 if !operation.message.isEmpty { Text(operation.message).font(.caption).textSelection(.enabled) }
                                 HStack {
                                     if operation.kind == .scan || (operation.kind == .importFiles && operation.items.contains { [.failed, .pending, .inProgress].contains($0.state) }) || !model.retryableSaveIDs(operation).isEmpty {
@@ -473,7 +609,7 @@ struct ActivityView: View {
                             } label: {
                                 HStack {
                                     Text(operation.kind.rawValue)
-                                    Text("\(operation.items.count) \(operation.items.count == 1 ? "file" : "files")").foregroundStyle(.secondary)
+                                    Text("\(operation.itemCount) \(operation.itemCount == 1 ? "file" : "files")").foregroundStyle(.secondary)
                                     Spacer()
                                     Text(operation.state.rawValue.capitalized).foregroundStyle(operation.state == .failed ? MusicBrainzTheme.error : (operation.state == .interrupted ? MusicBrainzTheme.orange : .secondary))
                                 }.font(.callout)

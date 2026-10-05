@@ -67,6 +67,7 @@ extension AppModel {
         isWorking = true; defer { isWorking = false }
         let worker = Task.detached(priority: .userInitiated) {
             let parser = try pattern.map { try FilenameTagParser(pattern: $0) }
+            let preparedMappings = try parser.map { try $0.prepareMappings(mappings) }
             let evaluator = ScriptEvaluator()
             let enabled = scripts.filter { $0.enabled && $0.kind == .tagging }
             let programs = try enabled.map { (script: $0, program: try evaluator.compile($0.source)) }
@@ -77,7 +78,7 @@ extension AppModel {
                 guard [.ready, .changed, .saved].contains(file.state) else { return .init(file: file, proposed: nil, output: "", error: "File is \(file.state.rawValue); it will be skipped.") }
                 do {
                     var metadata = file.metadata, output: [String] = []
-                    if let parser { metadata = try parser.metadata(for: file.url, original: metadata, mappings: mappings) }
+                    if let parser, let preparedMappings { metadata = try parser.metadata(for: file.url, original: metadata, mappings: preparedMappings) }
                     else {
                         var variables: [String: [String]] = ["filename": [file.url.deletingPathExtension().lastPathComponent], "extension": [file.url.pathExtension]]
                         for item in programs {

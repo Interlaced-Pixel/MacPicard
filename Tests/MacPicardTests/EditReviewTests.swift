@@ -82,7 +82,7 @@ final class EditReviewTests: XCTestCase {
     }
 
     @MainActor
-    func testClipboardMergeAndScriptsAreGroupedUndoableEdits() throws {
+    func testClipboardMergeAndScriptsAreGroupedUndoableEdits() async throws {
         let original = try file("Before", number: "1")
         let model = AppModel(); model.files = [original]; model.selectedFileIDs = [original.id]
         defer { model.sessionSaveTask?.cancel() }
@@ -91,7 +91,7 @@ final class EditReviewTests: XCTestCase {
         XCTAssertEqual(model.files.first?.metadata.values(for: "artist"), ["Other", "Artist"])
         XCTAssertFalse(model.files.first?.metadata.contains("~length") == true)
         model.scriptSource = "$set(title,Scripted)$set(genre,Jazz)"
-        model.runScript(applying: true)
+        await model.runScript(applying: true)
         XCTAssertEqual(model.files.first?.metadata.firstValue(for: "title"), "Scripted")
         model.undoMetadataEdit()
         XCTAssertEqual(model.files.first?.metadata.firstValue(for: "title"), "Before")

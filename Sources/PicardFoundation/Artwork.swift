@@ -19,6 +19,7 @@ public enum ArtworkSource: Codable, Sendable, Equatable {
 }
 
 private final class ArtworkHashCache: @unchecked Sendable {
+    let revision = UUID()
     private let lock = NSLock()
     private var storedValue: String?
 
@@ -43,16 +44,18 @@ public struct Artwork: Codable, Sendable, Equatable, Identifiable {
     public var height: Int?
     public var source: ArtworkSource
     public var data: Data? {
-        didSet { hashCache.value = nil }
+        // Copies may share the cache only while they share the same bytes.
+        // Invalidating a shared reference would poison the original's hash.
+        didSet { hashCache = ArtworkHashCache() }
     }
 
     // Hashing image bytes is useful for SwiftUI task identities, but doing it on
     // every body evaluation turns large artwork into a repeated O(bytes) cost.
     // The cache is deliberately not serialized; it is derived from `data`.
-    private let hashCache: ArtworkHashCache
+    private var hashCache: ArtworkHashCache
 
     private enum CodingKeys: String, CodingKey {
-        case id, type, mimeType, description, width, height, source, data
+        case id, type, mimeType, description, width, height, source, data, blobHash
     }
 
     public init(
@@ -85,6 +88,8 @@ public struct Artwork: Codable, Sendable, Equatable, Identifiable {
         hashCache.value = hash
         return hash
     }
+    /// Constant-time identity for UI work; hashing bytes happens on the worker.
+    public var dataRevision: UUID { hashCache.revision }
 
     public static func == (lhs: Artwork, rhs: Artwork) -> Bool {
         lhs.id == rhs.id && lhs.type == rhs.type && lhs.mimeType == rhs.mimeType &&
@@ -94,6 +99,7 @@ public struct Artwork: Codable, Sendable, Equatable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        let blobHash = try values.decodeIfPresent(String.self, forKey: .blobHash)
         id = try values.decode(UUID.self, forKey: .id)
         type = try values.decode(ArtworkType.self, forKey: .type)
         mimeType = try values.decode(String.self, forKey: .mimeType)
@@ -101,8 +107,16 @@ public struct Artwork: Codable, Sendable, Equatable, Identifiable {
         width = try values.decodeIfPresent(Int.self, forKey: .width)
         height = try values.decodeIfPresent(Int.self, forKey: .height)
         source = try values.decode(ArtworkSource.self, forKey: .source)
-        data = try values.decodeIfPresent(Data.self, forKey: .data)
+        if let hash = blobHash {
+            guard let store = decoder.userInfo[ArtworkBlobStore.codingKey] as? ArtworkBlobStore else {
+                throw PicardError.sessionEncoding("This archive requires its artwork blobs.")
+            }
+            data = try store.load(hash)
+        } else {
+            data = try values.decodeIfPresent(Data.self, forKey: .data)
+        }
         hashCache = ArtworkHashCache()
+        hashCache.value = blobHash
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -114,7 +128,10 @@ public struct Artwork: Codable, Sendable, Equatable, Identifiable {
         try values.encodeIfPresent(width, forKey: .width)
         try values.encodeIfPresent(height, forKey: .height)
         try values.encode(source, forKey: .source)
-        try values.encodeIfPresent(data, forKey: .data)
+        if let data, let store = encoder.userInfo[ArtworkBlobStore.codingKey] as? ArtworkBlobStore, let hash = contentHash {
+            try store.store(data, hash: hash)
+            try values.encode(hash, forKey: .blobHash)
+        } else { try values.encodeIfPresent(data, forKey: .data) }
     }
 }
 

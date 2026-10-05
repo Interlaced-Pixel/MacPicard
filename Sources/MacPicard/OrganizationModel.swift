@@ -121,9 +121,10 @@ extension AppModel {
             // Verify workspace persistence before changing any paths on disk.
             try await flushSession()
             guard organizationInputsAreCurrent else { throw SaveError.session("The files changed. Close and reopen Organize.") }
+            let reviewedByID = Dictionary(uniqueKeysWithValues: review.files.map { ($0.id, $0) })
             let journal = FileOperationRecord(workspaceID: activeWorkspaceID ?? UUID(), kind: .organize,
                 items: review.rows.filter { $0.status == .move }.compactMap { row in
-                    review.files.first { $0.id == row.id }.map { FileOperationItem(file: $0, destination: row.destination) }
+                    reviewedByID[row.id].map { FileOperationItem(file: $0, destination: row.destination) }
                 })
             try await persistOperation(journal)
             let journalURL = operationHistoryDirectory?.appendingPathComponent(journal.id.uuidString).appendingPathExtension("json")

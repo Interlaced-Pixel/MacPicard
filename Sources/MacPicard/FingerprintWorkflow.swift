@@ -67,7 +67,8 @@ actor FingerprintScanProcessor {
         if identify {
             guard let acoustID, let musicBrainz else { throw FingerprintError.unavailable("Identification service configuration is unavailable in this build. Contact Interlaced Pixel.") }
             let matches = try await acoustID.lookup(fingerprint)
-            var releasesByID: [String: MusicBrainzRelease] = [:]
+            // The client coalesces in-flight lookups and owns a bounded decoded
+            // cache shared across all files/workers, with response-cache expiry.
             for match in matches.sorted(by: { $0.score > $1.score }).prefix(3) {
                 guard match.score.isFinite, (0...1).contains(match.score) else { continue }
                 for recording in match.recordings.prefix(3) {
@@ -78,8 +79,7 @@ actor FingerprintScanProcessor {
                         try Task.checkCancellation()
                         guard UUID(uuidString: releaseID) != nil, candidates.count < 8 else { continue }
                         let release: MusicBrainzRelease
-                        if let existing = releasesByID[releaseID] { release = existing }
-                        else { release = try await musicBrainz.lookupRelease(id: releaseID); releasesByID[releaseID] = release }
+                        release = try await musicBrainz.lookupRelease(id: releaseID)
                         guard release.tracks.contains(where: { $0.recordingID == recording.id }), !candidates.contains(where: { $0.recordingID == recording.id && $0.release.id == release.id }) else { continue }
                         let local = LocalTrackCandidate(id: file.id, title: file.metadata.firstValue(for: "title") ?? "",
                             artist: file.metadata.firstValue(for: "artist"), durationInMilliseconds: Int(fingerprint.durationInSeconds * 1_000), recordingID: recording.id)

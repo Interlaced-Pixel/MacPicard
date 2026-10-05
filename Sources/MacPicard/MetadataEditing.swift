@@ -18,25 +18,35 @@ extension AppModel {
     static let readOnlyTags: Set<String> = ["~length", "~format", "~bitrate", "~filesize", "~filename", "~sample_rate", "~channels"]
 
     var metadataRows: [MetadataRow] {
-        let keys = Set(selectedFiles.flatMap { $0.metadata.keys + $0.originalMetadata.keys + Array($0.metadata.deletedTagKeys) })
-        return keys.sorted().map { key in
-            MetadataRow(key: key, original: tagSummary(key, original: true), current: tagSummary(key, original: false),
-                changed: selectedFiles.contains { $0.metadata.values(for: key) != $0.originalMetadata.values(for: key)
-                    || $0.metadata.contains(key) != $0.originalMetadata.contains(key)
-                    || $0.metadata.isDeleted(key) != $0.originalMetadata.isDeleted(key) })
+        let cache = browserDerivedCache
+        if cache.metadataRevision == fileRevision, cache.metadataIDs == selectedFileIDs { return cache.metadataRows }
+        let selection = selectedFiles
+        var keys = Set<String>()
+        for file in selection {
+            keys.formUnion(file.metadata.rawFields().keys)
+            keys.formUnion(file.originalMetadata.rawFields().keys)
+            keys.formUnion(file.metadata.deletedTagKeys)
         }
+        let rows = keys.sorted().map { key in
+            MetadataRow(key: key, original: tagSummary(key, files: selection, original: true), current: tagSummary(key, files: selection, original: false),
+                changed: selection.contains { $0.metadata.rawFields()[key] != $0.originalMetadata.rawFields()[key]
+                    || $0.metadata.deletedTagKeys.contains(key) != $0.originalMetadata.deletedTagKeys.contains(key) })
+        }
+        cache.metadataRows = rows; cache.metadataRevision = fileRevision; cache.metadataIDs = selectedFileIDs
+        return rows
     }
 
-    private func tagSummary(_ key: String, original: Bool) -> String {
-        let selections = selectedFiles.map { original ? $0.originalMetadata : $0.metadata }
-        guard let tags = selections.first else { return "Absent" }
-        guard selections.allSatisfy({ $0.values(for: key) == tags.values(for: key)
-            && $0.contains(key) == tags.contains(key) && $0.isDeleted(key) == tags.isDeleted(key) }) else {
-            return "Multiple values"
+    private func tagSummary(_ key: String, files: [AudioFile], original: Bool) -> String {
+        guard let first = files.first else { return "Absent" }
+        let tags = original ? first.originalMetadata : first.metadata
+        let values = tags.rawFields()[key], deleted = tags.deletedTagKeys.contains(key)
+        for file in files.dropFirst() {
+            let other = original ? file.originalMetadata : file.metadata
+            if other.rawFields()[key] != values || other.deletedTagKeys.contains(key) != deleted { return "Multiple values" }
         }
-        if tags.isDeleted(key) { return "Deleted" }
-        if !tags.contains(key) { return "Absent" }
-        return tags.values(for: key).map { $0.isEmpty ? "Empty value" : $0 }.joined(separator: "; ")
+        if deleted { return "Deleted" }
+        guard let values else { return "Absent" }
+        return values.map { $0.isEmpty ? "Empty value" : $0 }.joined(separator: "; ")
     }
 
     func setTagValues(_ values: [String], for rawKey: String) {
@@ -68,7 +78,7 @@ extension AppModel {
         let ids = selectedFileIDs
         var edited = files
         do {
-            for index in edited.indices where ids.contains(edited[index].id) {
+            for index in ids.compactMap({ position(of: $0) }) {
                 var tags = edited[index].metadata
                 let original = edited[index].originalMetadata
                 for key in keys where !key.hasPrefix("~") {
@@ -80,7 +90,7 @@ extension AppModel {
                 }
                 try edited[index].updateMetadata(tags)
             }
-            commitStagedEdits(edited, action: merging ? "Merge original tags" : "Restore tags")
+            commitStagedEdits(edited, action: merging ? "Merge original tags" : "Restore tags", changedIDs: ids)
         } catch { present(error) }
     }
 
@@ -89,26 +99,26 @@ extension AppModel {
         let ids = selectedFileIDs
         var edited = files
         do {
-            for index in edited.indices where ids.contains(edited[index].id) {
+            for index in ids.compactMap({ position(of: $0) }) {
                 var tags = edited[index].metadata
                 mutation(&tags)
                 try edited[index].updateMetadata(tags)
             }
-            commitStagedEdits(edited, action: action)
+            commitStagedEdits(edited, action: action, changedIDs: ids)
         } catch { present(error) }
     }
 
-    func commitStagedEdits(_ edited: [AudioFile], action: String) {
-        let oldByID = Dictionary(uniqueKeysWithValues: files.map { ($0.id, $0) })
+    func commitStagedEdits(_ edited: [AudioFile], action: String, changedIDs: Set<UUID>? = nil) {
         // Match tags and artwork; snapshots retain baselines but never restore locations.
-        let after = edited.filter { item in
-            guard let old = oldByID[item.id] else { return false }
+        let candidates = changedIDs.map { ids in ids.compactMap { position(of: $0).map { edited[$0] } } } ?? edited
+        let after = candidates.filter { item in
+            guard let old = file(id: item.id) else { return false }
             return old.metadata != item.metadata || old.artwork != item.artwork
         }
         guard !after.isEmpty else { return }
-        let before = after.compactMap { oldByID[$0.id] }
+        let before = after.compactMap { file(id: $0.id) }
         registerEditUndo(restoring: before, expecting: after, workspaceID: activeWorkspaceID, action: action)
-        files = edited
+        publishFileEdits(edited, changedIDs: Set(after.map(\.id)))
         editHistoryRevision += 1
         statusMessage = "\(action) · \(after.count) files changed"
         scheduleSessionSave()

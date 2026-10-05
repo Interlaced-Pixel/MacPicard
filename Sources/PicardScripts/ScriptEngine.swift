@@ -84,12 +84,23 @@ public struct ScriptParser: Sendable {
     private struct Parser {
         let source: String
         let characters: [Character]
+        let locations: [ScriptSourceLocation]
         var index: Int = 0
         var depth = 0
 
         init(source: String) {
             self.source = source
             self.characters = Array(source)
+            var line = 1
+            var column = 1
+            var locations: [ScriptSourceLocation] = []
+            locations.reserveCapacity(characters.count + 1)
+            for (offset, character) in characters.enumerated() {
+                locations.append(ScriptSourceLocation(offset: offset, line: line, column: column))
+                if character == "\n" { line += 1; column = 1 } else { column += 1 }
+            }
+            locations.append(ScriptSourceLocation(offset: characters.count, line: line, column: column))
+            self.locations = locations
         }
 
         mutating func parseDocument() throws -> [ScriptNode] {
@@ -287,13 +298,7 @@ public struct ScriptParser: Sendable {
         }
 
         func location() -> ScriptSourceLocation {
-            let prefix = characters.prefix(index)
-            let line = prefix.reduce(into: 1) { count, character in
-                if character == "\n" { count += 1 }
-            }
-            let lastNewline = prefix.lastIndex(of: "\n")
-            let column = index - (lastNewline.map { prefix.distance(from: prefix.startIndex, to: $0) + 1 } ?? 0) + 1
-            return ScriptSourceLocation(offset: index, line: line, column: column)
+            locations[index]
         }
     }
 }
@@ -339,6 +344,7 @@ public struct ScriptEvaluation: Codable, Sendable, Equatable {
 
 public struct ScriptEvaluator: Sendable {
     private let parser: ScriptParser
+    private let regularExpressions = ScriptRegexCache()
 
     public init(parser: ScriptParser = ScriptParser()) {
         self.parser = parser
@@ -467,7 +473,7 @@ public struct ScriptEvaluator: Sendable {
             let pattern = try string(1)
             let replacement = try string(2, required: false)
             do {
-                let regex = try NSRegularExpression(pattern: pattern)
+                let regex = try regularExpressions.expression(pattern)
                 let range = NSRange(input.startIndex..<input.endIndex, in: input)
                 return Value(regex.stringByReplacingMatches(in: input, options: [], range: range, withTemplate: replacement))
             } catch {

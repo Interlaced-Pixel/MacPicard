@@ -64,6 +64,7 @@ extension FileOrganizationCoordinator {
         }
         let root = directory.resolvingSymlinksInPath().standardizedFileURL
         let rootIdentifier = try Self.directoryIdentifier(root)
+        let program = try prepare(namingScript: namingScript)
         var rows: [OrganizationReviewRow] = []
         for file in files {
             try Task.checkCancellation()
@@ -90,7 +91,7 @@ extension FileOrganizationCoordinator {
                 try namingFile.updateMetadata(LibraryImporter.namingMetadata(file.metadata))
                 let filename = LibraryImporter.safeComponent(file.url.deletingPathExtension().lastPathComponent)
                 try namingFile.updateURL(file.url.deletingLastPathComponent().appendingPathComponent(filename).appendingPathExtension(file.url.pathExtension))
-                destination = try plan(files: [namingFile], destinationDirectory: root, namingScript: namingScript).operations.first?.destination
+                destination = try plan(files: [namingFile], destinationDirectory: root, program: program).operations.first?.destination
                 guard let destination else { throw SaveError.invalidName("The naming script produced no path.") }
                 guard destination.pathExtension.caseInsensitiveCompare(file.url.pathExtension) == .orderedSame else {
                     throw SaveError.invalidName("The pattern changes the audio extension. Organize does not convert audio; use %extension% in the filename.")
@@ -109,6 +110,7 @@ extension FileOrganizationCoordinator {
         let counts = Dictionary(rows.compactMap { $0.destination.map { (Self.pathKey($0), 1) } }, uniquingKeysWith: +)
         // Conservatively treat case/Unicode-equivalent targets as the same path, even on case-sensitive volumes.
         var reserved = Set(rows.filter { $0.status == .unchanged }.compactMap { $0.destination.map(Self.pathKey) })
+        var nextSuffix: [String: Int] = [:]
         for index in rows.indices where rows[index].status == .move {
             guard let destination = rows[index].destination else { continue }
             let key = Self.pathKey(destination)
@@ -123,14 +125,15 @@ extension FileOrganizationCoordinator {
                 case .numbered:
                     do {
                         var candidate = destination
-                        var suffix = 2
-                        while Self.itemExists(candidate) || reserved.contains(Self.pathKey(candidate)) {
+                        var suffix = nextSuffix[key, default: 2]
+                        while reserved.contains(Self.pathKey(candidate)) || Self.itemExists(candidate) {
                             guard suffix <= 10_000 else { throw SaveError.invalidName("Too many numbered filename collisions.") }
                             candidate = destination.deletingLastPathComponent()
                                 .appendingPathComponent(destination.deletingPathExtension().lastPathComponent + " (\(suffix))")
                                 .appendingPathExtension(destination.pathExtension)
                             suffix += 1
                         }
+                        nextSuffix[key] = suffix
                         try Self.validateDestination(candidate, root: root)
                         rows[index].destination = candidate
                         rows[index].message = "A safe filename was chosen; existing files stay untouched."
@@ -178,9 +181,11 @@ extension FileOrganizationCoordinator {
             return relocated
         }
         if var journal, let journalURL {
+            let updatedByID = Dictionary(uniqueKeysWithValues: updated.map { ($0.id, $0) })
+            let movedIDs = Set(report.movedFileIDs)
             for index in journal.items.indices {
-                journal.items[index].result = updated.first { $0.id == journal.items[index].id }
-                journal.items[index].state = report.movedFileIDs.contains(journal.items[index].id) ? .completed : .skipped
+                journal.items[index].result = updatedByID[journal.items[index].id]
+                journal.items[index].state = movedIDs.contains(journal.items[index].id) ? .completed : .skipped
             }
             // Remains running until the owning workspace also commits new URLs.
             try journal.persist(to: journalURL)

@@ -1,7 +1,7 @@
 import Foundation
 
 public struct SessionDocument: Codable, Sendable, Equatable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public var schemaVersion: Int
     public var createdAt: Date
@@ -11,6 +11,7 @@ public struct SessionDocument: Codable, Sendable, Equatable {
     public var expandedNodeIDs: [UUID]
     public var selectedAlbumKey: String?
     public var accessBookmarkKeys: [String]
+    var archiveGeneration: UUID?
 
     public init(
         schemaVersion: Int = SessionDocument.currentSchemaVersion,
@@ -41,6 +42,7 @@ public struct SessionDocument: Codable, Sendable, Equatable {
         case expandedNodeIDs
         case selectedAlbumKey
         case accessBookmarkKeys
+        case archiveGeneration
     }
 
     public init(from decoder: Decoder) throws {
@@ -56,11 +58,22 @@ public struct SessionDocument: Codable, Sendable, Equatable {
             selectedAlbumKey: try container.decodeIfPresent(String.self, forKey: .selectedAlbumKey),
             accessBookmarkKeys: try container.decodeIfPresent([String].self, forKey: .accessBookmarkKeys) ?? []
         )
+        archiveGeneration = try container.decodeIfPresent(UUID.self, forKey: .archiveGeneration)
     }
 }
 
 public enum SessionMigrator {
     public static func migrate(_ data: Data) throws -> Data {
+        struct Header: Decodable { let schemaVersion: Int? }
+        let header = try JSONDecoder().decode(Header.self, from: data)
+        if let version = header.schemaVersion {
+            guard version <= SessionDocument.currentSchemaVersion else {
+                throw PicardError.invalidConfiguration("Unsupported session schema version \(version).")
+            }
+            // V1 inline bytes and V2 blob references have the same field shape.
+            // Decode directly without a second, fully materialized JSON tree.
+            if version >= 1 { return data }
+        }
         let object: Any
 
         do {
@@ -86,8 +99,8 @@ public enum SessionMigrator {
         while version < SessionDocument.currentSchemaVersion {
             switch version {
             case 0:
-                dictionary["schemaVersion"] = 1
-                version = 1
+                dictionary["schemaVersion"] = SessionDocument.currentSchemaVersion
+                version = SessionDocument.currentSchemaVersion
             default:
                 throw PicardError.migrationFailed(
                     from: version,
@@ -106,9 +119,19 @@ public enum SessionMigrator {
 }
 
 public actor SessionStore {
+    private struct Navigation: Codable {
+        let generation: UUID
+        let savedAt: Date
+        let selectedFileIDs: [UUID]
+        let expandedNodeIDs: [UUID]
+        let selectedAlbumKey: String?
+        let accessBookmarkKeys: [String]
+    }
     private let sessionURL: URL
     private let recoveryURL: URL
-    private var savedContent: [URL: Data] = [:]
+    private var savedContent: [URL: SessionDocument] = [:]
+    private var blobStores: [URL: ArtworkBlobStore] = [:]
+    private var generations: [URL: UUID] = [:]
     public private(set) var writeCount = 0
 
     public init(sessionURL: URL, recoveryURL: URL) {
@@ -161,7 +184,27 @@ public actor SessionStore {
         let migratedData = try SessionMigrator.migrate(data)
 
         do {
-            return try JSONDecoder.makeSessionDecoder().decode(SessionDocument.self, from: migratedData)
+            let decoder = JSONDecoder.makeSessionDecoder()
+            decoder.userInfo[ArtworkBlobStore.codingKey] = blobStore(for: url)
+            var document = try decoder.decode(SessionDocument.self, from: migratedData)
+            if let generation = document.archiveGeneration {
+                generations[url] = generation
+                let navigationURL = url.appendingPathExtension("navigation")
+                if FileManager.default.fileExists(atPath: navigationURL.path) {
+                    if let navigation = try? decoder.decode(Navigation.self, from: Data(contentsOf: navigationURL)), navigation.generation == generation {
+                        document.savedAt = navigation.savedAt
+                        document.selectedFileIDs = navigation.selectedFileIDs
+                        document.expandedNodeIDs = navigation.expandedNodeIDs
+                        document.selectedAlbumKey = navigation.selectedAlbumKey
+                        document.accessBookmarkKeys = navigation.accessBookmarkKeys
+                    }
+                }
+            }
+            document.archiveGeneration = nil
+            document.schemaVersion = SessionDocument.currentSchemaVersion
+            var normalized = document; normalized.savedAt = Date(timeIntervalSince1970: 0)
+            savedContent[url] = normalized
+            return document
         } catch {
             throw PicardError.sessionEncoding(error.localizedDescription)
         }
@@ -174,34 +217,67 @@ public actor SessionStore {
 
         do {
             var normalized = document
+            normalized.schemaVersion = SessionDocument.currentSchemaVersion
+            normalized.archiveGeneration = nil
             normalized.savedAt = Date(timeIntervalSince1970: 0)
             let encoder = JSONEncoder.makeSessionEncoder()
-            let content = try encoder.encode(normalized)
-            if savedContent[url] == nil, var previous = try? load(from: url) {
+            encoder.userInfo[ArtworkBlobStore.codingKey] = blobStore(for: url)
+            if savedContent[url] == nil, var previous = try replacementBaseline(from: url) {
                 previous.savedAt = normalized.savedAt
-                savedContent[url] = try JSONEncoder.makeSessionEncoder().encode(previous)
+                savedContent[url] = previous
             }
-            if savedContent[url] == content, FileManager.default.fileExists(atPath: url.path) { return }
+            if savedContent[url] == normalized, FileManager.default.fileExists(atPath: url.path) { return }
             if url == recoveryURL {
-                if savedContent[sessionURL] == nil, var primary = try? load(from: sessionURL) {
+                if savedContent[sessionURL] == nil, var primary = try replacementBaseline(from: sessionURL) {
                     primary.savedAt = normalized.savedAt
-                    savedContent[sessionURL] = try JSONEncoder.makeSessionEncoder().encode(primary)
+                    savedContent[sessionURL] = primary
                 }
-                if savedContent[sessionURL] == content, FileManager.default.fileExists(atPath: sessionURL.path) { return }
+                if savedContent[sessionURL] == normalized, FileManager.default.fileExists(atPath: sessionURL.path) { return }
             }
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            let data = try encoder.encode(document)
-            try data.write(to: url, options: [.atomic])
-            savedContent[url] = content
+            if let previous = savedContent[url], let generation = generations[url],
+               previous.files == normalized.files, previous.createdAt == normalized.createdAt,
+               FileManager.default.fileExists(atPath: url.path) {
+                let navigation = Navigation(generation: generation, savedAt: document.savedAt,
+                    selectedFileIDs: document.selectedFileIDs, expandedNodeIDs: document.expandedNodeIDs,
+                    selectedAlbumKey: document.selectedAlbumKey, accessBookmarkKeys: document.accessBookmarkKeys)
+                try DurableArchive.replace(encoder.encode(navigation), at: url.appendingPathExtension("navigation"))
+                savedContent[url] = normalized; writeCount += 1
+                return
+            }
+            var persisted = document; persisted.schemaVersion = SessionDocument.currentSchemaVersion
+            let generation = UUID(); persisted.archiveGeneration = generation
+            let data = try encoder.encode(persisted)
+            try DurableArchive.replace(data, at: url)
+            savedContent[url] = normalized
+            generations[url] = generation
             writeCount += 1
         } catch let error as PicardError {
             throw error
         } catch {
             throw PicardError.sessionWrite(path: url.path, reason: error.localizedDescription)
         }
+    }
+
+    private func replacementBaseline(from url: URL) throws -> SessionDocument? {
+        do { return try load(from: url) }
+        catch let error as PicardError {
+            // A supported recovered document may replace a corrupt primary,
+            // but an archive from a newer app must never be downgraded.
+            if case .invalidConfiguration = error { throw error }
+            return nil
+        } catch { return nil }
+    }
+
+    private func blobStore(for url: URL) -> ArtworkBlobStore {
+        let directory = url.deletingLastPathComponent().appendingPathComponent("ArtworkBlobs", isDirectory: true)
+        if let store = blobStores[directory] { return store }
+        let store = ArtworkBlobStore(directory: directory)
+        blobStores[directory] = store
+        return store
     }
 }
 
