@@ -166,6 +166,7 @@ struct SettingsView: View {
                     HStack {
                         Button("Download and Install") { model.installAvailableUpdate() }
                             .buttonStyle(.borderedProminent).tint(MusicBrainzTheme.buttonFill)
+                            .disabled(model.isBusy)
                         Link("Release notes", destination: release.releaseURL)
                     }
                 case let .downloading(progress), let .installing(progress):

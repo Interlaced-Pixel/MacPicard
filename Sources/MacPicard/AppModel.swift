@@ -515,6 +515,10 @@ final class AppModel: ObservableObject {
 
     func installAvailableUpdate() {
         guard case let .available(release) = updateState else { return }
+        guard !isBusy else {
+            updateState = .failed("Finish the current file operation before installing an update.")
+            return
+        }
         updateState = .downloading(AppUpdateProgress(phase: .downloading, completedBytes: 0, totalBytes: nil))
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -529,12 +533,27 @@ final class AppModel: ObservableObject {
                 let installedApp = try await Task.detached {
                     try AppUpdateInstaller.install(archiveURL: archive, expectedVersion: release.version, progress: progressHandler)
                 }.value
-                NSWorkspace.shared.open(installedApp)
-                NSApp.terminate(nil)
+                relaunchInstalledApp(installedApp)
             } catch is CancellationError {
                 updateState = .available(release)
             } catch {
                 updateState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func relaunchInstalledApp(_ appURL: URL) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { [weak self] _, error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let error {
+                    updateState = .failed("The update was installed, but MacPicard could not relaunch: \(error.localizedDescription)")
+                } else {
+                    NSApp.terminate(nil)
+                }
             }
         }
     }
